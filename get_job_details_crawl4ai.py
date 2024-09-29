@@ -40,16 +40,15 @@ async def extract_job_description(url):
             return
 
         # Print raw extracted content for debugging
-        print("Extracted Content: ", result.extracted_content)
+        #print("Extracted job description content")
 
         # Parse the extracted content
         try:
             job_descriptions = json.loads(result.extracted_content)
             if job_descriptions:
-                print(f"Successfully extracted {len(job_descriptions)} job descriptions")
-                print(json.dumps(job_descriptions[0], indent=2))
+                print("Extracted job description content")
             else:
-                print("No data extracted.")
+                print("No job description data extracted.")
         except json.JSONDecodeError:
             print("Failed to parse extracted content as JSON.")
 
@@ -101,16 +100,15 @@ async def extract_job_details(url):
             return
 
         # Print raw extracted content for debugging
-        print("Extracted Content: ", result.extracted_content)
+        #print("Extracted Content: ", result.extracted_content)
 
         # Parse the extracted content
         try:
             job_details = json.loads(result.extracted_content)
             if job_details:
-                print(f"Successfully extracted {len(job_details)} job descriptions")
-                print(json.dumps(job_details[0], indent=2))
+                print("Extracted job details content")
             else:
-                print("No data extracted.")
+                print("No job details data extracted.")
         except json.JSONDecodeError:
             print("Failed to parse extracted content as JSON.")
 
