@@ -55,7 +55,6 @@ async def extract_job_description(url):
 
     return job_descriptions
 
-
 async def extract_job_details(url):
     print("\n--- Using JsonCssExtractionStrategy for Fast Structured Output ---")
 
@@ -106,13 +105,13 @@ async def extract_job_details(url):
 
         # Parse the extracted content
         try:
-            job_descriptions = json.loads(result.extracted_content)
-            if job_descriptions:
-                print(f"Successfully extracted {len(job_descriptions)} job descriptions")
-                print(json.dumps(job_descriptions[0], indent=2))
+            job_details = json.loads(result.extracted_content)
+            if job_details:
+                print(f"Successfully extracted {len(job_details)} job descriptions")
+                print(json.dumps(job_details[0], indent=2))
             else:
                 print("No data extracted.")
         except json.JSONDecodeError:
             print("Failed to parse extracted content as JSON.")
 
-    return job_descriptions
+    return job_details
