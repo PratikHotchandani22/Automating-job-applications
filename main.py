@@ -1,8 +1,8 @@
 #from get_job_details import main_get_job_link, call_reader_api
-from prompt_llm_for_resume import RESUME_PROMPT, run_llama_prompt, extract_info_from_response
+from prompt_llm_for_resume import RESUME_PROMPT, run_llama_prompt, parse_response_to_dict, save_job_dict_response
 from get_job_details_crawl4ai import main_get_job_link, extract_job_description, extract_job_details
 import json
-
+import pandas as pd
 import asyncio
 
 
@@ -23,12 +23,15 @@ async def main():
     full_prompt = RESUME_PROMPT + "\n" + json.dumps(job_data)
     llama_response = await run_llama_prompt(full_prompt)
     print("LLama response is: ", llama_response)
-    json_response = extract_info_from_response(llama_response)
+    job_data_dict = parse_response_to_dict(llama_response)
+    save_job_dict_response(job_data_dict)
     print("**** fina OUTPUT****")
-    print(json_response)
-    #print("Final saved json data: ", json_data)
+    
+    job_data_df = pd.DataFrame([job_data_dict])
 
-
+    job_data_df.to_csv('job_data.csv', index=False)
+    print("Csv file saved")
+    job_data_df
 
 
 # Ensure the event loop is run properly
