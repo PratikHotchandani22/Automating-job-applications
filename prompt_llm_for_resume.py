@@ -98,6 +98,7 @@ async def run_llama_prompt(prompt, model="llama3.1"):
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("Prompt must be a non-empty string.")
 
+        print("Generating llama response .... ")
         # Send the custom prompt to the LLaMA 3.1 model
         response = ollama.generate(
             model=model,
