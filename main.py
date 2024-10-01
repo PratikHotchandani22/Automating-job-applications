@@ -3,27 +3,31 @@ from prompt_llm_for_resume import RESUME_PROMPT, run_llama_prompt, parse_respons
 from get_job_details_crawl4ai import main_get_job_link, extract_job_description, extract_job_details
 from create_embeddings import load_tokenizer_t5, generate_embedding_t5
 from create_gcp_connection import authenticate_google_apis, extract_job_data_from_sheet
+from supabase_backend import create_supabase_connection, insert_data_into_table, fetch_data_from_table, prepare_data_insertion_structure
+from configuration import SUPABASE_URL, SUPABASE_KEY, SPREADSHEET_ID, SHEET_NAME, JOB_DETAILS_TABLE_NAME
 
 import json
 import pandas as pd
 import asyncio
 import torch
 
-SPREADSHEET_ID = '1se48TIjgf49cu4NjieXUW6VNrOB0SdcFb9UNbvDbdOw'  # Replace with your actual Spreadsheet ID
-SHEET_NAME = 'Sheet1'  # Replace with the name of your sheet
-    
-
 async def main():
 
     print("Authenticating google sign in")
-    drive_service, sheets_service = authenticate_google_apis()
 
+    # connections
+    drive_service, sheets_service = authenticate_google_apis()
+    supabase = create_supabase_connection(SUPABASE_URL, SUPABASE_KEY)
+
+    # getting data
     sheets_data = extract_job_data_from_sheet(sheets_service, SPREADSHEET_ID, SHEET_NAME)
+
     # Print the extracted job data
     for job in sheets_data:
         print(f"ID: {job['ID']}, Job Link: {job['Job Link']}")
         job_description = await extract_job_description(job['Job Link'])
         job_details = await extract_job_details(job['Job Link'])
+
 
         # Create a dictionary combining both variables
         job_data = {
@@ -59,6 +63,12 @@ async def main():
             print(f"Single Embedding: {concatenated_emb}")    
         
         print("Enddd of job : ", job['ID'], "......")
+        
+        print("Preparing json data that needs to be inserted into the table...")
+        table_json_data = prepare_data_insertion_structure(JOB_DETAILS_TABLE_NAME, job_description_text, job_details, concatenated_emb)
+        print("prepared json data is: ", table_json_data)
+
+        insert_data_into_table(supabase, JOB_DETAILS_TABLE_NAME, table_json_data)
 
 
     """

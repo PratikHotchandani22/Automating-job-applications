@@ -38,6 +38,9 @@ async def extract_job_description(url):
         if not result.success:
             print("Failed to crawl the page")
             return
+        
+        else:
+            print("Something went wrong: ", result)
 
         # Print raw extracted content for debugging
         #print("Extracted job description content")
@@ -98,6 +101,9 @@ async def extract_job_details(url):
         if not result.success:
             print("Failed to crawl the page")
             return
+        
+        else:
+            print("Something went wrong: ", result)
 
         # Print raw extracted content for debugging
         #print("Extracted Content: ", result.extracted_content)
