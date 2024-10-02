@@ -1,46 +1,63 @@
 import json
+import random
 import asyncio
 from crawl4ai import AsyncWebCrawler
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+
+# Load proxies from the file
+def load_proxies():
+    with open("valid_proxies.txt", "r") as f:
+        proxies = f.read().splitlines()  # Read all lines and split by newline
+    return proxies
+
+# Select a random proxy from the list of valid proxies
+def get_random_proxy(proxies):
+    if proxies:
+        return random.choice(proxies)
+    return None
 
 def main_get_job_link():
     job_link = input("Please share the job link that you want the details from\n")
     print(f"Okay, so accessing the link {job_link}")
     return job_link
 
-async def extract_job_description(url):
+# Function to extract job description
+async def extract_job_description(url, proxies):
     print("\n--- Using JsonCssExtractionStrategy for Fast Structured Output ---")
 
     # Define the extraction schema as a list of dictionaries
     schema = {
-            "name": "job description",
-            "baseSelector": "div.JobDetails_jobDescriptionWrapper___tqxc",
-            "fields": [
-                {
-                    "name": "job description: ",
-                    "selector": "div",
-                    "type": "text",
-                },
-            ]
+        "name": "job description",
+        "baseSelector": "div.JobDetails_jobDescriptionWrapper___tqxc",
+        "fields": [
+            {
+                "name": "job description: ",
+                "selector": "div",
+                "type": "text",
+            },
+        ]
     }
+
+    # Get a random proxy to use
+    proxy = get_random_proxy(proxies)
+    if proxy:
+        proxy = "http://" + proxy  # Format the proxy
+        print(f"Using proxy: {proxy}")
 
     # Create the extraction strategy
     extraction_strategy = JsonCssExtractionStrategy(schema, verbose=True)
 
-    # Use the AsyncWebCrawler with the extraction strategy
-    async with AsyncWebCrawler(verbose=True) as crawler:
+    # Use the AsyncWebCrawler with the extraction strategy and formatted proxy
+    async with AsyncWebCrawler(verbose=True, proxy="http://66.29.154.105:3128") as crawler:
         result = await crawler.arun(
             url=url,
             extraction_strategy=extraction_strategy,
-            bypass_cache=True,
+            bypass_cache=True
         )
 
         if not result.success:
             print("Failed to crawl the page")
             return
-
-        # Print raw extracted content for debugging
-        #print("Extracted job description content")
 
         # Parse the extracted content
         try:
@@ -54,7 +71,8 @@ async def extract_job_description(url):
 
     return job_descriptions
 
-async def extract_job_details(url):
+# Function to extract job details
+async def extract_job_details(url, proxies):
     print("\n--- Using JsonCssExtractionStrategy for Fast Structured Output ---")
 
     # Define the extraction schema
@@ -84,23 +102,27 @@ async def extract_job_details(url):
             }
         ],
     }
+
+    # Get a random proxy to use
+    proxy = get_random_proxy(proxies)
+    if proxy:
+        proxy = "http://" + proxy  # Format the proxy
+        print(f"Using proxy: {proxy}")
+
     # Create the extraction strategy
     extraction_strategy = JsonCssExtractionStrategy(schema, verbose=True)
 
-    # Use the AsyncWebCrawler with the extraction strategy
-    async with AsyncWebCrawler(verbose=True) as crawler:
+    # Use the AsyncWebCrawler with the extraction strategy and formatted proxy
+    async with AsyncWebCrawler(verbose=True, proxy="http://66.29.154.105:3128") as crawler:
         result = await crawler.arun(
             url=url,
             extraction_strategy=extraction_strategy,
-            bypass_cache=True,
+            bypass_cache=True
         )
 
         if not result.success:
             print("Failed to crawl the page")
             return
-
-        # Print raw extracted content for debugging
-        #print("Extracted Content: ", result.extracted_content)
 
         # Parse the extracted content
         try:

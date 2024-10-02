@@ -1,6 +1,6 @@
 #from get_job_details import main_get_job_link, call_reader_api
 from prompt_llm_for_resume import RESUME_PROMPT, run_llama_prompt, parse_response_to_dict, save_job_dict_response
-from get_job_details_crawl4ai import main_get_job_link, extract_job_description, extract_job_details
+from get_job_details_crawl4ai import main_get_job_link, extract_job_description, extract_job_details, load_proxies
 from create_embeddings import load_tokenizer_t5, generate_embedding_t5
 from create_gcp_connection import authenticate_google_apis, extract_job_data_from_sheet
 
@@ -17,13 +17,13 @@ async def main():
 
     print("Authenticating google sign in")
     drive_service, sheets_service = authenticate_google_apis()
-
+    proxies = load_proxies()
     sheets_data = extract_job_data_from_sheet(sheets_service, SPREADSHEET_ID, SHEET_NAME)
     # Print the extracted job data
     for job in sheets_data:
         print(f"ID: {job['ID']}, Job Link: {job['Job Link']}")
-        job_description = await extract_job_description(job['Job Link'])
-        job_details = await extract_job_details(job['Job Link'])
+        job_description = await extract_job_description(job['Job Link'], proxies)
+        job_details = await extract_job_details(job['Job Link'], proxies)
 
         # Create a dictionary combining both variables
         job_data = {
