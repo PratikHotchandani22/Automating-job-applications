@@ -9,7 +9,7 @@ import pandas as pd
 import asyncio
 import torch
 
-SPREADSHEET_ID = '1se48TIjgf49cu4NjieXUW6VNrOB0SdcFb9UNbvDbdOw'  # Replace with your actual Spreadsheet ID
+SPREADSHEET_ID = ''  # Replace with your actual Spreadsheet ID
 SHEET_NAME = 'Sheet1'  # Replace with the name of your sheet
     
 
