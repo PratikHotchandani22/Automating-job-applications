@@ -79,7 +79,7 @@ Please provide the job description text from which you require information.
 
 """
 
-async def run_llama_prompt(prompt, model="llama3.1"):
+async def run_llama_prompt(prompt, model="llama3.1:8b"):
     """
     Function to run a custom prompt on LLaMA 3.1 using the Ollama API.
 
@@ -132,10 +132,20 @@ def parse_response_to_dict(response):
 
     return response_dict
 
-def save_job_dict_response(job_dict):
-    # Step 3: Save the dictionary to a JSON file
-    with open('job_data.json', 'w') as json_file:
-        json.dump(job_dict, json_file, indent=4)
+def save_job_dict_response(job_dict, string_data):
 
-    print("Job data saved to 'job_data.json'")
+    if string_data == "job":
+        # Step 3: Save the dictionary to a JSON file
+        with open('job_data.json', 'w') as json_file:
+            json.dump(job_dict, json_file, indent=4)
+
+        print("Job data saved to 'job_data.json'")
+
+    else:
+        # Step 3: Save the dictionary to a JSON file
+        with open('suggestions_data.json', 'w') as json_file:
+            json.dump(job_dict, json_file, indent=4)
+
+        print("Job data saved to 'suggestions_data.json'")
+
 
