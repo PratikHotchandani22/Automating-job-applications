@@ -1,6 +1,10 @@
 # pip install accelerate
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
+from langchain_ollama import OllamaEmbeddings
+import pandas as pd
+
+
 def load_tokenizer_t5():
     print("Downloading model and tokenizer....")
     tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-large")
@@ -30,3 +34,39 @@ def generate_embedding_t5(text, tokenizer, model, max_length=512):
     
     print("Embeddings generated..")
     return all_outputs  # Return the combined outputs
+
+
+
+def embed_text_in_column(text_data, text_type) -> pd.DataFrame:
+
+    embeddings = OllamaEmbeddings(
+    model="llama3.1:8b"
+    )
+
+    if text_type == "resume":
+    
+        emb = embeddings.embed_documents(text_data)
+
+        print("Embedding generated: ", emb)
+
+        return pd.DataFrame({
+            'resume_data': text_data,
+            'resume_emb': emb
+        })
+
+    elif text_type == "job":
+
+        emb = embeddings.embed_documents(text_data)
+
+        print("Embedding generated: ", emb)
+
+        return pd.DataFrame({
+            'job_data': text_data,
+            'job_emb': emb
+        })
+    
+    else:
+        return pd.DataFrame({
+            'job_data': "empty string",
+            'job_emb': "Empty embeddings"
+        })
