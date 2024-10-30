@@ -1,5 +1,5 @@
 #from get_job_details import main_get_job_link, call_reader_api
-from prompt_llm_for_resume import RESUME_PROMPT, run_llama_prompt, parse_response_to_dict, save_job_dict_response
+from prompt_llm_for_resume import RESUME_PROMPT, run_llama_prompt, parse_response_to_df, save_job_dict_response
 from get_job_details_crawl4ai import main_get_job_link, extract_job_description, extract_job_details
 from create_embeddings import load_tokenizer_t5, generate_embedding_t5, embed_text_in_column
 from create_gcp_connection import authenticate_google_apis, extract_job_data_from_sheet
@@ -41,12 +41,13 @@ async def main():
 
         ## Prompting LLM
         # Combine the prompt with the job description text
-        full_prompt = RESUME_PROMPT + "\n" + json.dumps(job_data)
+        #full_prompt = RESUME_PROMPT + "\n" + json.dumps(job_data)
+        full_prompt = json.dumps(job_data)
         llama_response = await run_llama_prompt(full_prompt)
         print("response generated...", llama_response)
         #print("Llama response is: ", llama_response)
         print("parsing llama response..")
-        job_data_dict = parse_response_to_dict(llama_response)
+        job_data_dict = parse_response_to_df(llama_response)
         save_job_dict_response(job_data_dict, "job")
 
         # Extract job description string

@@ -4,6 +4,53 @@ from transformers import T5Tokenizer, T5ForConditionalGeneration
 from langchain_ollama import OllamaEmbeddings
 import pandas as pd
 
+import os
+import pandas as pd
+import asyncio
+from openai import OpenAI
+from credentials import OPENAI_API
+
+
+async def generate_embeddings(dataframe, embedding_of):
+    # Ensure that OpenAI API client is set up
+    openai_client = OpenAI(api_key=OPENAI_API)
+
+    if embedding_of == "resume":
+        embeddings = []
+        for index, row in dataframe.iterrows():
+            final_str_cleaned = row['resume_text']
+            
+            # Generate embeddings using OpenAI API
+            response = openai_client.embeddings.create(
+                input=final_str_cleaned,
+                model="text-embedding-3-small"
+            )
+            
+            embeddings.append(response.data[0].embedding)  # Assuming this is the correct structure
+        
+        # Add embeddings to the DataFrame
+        dataframe['resume_embedding'] = embeddings
+        return dataframe
+    
+    elif embedding_of == "job":
+        embeddings = []
+        for index, row in dataframe.iterrows():
+            job_description = row['job_description']
+            
+            # Generate embeddings using OpenAI API
+            response = openai_client.embeddings.create(
+                input=job_description,
+                model="text-embedding-3-small"
+            )
+            
+            embeddings.append(response.data[0].embedding)  # Append the embedding for each job
+        
+        # Add embeddings to the DataFrame
+        dataframe['job_description_embeddings'] = embeddings
+        return dataframe
+    
+    else:
+        return "Incorrect embedding of parameter passed."
 
 def load_tokenizer_t5():
     print("Downloading model and tokenizer....")
@@ -34,8 +81,6 @@ def generate_embedding_t5(text, tokenizer, model, max_length=512):
     
     print("Embeddings generated..")
     return all_outputs  # Return the combined outputs
-
-
 
 def embed_text_in_column(text_data, text_type) -> pd.DataFrame:
 
