@@ -1,99 +1,10 @@
-import ollama
 import json
 import pandas as pd
-import getpass
-import os
 from langchain_groq import ChatGroq
 import streamlit as st
 from credentials import GROQ_API
 
-
-RESUME_PROMPT = """
-You are a skilled job application parser. Your task is to extract and organize specific information from a provided job description text, responding only with a JSON dictionary format containing only the requested details. 
-
-The JSON dictionary should have the following keys with values based on the extracted details from the job description. If any detail is not mentioned, use `null` as the value without additional commentary or assumptions.
-
-Please extract and label the following details:
-
-{
-    "Company name": null,
-    "Position name": null,
-    "Seniority level": null,
-    "Joining date": null,
-    "Team name": null,
-    "Location": null,
-    "Salary": null,
-    "Hybrid or Remote?": null,
-    "Company description": null,
-    "Team description": null,
-    "Job responsibilities": [],
-    "Preferred skills": [],
-    "Required skills": [],
-    "Exceptional skills": [],
-    "Technical keywords": [],
-    "Necessary experience": null,
-    "Bonus experience": null,
-    "Job role classifications": [],
-    "Company values": [],
-    "Benefits": [],
-    "Soft skills": [],
-    "Visa Sponsorship": null
-}
-
-Instructions:
-1. Respond only with the JSON dictionary containing the keys listed above.
-2. Do not include any commentary, explanations, or assumptions.
-3. List multiple items (like skills and responsibilities) as arrays within the JSON dictionary.
-4. Ensure the JSON is correctly formatted to facilitate easy parsing.
-
-Example job description:
-\"\"\"
-We are seeking a Senior Software Engineer to join the Artificial Intelligence team at Tech Solutions Corp. The role is based remotely, with an optional hybrid arrangement available from our San Francisco office. The salary range for this position is $120,000 to $150,000 per year. Tech Solutions Corp. specializes in providing cutting-edge AI technologies to various industries. The AI team focuses on developing machine learning models and AI-driven applications. Responsibilities include designing algorithms, conducting experiments, and deploying scalable software solutions. Preferred skills include experience with containerization and cloud services. Required skills are proficiency in Python and experience with TensorFlow. Exceptional skills such as knowledge of reinforcement learning would be appreciated. Keywords: Machine Learning, AI, Python, TensorFlow, Cloud Services, Docker. Required experience includes 5+ years of software development and 3+ years of experience in AI projects. Bonus experience includes contributions to open-source projects. Note: We do not provide visa sponsorships. 
-
-Values: Innovativeness, teamwork, and commitment to excellence.
-Benefits: 401(k), health insurance, and remote work options.
-Soft skills required: Strong communication skills, problem-solving, and teamwork.
-
-Job role classification: 
-- Software Engineer
-\"\"\"
-
-Example response:
-
-{
-    "Company name": "Tech Solutions Corp",
-    "Position name": "Senior Software Engineer",
-    "Seniority level": null,
-    "Joining date": null,
-    "Team name": "Artificial Intelligence",
-    "Location": "San Francisco (optional hybrid) / Remote",
-    "Salary": "$120,000 to $150,000 per year",
-    "Hybrid or Remote?": "Remote (optional hybrid)",
-    "Company description": "Tech Solutions Corp. specializes in providing cutting-edge AI technologies to various industries.",
-    "Team description": "The AI team focuses on developing machine learning models and AI-driven applications.",
-    "Job responsibilities": ["Designing algorithms", "Conducting experiments", "Deploying scalable software solutions"],
-    "Preferred skills": ["Experience with containerization", "Cloud services"],
-    "Required skills": ["Proficiency in Python", "Experience with TensorFlow"],
-    "Exceptional skills": ["Knowledge of reinforcement learning"],
-    "Technical keywords": ["Machine Learning", "AI", "Python", "TensorFlow", "Cloud Services", "Docker"],
-    "Necessary experience": "5+ years of software development and 3+ years of experience in AI projects",
-    "Bonus experience": "Contributions to open-source projects",
-    "Job role classifications": ["Software Engineer", "AI Engineer"],
-    "Company values": ["Innovativeness", "Teamwork", "Commitment to excellence"],
-    "Benefits": ["401(k)", "Health insurance", "Remote work options"],
-    "Soft skills": ["Strong communication skills", "Problem-solving", "Teamwork"],
-    "Visa Sponsorship": null
-}
-
-Please provide the job description text from which you require information.
-
-"""
-
-
-SUMMARY_PROMPT = "Summarize the job details provided, starting with whether the position offers visa sponsorship. Next, describe the type of role and the ideal candidate profile, including key responsibilities, required skills, and years of experience. Conclude with an explanation of what kind of applicants would be top contenders, highlighting any specific technical and soft skills valued for success in this role."
-
-
-async def run_llama_prompt(prompt, model="llama3-8b-8192"):
+async def run_llama_prompt(prompt, IDENTIFY_DETAILS_FROM_JOB_PROMPT, model):
     """
     Function to run a custom prompt on LLaMA 3.1 using the Ollama API.
 
@@ -128,7 +39,7 @@ async def run_llama_prompt(prompt, model="llama3-8b-8192"):
         messages = [
             (
                 "system",
-                f"{RESUME_PROMPT}",
+                f"{IDENTIFY_DETAILS_FROM_JOB_PROMPT}",
             ),
             ("human", f"{prompt}"),
         ]
@@ -143,7 +54,7 @@ async def run_llama_prompt(prompt, model="llama3-8b-8192"):
     except Exception as e:
         return f"Unexpected Error: {str(e)}"
 
-async def summarize_job_description(systemPrompt, userPrompt, model="llama3-8b-8192"):
+async def summarize_job_description(systemPrompt, userPrompt, model):
     """
     Function to run a custom prompt using the Groq API to summarize job description.
 
@@ -261,5 +172,3 @@ def save_job_dict_response(job_dict, string_data):
             json.dump(job_dict, json_file, indent=4)
 
         print("Job data saved to 'suggestions_data.json'")
-
-

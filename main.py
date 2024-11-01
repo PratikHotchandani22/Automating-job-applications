@@ -1,10 +1,8 @@
 #from get_job_details import main_get_job_link, call_reader_api
-from prompt_llm_for_resume import RESUME_PROMPT, run_llama_prompt, parse_response_to_df, save_job_dict_response
+from prompt_llm_for_resume import run_llama_prompt, parse_response_to_df, save_job_dict_response
 from get_job_details_crawl4ai import main_get_job_link, extract_job_description, extract_job_details
-from create_embeddings import load_tokenizer_t5, generate_embedding_t5, embed_text_in_column
+from create_embeddings import embed_text_in_column
 from create_gcp_connection import authenticate_google_apis, extract_job_data_from_sheet
-from configuration import RESUME_SECTION_IDENTIFICATION_PROMPT
-from resume_text import extract_text_from_docx, extract_resume_sections_langchain, clean_llm_response_for_resume
 from find_optimal_resume import find_best_resume, process_resumes, suggest_resume_improvements
 
 
@@ -19,7 +17,6 @@ SHEET_NAME = 'Sheet1'  # Replace with the name of your sheet
 
 async def main():
 
-    
     print("Authenticating google sign in")
     drive_service, sheets_service = authenticate_google_apis()
 
@@ -54,8 +51,8 @@ async def main():
         job_description_text = job_description[0].get('job description: ', '')
         print("job description text is: ", job_description)
         print("creating embeddings for job description....")
-        job_emb_df = embed_text_in_column(job_description_text, "job")
-        job_emb_df.to_csv("job_emb_df.csv")
+        #job_emb_df = embed_text_in_column(job_description_text, "job")
+        #job_emb_df.to_csv("job_emb_df.csv")
         print("job emb saved..")
         """
         file_path = "/Users/pratikhotchandani/Downloads/Github/Automating-job-applications/Extras/Pratik Hotchandani GenAI.docx"

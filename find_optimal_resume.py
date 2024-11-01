@@ -1,11 +1,7 @@
 import numpy as np
-
-
 import pandas as pd
 import os
 from resume_text import extract_text_from_docx, extract_resume_sections_langchain, clean_llm_response_for_resume
-from configuration import RESUME_SECTION_IDENTIFICATION_PROMPT
-from create_embeddings import embed_text_in_column
 from sklearn.metrics.pairwise import cosine_similarity
 from prompt_llm_for_resume import run_llama_prompt
 import streamlit as st
@@ -13,14 +9,7 @@ import streamlit as st
 TEMP_DIR = "temp_dir"
 os.makedirs(TEMP_DIR, exist_ok=True)  # This will create the directory if it does not exist
 
-
-# Assuming you have defined these functions elsewhere in your code
-# - extract_text_from_docx
-# - extract_resume_sections_langchain
-# - clean_llm_response_for_resume
-# - embed_text_in_column
-
-async def process_resumes(file_paths):
+async def process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model):
     all_resumes = []  # List to collect resumes as dicts
 
     for file_path in file_paths:
@@ -39,8 +28,7 @@ async def process_resumes(file_paths):
         
         # Extracting sections using LLM
         print("Extracting sections using LLM...")
-        model_name = "qwen2.5:14b"
-        resume_llm_response = await extract_resume_sections_langchain(RESUME_SECTION_IDENTIFICATION_PROMPT, model_name, resume_text)
+        resume_llm_response = await extract_resume_sections_langchain(IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model, resume_text)
         
         # Cleaning the LLM response
         cleaned_resume_llm_response = clean_llm_response_for_resume(resume_llm_response)
@@ -104,10 +92,3 @@ async def suggest_resume_improvements(llama_response_dict, resume_text, model_na
     suggestions = await run_llama_prompt(prompt_text, model_name)
     
     return suggestions
-
-
-# Example usage
-# llama_response_text = "..."  # text output from LLaMA identifying job description sections
-# resume_text = best_resume_data
-# suggestions = await suggest_resume_improvements(llama_response_text, resume_text)
-# print("Improvement Suggestions: ", suggestions)
