@@ -4,7 +4,7 @@ from langchain_groq import ChatGroq
 import streamlit as st
 from credentials import GROQ_API
 
-async def run_llama_prompt(prompt, IDENTIFY_DETAILS_FROM_JOB_PROMPT, model):
+async def run_llama_prompt(user_prompt, system_prompt, model):
     """
     Function to run a custom prompt on LLaMA 3.1 using the Ollama API.
 
@@ -20,8 +20,8 @@ async def run_llama_prompt(prompt, IDENTIFY_DETAILS_FROM_JOB_PROMPT, model):
     """
     try:
         # Ensure prompt is a non-empty string
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError("Prompt must be a non-empty string.")
+        if not isinstance(user_prompt, str) or not user_prompt.strip():
+            raise ValueError("user_prompt must be a non-empty string.")
 
         print("Generating llama response .... ")
         # Send the custom prompt to the LLaMA 3.1 model
@@ -39,10 +39,11 @@ async def run_llama_prompt(prompt, IDENTIFY_DETAILS_FROM_JOB_PROMPT, model):
         messages = [
             (
                 "system",
-                f"{IDENTIFY_DETAILS_FROM_JOB_PROMPT}",
+                f"{system_prompt}",
             ),
-            ("human", f"{prompt}"),
+            ("human", f"{user_prompt}"),
         ]
+
         ai_msg = llm.invoke(messages)
         
         return ai_msg.content
@@ -112,7 +113,7 @@ def parse_response_to_df(response):
 
     # Check if response is a string and not empty
     if isinstance(response, str):
-        st.write("Response content:", response)  # Check the actual content of response
+        #st.write("Response content:", response)  # Check the actual content of response
         try:
             st.write("Attempting to decode JSON string...")
             response = json.loads(response)  # Attempt to parse JSON string to dict

@@ -74,21 +74,36 @@ async def get_file_paths(uploaded_files):
 
     return file_paths
 
-async def suggest_resume_improvements(llama_response_dict, resume_text, model_name="llama3.1:8b"):
-    # Convert the dictionary into a readable string format
-    llama_response_text = "\n".join(
-        [f"{key}: {value}" for key, value in llama_response_dict.items()]
-    )
+async def suggest_resume_improvements(system_prompt, structured_job_data, resume_text, model_name):
     
-    # Prompt LLaMA with job description and resume
-    prompt_text = (
-        f"Given the following job description breakdown:\n\n{llama_response_text}\n\n"
-        f"And the following resume:\n\n{resume_text}\n\n"
-        "Suggest improvements to make the resume align more closely with the job requirements. "
-        "Identify any missing skills, experiences, or keywords and suggest improvements in structure or wording."
-    )
-    
+    ## Construct a user_prompt that will have structure job description 
+    # Convert all columns in the job description DataFrame to a single text string
+    #job_description_text = " ".join(structured_job_data.fillna("").astype(str).values.flatten())
+
+    # Prepare the user_prompt with resume_text and job_description_text
+    user_prompt = f'''
+    "resume_text" : "{resume_text}",
+    "job_description_text" : "{structured_job_data}"
+    '''
+
     # Generate suggestions using the LLaMA model
-    suggestions = await run_llama_prompt(prompt_text, model_name)
+    suggestions = await run_llama_prompt(user_prompt, system_prompt ,model_name)
     
     return suggestions
+
+async def prepare_cover_letter(system_prompt, llama_response, best_resume_text, model_name):
+
+    ## Construct a user_prompt that will have structure job description 
+    # Convert all columns in the job description DataFrame to a single text string
+    #job_description_text = " ".join(structured_job_data.fillna("").astype(str).values.flatten())
+
+    # Prepare the user_prompt with resume_text and job_description_text
+    user_prompt = f'''
+    "resume_text" : "{best_resume_text}",
+    "job_description_text" : "{llama_response}"
+    '''
+
+    # Generate suggestions using the LLaMA model
+    cover_letter = await run_llama_prompt(user_prompt, system_prompt ,model_name)
+    
+    return cover_letter

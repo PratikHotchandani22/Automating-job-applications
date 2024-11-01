@@ -2,13 +2,13 @@ import streamlit as st
 import asyncio
 from get_job_details_crawl4ai import extract_job_description, extract_job_details
 import json
-from prompt_llm_for_resume import  run_llama_prompt, summarize_job_description, parse_response_to_df
+from prompt_llm_for_resume import  run_llama_prompt, summarize_job_description, parse_response_to_df, save_job_dict_response
 from supabase_backend import create_supabase_connection, chunk_data, insert_data_into_table, fetch_data_from_table
 from create_embeddings import generate_embeddings
-from find_optimal_resume import process_resumes, get_file_paths, find_best_resume
+from find_optimal_resume import process_resumes, get_file_paths, find_best_resume, suggest_resume_improvements, prepare_cover_letter
 from supabase_helper_functions import prepare_data_resume, prepare_data_job_description
 import pandas as pd
-from configuration import IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
+from configuration import COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
 
 async def main():
     st.session_state.selected_resumes = pd.DataFrame()
@@ -133,6 +133,19 @@ async def main():
             best_resume_text, updated_emb_df = find_best_resume(st.session_state.selected_resumes, st.session_state.job_emb)
             # Print the DataFrame with percentage matches
             st.write(updated_emb_df[['resume_name', 'percentage_match']])
+
+            ## Providing suggestions based on selected resume or the restume with the highest match.
+            suggestions = await suggest_resume_improvements(SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, PROVIDING_SUGGESTIONS_MODEL)
+            st.write(suggestions)
+            save_job_dict_response(suggestions, "suggestions")
+
+            ## Providing suggestions based on selected resume or the restume with the highest match.
+            cover_letter = await prepare_cover_letter(COVER_LETTER_GENERATION_PROMPT, llama_response, best_resume_text, COVER_LETTER_GENERATION_MODEL)
+            st.write(cover_letter)
+            save_job_dict_response(cover_letter, "cover_letter")
+
+            
+
             
         else:
             st.error("Please upload at least one resume and provide a job URL before submitting.")
