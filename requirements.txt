@@ -1,0 +1,10 @@
+numpy
+pandas
+openai
+streamlit
+asyncio
+crawl4ai
+langchain
+langchain_groq
+supabase
+scikit-learn
