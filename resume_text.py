@@ -1,6 +1,4 @@
 import docx
-import pandas as pd
-from pprint import pprint
 import streamlit as st
 from langchain_groq import ChatGroq
 from credentials import GROQ_API
