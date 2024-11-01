@@ -132,4 +132,51 @@ IDENTIFY_DETAILS_FORM_RESUME_MODEL = "llama-3.1-8b-instant"
 
 IDENTIFY_DETAILS_FROM_JOB_MODEL = "llama-3.1-8b-instant"
 
-SUMMARIZE_JOB_DESCRIPTION_MODEL = "llama-3.1-8b-instant"
+SUMMARIZE_JOB_DESCRIPTION_MODEL = "llama3-70b-8192"
+
+PROVIDING_SUGGESTIONS_MODEL = "llama3-70b-8192"
+
+COVER_LETTER_GENERATION_MODEL = "llama3-70b-8192"
+
+SUGGESTIONS_JOB_BASED_ON_RESUME_old = """ 
+You will receive two inputs: resume_text and job_description_text. 
+Your task is to analyze the content of both texts and identify ways to align the resume_text more closely with the 
+job_description_text to improve cosine similarity. For each recommendation, provide specific phrases, keywords, or sections 
+from the job_description_text and suggest how they can be directly incorporated into the resume points in resume_text. 
+
+Your suggestions should be formatted so that they can be seamlessly copy-pasted into the resume without extensive rewriting. 
+Use the format and structure of existing resume points wherever possible, and ensure that your recommendations are 
+strictly based on the job description's context without adding unrelated information.
+
+Inputs provided will be in the format as below:
+"resume_text" : "",
+"job_description_text" : ""
+"""
+
+SUGGESTIONS_JOB_BASED_ON_RESUME = """ 
+You will receive two inputs: resume_text and job_description_text. 
+Your task is to analyze the content of both texts and identify ways to align the resume_text more closely with the 
+job_description_text to improve cosine similarity. Provide recommendations structured in the S-T-A-R format (Situation, Task, Analysis, Result), ensuring each suggestion is brief, confident, and can be easily integrated into the resume. 
+
+For each recommendation, specify the Situation and Task from the job_description_text, followed by an Analysis and Result that would fit the tone and structure of resume_text points. Ensure that recommendations are strictly derived from the job description context and formatted to be direct and to the point.
+
+Inputs provided will be in the format as below:
+"resume_text" : "",
+"job_description_text" : ""
+"""
+
+COVER_LETTER_GENERATION_PROMPT = """ 
+Act as a professional cover letter crafter. Your task is to draft a personalized cover letter based on the inputs provided: resume_text and job_description_text.
+
+1. First, identify the **four most important qualities** or skills the job description seeks in an ideal candidate. Use these "four points" as the foundation to highlight my strengths and experiences, showcasing why I am a perfect fit for this role.
+   
+2. Identify the **key challenges or pain points** this position aims to address for the company, and articulate how my skills and experiences position me as an ideal candidate to solve them. Emphasize how my unique contributions would support the company's goals and address these challenges.
+
+3. Mention how the **company's values align with my own**, explaining why joining this team would create a mutually beneficial and inspiring partnership.
+
+4. Keep the tone **cheerful, enthusiastic, and engaging**. Ensure the cover letter is concise, clear, and crafted in a way that feels genuine and enjoyable to read. Avoid copying directly from my resume; instead, present my experiences in an interesting way that demonstrates my enthusiasm and suitability for the role.
+
+Inputs provided will be in the format as below:
+"resume_text" : "",
+"job_description_text" : ""
+"""
