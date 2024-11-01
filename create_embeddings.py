@@ -1,17 +1,11 @@
 # pip install accelerate
-from transformers import T5Tokenizer, T5ForConditionalGeneration
-
-from langchain_ollama import OllamaEmbeddings
 import pandas as pd
-
-import os
 import pandas as pd
-import asyncio
 from openai import OpenAI
 from credentials import OPENAI_API
 
 
-async def generate_embeddings(dataframe, embedding_of):
+async def generate_embeddings(dataframe, embedding_model, embedding_of):
     # Ensure that OpenAI API client is set up
     openai_client = OpenAI(api_key=OPENAI_API)
 
@@ -23,7 +17,7 @@ async def generate_embeddings(dataframe, embedding_of):
             # Generate embeddings using OpenAI API
             response = openai_client.embeddings.create(
                 input=final_str_cleaned,
-                model="text-embedding-3-small"
+                model=embedding_model
             )
             
             embeddings.append(response.data[0].embedding)  # Assuming this is the correct structure

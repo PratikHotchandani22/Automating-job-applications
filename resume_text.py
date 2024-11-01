@@ -1,9 +1,9 @@
 import docx
 import pandas as pd
-from langchain_ollama import ChatOllama
-import json
-import numpy as np
 from pprint import pprint
+import streamlit as st
+from langchain_groq import ChatGroq
+from credentials import GROQ_API
 
 
 def extract_text_from_docx(file_path):
@@ -18,38 +18,56 @@ def extract_text_from_docx(file_path):
             resume_text.append(paragraph.text.strip())
     
     return resume_text
-
-
+ 
 async def extract_resume_sections_langchain(prompt, model_name, resume_text):
-    #responses = []  # Store model responses
+    """
+    Function to run a custom prompt on LLaMA 3.1 using the Ollama API.
 
+    Args:
+    - prompt (str): The input text you want to send to the model.
+    - model (str): The model version to use (default is LLaMA 3.1).
+    - max_tokens (int): The maximum number of tokens to generate in the response (default is 100).
+    - temperature (float): The sampling temperature to use (default is 0.7). 
+        Higher values produce more random outputs, while lower values make the output more deterministic.
+
+    Returns:
+    - str: The response from the model or an error message.
+    """
     try:
-        print("Prompt template is valid.")
+        # Ensure prompt is a non-empty string
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("Prompt must be a non-empty string.")
 
-        # Define the LLM with customizable parameters
-        llm = ChatOllama(
+        print("Generating llama response .... ")
+        # Send the custom prompt to the LLaMA 3.1 model
+
+        llm = ChatGroq(
+            api_key = GROQ_API,
             model=model_name,
-            temperature=0.2  # Adjust temperature as needed
+            temperature=0,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+            # other params...
         )
-        
-        # Prepare the messages for the LLM
+
         messages = [
-            ("system", prompt),
-            ("human", f"resume text: {resume_text}")
+            (
+                "system",
+                f"{prompt}",
+            ),
+            ("human", f"{resume_text}"),
         ]
+        ai_msg = llm.invoke(messages)
+        
+        return ai_msg.content
 
-        # Invoke the model
-        response = llm.invoke(messages)
-
-        # Append the response
-        #responses.append(response.content)
-
-        return response.content
-
+    except ValueError as ve:
+        return f"Input Error: {str(ve)}"
+    except KeyError as ke:
+        return f"Response Error: {str(ke)}"
     except Exception as e:
-        print(f"Error occurred: {e}")
-        return response.content  # Return DataFrame with responses on error
-    
+        return f"Unexpected Error: {str(e)}"
 
 def clean_llm_response_for_resume(response):
     cleaned_json_text = response.replace('\n', '').strip()

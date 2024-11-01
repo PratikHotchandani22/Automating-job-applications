@@ -2,12 +2,13 @@ import streamlit as st
 import asyncio
 from get_job_details_crawl4ai import extract_job_description, extract_job_details
 import json
-from prompt_llm_for_resume import RESUME_PROMPT, SUMMARY_PROMPT, run_llama_prompt, summarize_job_description, parse_response_to_df, save_job_dict_response
+from prompt_llm_for_resume import  run_llama_prompt, summarize_job_description, parse_response_to_df
 from supabase_backend import create_supabase_connection, chunk_data, insert_data_into_table, fetch_data_from_table
 from create_embeddings import generate_embeddings
 from find_optimal_resume import process_resumes, get_file_paths, find_best_resume
 from supabase_helper_functions import prepare_data_resume, prepare_data_job_description
 import pandas as pd
+from configuration import IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
 
 async def main():
     st.session_state.selected_resumes = pd.DataFrame()
@@ -67,8 +68,8 @@ async def main():
             if st.button("Upload"):
                 # Prepare data and insert into database
                 file_paths = await get_file_paths(uploaded_files)
-                resume_df = await process_resumes(file_paths)  # Step 1: Process resumes
-                updated_resume_df = await generate_embeddings(resume_df, "resume")  # Step 2: Generate embeddings
+                resume_df = await process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, IDENTIFY_DETAILS_FORM_RESUME_MODEL)  # Step 1: Process resumes
+                updated_resume_df = await generate_embeddings(resume_df, EMBEDDING_MODEL , "resume")  # Step 2: Generate embeddings
                 resume_prepared_data = prepare_data_resume(updated_resume_df)
                 response_insert = await insert_data_into_table(supabase_client, "resume_data", resume_prepared_data, batch_size=100)
                 
@@ -97,9 +98,9 @@ async def main():
             with st.expander("Job Description details: "):
                 st.write(job_data)
 
-            # Prompting llm using groq api for llama
-            full_prompt = json.dumps(job_data)
-            llama_response = await run_llama_prompt(full_prompt)
+            # Prompting llm using groq api for llama to identify details from a job description
+            job_data_prompt = json.dumps(job_data)
+            llama_response = await run_llama_prompt(job_data_prompt, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
             print("response generated...")
 
             # Show detailed summary inside an expander:
@@ -108,7 +109,7 @@ async def main():
 
             ## Prompting llm using groq api for job description summarization
             st.write("generating summary..")
-            summary_response = await summarize_job_description(SUMMARY_PROMPT, llama_response, model = "llama3-8b-8192")
+            summary_response = await summarize_job_description(SUMMARY_PROMPT, llama_response, SUMMARIZE_JOB_DESCRIPTION_MODEL)
             st.write("Summary generated..")
             st.write(summary_response)
             
@@ -121,7 +122,7 @@ async def main():
 
 
             ## Generating embedding for job description:
-            job_emb = await generate_embeddings(job_df, "job")  # Step 2: Generate embeddings
+            job_emb = await generate_embeddings(job_df, EMBEDDING_MODEL, "job")  # Step 2: Generate embeddings
             st.write("job emb generated..")
             st.dataframe(job_emb)
             st.session_state.job_emb = job_emb
