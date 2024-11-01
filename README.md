@@ -18,12 +18,14 @@ This repository will contain code that automates my process of applying for jobs
 2. download the necessary packages using the requirements.txt file (Its suggested to use a separate conda environment)
 3. create a file named credentials.py and add the following:
 
-# supabase database credentials
+##### supabase database credentials
 SUPABASE_KEY = ""
+
 SUPABASE_URL = ""
 
-# api keys
+##### api keys
 GROQ_API = ""
+
 OPENAI_API = ""
 
 4. open terminal in the project directory and run this command: streamlit run streamlit_ui.py
