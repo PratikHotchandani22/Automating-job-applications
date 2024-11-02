@@ -11,7 +11,12 @@ import pandas as pd
 from configuration import COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
 
 async def main():
-    st.session_state.selected_resumes = pd.DataFrame()
+    # Initialize session state for resume and job link if they don't exist
+    if "resume" not in st.session_state:
+        st.session_state.resume = None
+    if "job_link" not in st.session_state:
+        st.session_state.job_link = ""
+
     st.session_state.job_emb = pd.DataFrame()
     # Set the title for the app
     st.title("Is This Job for You?")
@@ -38,7 +43,8 @@ async def main():
             if select_all:
                 selected_resumes = resume_names  # Select all resumes if checkbox is checked
                 selected_details = df[df['resume_name'].isin(selected_resumes)]
-                st.session_state.selected_resumes = selected_details
+                #st.session_state.selected_resumes = selected_details
+                st.session_state.resume = selected_details
             else:
                 selected_resumes = st.multiselect("Choose resume(s):", resume_names)
             
@@ -48,7 +54,8 @@ async def main():
                     selected_details = df[df['resume_name'].isin(selected_resumes)]
                     st.write("Selected Resume Details:")
                     st.dataframe(selected_details)  # Display the filtered DataFrame
-                    st.session_state.selected_resumes = selected_details 
+                    #st.session_state.selected_resumes = selected_details 
+                    st.session_state.resume = selected_details
                 else:
                     st.write("No resumes selected.")
         else:
@@ -62,6 +69,7 @@ async def main():
 
             st.write("You have selected the following files:")
             for uploaded_file in uploaded_files:
+                st.session_state.resume = uploaded_file
                 st.write(uploaded_file.name)
             
             # Button to trigger the upload process
@@ -75,18 +83,24 @@ async def main():
                 
                 st.success("Resume uploaded successfully!")
                 st.write(updated_resume_df)  # Display the DataFrame with embeddings
+                st.write("selected resumes are:")
+                st.write(st.session_state.selected_resumes)
 
         
     # Section to input the job URL
     st.subheader("Enter Job URL")
     job_url = st.text_input("Paste the job URL here")
+    st.session_state.job_link = job_url
 
     # Submit button
     if st.button("Submit"):
-        if job_url:
+        if st.session_state.job_link:
             st.write("Extracting job details from the posting..")
-            job_description = await extract_job_description(job_url)
-            job_details = await extract_job_details(job_url)
+
+            st.write("job content: ")
+
+            job_description = await extract_job_description(st.session_state.job_link)
+            job_details = await extract_job_details(st.session_state.job_link)
 
             # Create a dictionary combining both variables
             job_data = {
@@ -101,47 +115,48 @@ async def main():
             # Prompting llm using groq api for llama to identify details from a job description
             job_data_prompt = json.dumps(job_data)
             llama_response = await run_llama_prompt(job_data_prompt, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
-            print("response generated...")
 
             # Show detailed summary inside an expander:
             with st.expander("View detailed summary"):
                 st.write(llama_response)
 
             ## Prompting llm using groq api for job description summarization
-            st.write("generating summary..")
             summary_response = await summarize_job_description(SUMMARY_PROMPT, llama_response, SUMMARIZE_JOB_DESCRIPTION_MODEL)
-            st.write("Summary generated..")
-            st.write(summary_response)
+            with st.expander("View summary"):
+                st.write(summary_response)
             
             
             # Creating a dataframe from the llm response
             job_df = parse_response_to_df(llama_response)
             job_df['job_description'] = json.dumps(job_description)
-            st.write("Parsed response is: ")
-            st.write(job_df)
-
+            
 
             ## Generating embedding for job description:
             job_emb = await generate_embeddings(job_df, EMBEDDING_MODEL, "job")  # Step 2: Generate embeddings
-            st.write("job emb generated..")
-            st.dataframe(job_emb)
+            #st.dataframe(job_emb)
             st.session_state.job_emb = job_emb
             job_prepared_data = prepare_data_job_description(job_emb)
             response_insert = await insert_data_into_table(supabase_client, "job_info", job_prepared_data, batch_size=100)
 
             # Assuming job_emb_df['job_emb'].values[0] is the single embedding vector for the job description
-            best_resume_text, updated_emb_df = find_best_resume(st.session_state.selected_resumes, st.session_state.job_emb)
+            best_resume_text, updated_emb_df = find_best_resume(st.session_state.resume, st.session_state.job_emb)
             # Print the DataFrame with percentage matches
+            
+            st.write("Resume Percentage Match: ")
             st.write(updated_emb_df[['resume_name', 'percentage_match']])
 
             ## Providing suggestions based on selected resume or the restume with the highest match.
             suggestions = await suggest_resume_improvements(SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, PROVIDING_SUGGESTIONS_MODEL)
-            st.write(suggestions)
+            
+            with st.expander("Suggestions: "):
+                st.write(suggestions)
             save_job_dict_response(suggestions, "suggestions")
 
             ## Providing suggestions based on selected resume or the restume with the highest match.
             cover_letter = await prepare_cover_letter(COVER_LETTER_GENERATION_PROMPT, llama_response, best_resume_text, COVER_LETTER_GENERATION_MODEL)
-            st.write(cover_letter)
+            # Show detailed summary inside an expander:
+            with st.expander("Cover letter: "):
+                st.write(cover_letter)
             save_job_dict_response(cover_letter, "cover_letter")
 
             

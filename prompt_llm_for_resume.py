@@ -115,7 +115,6 @@ def parse_response_to_df(response):
     if isinstance(response, str):
         #st.write("Response content:", response)  # Check the actual content of response
         try:
-            st.write("Attempting to decode JSON string...")
             response = json.loads(response)  # Attempt to parse JSON string to dict
         except json.JSONDecodeError as e:
             st.write("Failed to decode JSON. Please check the format of the response.")
