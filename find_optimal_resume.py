@@ -43,11 +43,6 @@ async def process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model
     return pd.DataFrame(all_resumes)
 
 def find_best_resume(resume_df, job_desc_embedding):
-    st.write("finding optimal resume")
-    st.write("resume")
-    st.dataframe(resume_df)
-    st.write("job")
-    st.dataframe(job_desc_embedding)
 
     # Ensure embeddings are numpy arrays
     resume_embeddings = np.vstack(resume_df['resume_embedding'].to_numpy())
