@@ -74,7 +74,9 @@ Instructions:
 1. Respond only with the JSON dictionary containing the keys listed above.
 2. Do not include any commentary, explanations, or assumptions.
 3. List multiple items (like skills and responsibilities) as arrays within the JSON dictionary.
-4. Ensure the JSON is correctly formatted to facilitate easy parsing.
+4. List all the technical keywords mentioned in the job description.
+5. Ensure the JSON is correctly formatted to facilitate easy parsing.
+
 
 Example job description:
 \"\"\"
@@ -153,15 +155,25 @@ COVER_LETTER_GENERATION_MODEL = "llama3-70b-8192"
 
 SUGGESTIONS_JOB_BASED_ON_RESUME = """ 
 You will receive two inputs: resume_text and job_description_text. 
-Your task is to analyze the content of both texts and identify ways to align the resume_text more closely with the 
-job_description_text to improve cosine similarity. Provide recommendations structured in the S-T-A-R format (Situation, Task, Analysis, Result), ensuring each suggestion is brief, confident, and can be easily integrated into the resume. 
+Your task is to analyze both texts to enhance alignment and improve cosine similarity between resume_text and job_description_text.
 
-For each recommendation, specify the Situation and Task from the job_description_text, followed by an Analysis and Result that would fit the tone and structure of resume_text points. Ensure that recommendations are strictly derived from the job description context and formatted to be direct and to the point.
+1. Start by reviewing job_description_text to identify technical keywords. Compare these keywords against the skills section in resume_text. For each missing keyword, suggest where it should be added in the skills category and provide the answer as a list of necessary additions for each section.
+
+2. Identify specific skills, experience, and responsibilities mentioned in the job description but not present in the resume. 
+
+3. Based on these identified skills, experience, and responsibilities, prepare concise, actionable points that can be seamlessly added to the resume.
+
+4. Ensure all suggestions are tailored to reflect the real work experience and achievements in resume_text. Avoid generic or AI-generated language by closely aligning recommendations with actual experience described in the resume.
+
+5. For each recommendation, specify exactly where the update should be made in resume_text, whether in the skills section, specific bullet points under work experience, or any other relevant section.
+
+Except for the skills section part, present each suggestion in the S-T-A-R format (Situation, Task, Analysis, Result), ensuring it is clear, relevant, and immediately usable in the resume.
 
 Inputs provided will be in the format as below:
 "resume_text" : "",
 "job_description_text" : ""
 """
+
 
 COVER_LETTER_GENERATION_PROMPT = """ 
 Act as a professional cover letter crafter. Your task is to draft a personalized cover letter based on the inputs provided: resume_text and job_description_text.
