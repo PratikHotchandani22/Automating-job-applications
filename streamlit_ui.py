@@ -97,8 +97,6 @@ async def main():
         if st.session_state.job_link:
             st.write("Extracting job details from the posting..")
 
-            st.write("job content: ")
-
             job_description = await extract_job_description(st.session_state.job_link)
             job_details = await extract_job_details(st.session_state.job_link)
 
@@ -108,23 +106,23 @@ async def main():
                 "job_details": job_details
             }
 
+
             # Show detailed summary inside an expander:
-            with st.expander("Job Description details: "):
-                st.write(job_data)
+            #with st.expander("Job Description details: "):
+            #    st.write(job_data)
 
             # Prompting llm using groq api for llama to identify details from a job description
             job_data_prompt = json.dumps(job_data)
             llama_response = await run_llama_prompt(job_data_prompt, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
 
             # Show detailed summary inside an expander:
-            with st.expander("View detailed summary"):
-                st.write(llama_response)
+            #with st.expander("View detailed summary"):
+            #    st.write(llama_response)
 
             ## Prompting llm using groq api for job description summarization
             summary_response = await summarize_job_description(SUMMARY_PROMPT, llama_response, SUMMARIZE_JOB_DESCRIPTION_MODEL)
-            with st.expander("View summary"):
+            with st.expander("View Summary"):
                 st.write(summary_response)
-            
             
             # Creating a dataframe from the llm response
             job_df = parse_response_to_df(llama_response)

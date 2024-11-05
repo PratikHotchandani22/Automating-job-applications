@@ -29,7 +29,7 @@ async def run_llama_prompt(user_prompt, system_prompt, model):
         llm = ChatGroq(
             api_key = GROQ_API,
             model=model,
-            temperature=0,
+            temperature=0.2,
             max_tokens=None,
             timeout=None,
             max_retries=2,
@@ -80,7 +80,7 @@ async def summarize_job_description(systemPrompt, userPrompt, model):
         llm = ChatGroq(
             api_key = GROQ_API,
             model=model,
-            temperature=0.5,
+            temperature=0,
             max_tokens=None,
             timeout=None,
             max_retries=2,

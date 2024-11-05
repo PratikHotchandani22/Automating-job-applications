@@ -120,11 +120,24 @@ Please provide the job description text from which you require information.
 """
 
 SUMMARY_PROMPT = """
-Summarize the job details provided, starting with whether the position offers
-visa sponsorship. Next, describe the type of role and the ideal candidate profile, including key 
-responsibilities, required skills, and years of experience. Conclude with an explanation of what 
-kind of applicants would be top contenders, highlighting any specific technical and soft skills 
-valued for success in this role."""
+You are an expert summarizer for job roles, providing insights into the perfect summary of the job's requirements. Your job is to clearly summarize the top necessary skills, qualifications, and requirements needed for success in this role.
+
+Summarize the job details provided, addressing the following points in order:
+
+1. Company Overview: Provide summary of what the company does, who could be my clients, is it a product based or service based.
+2. Team: Specify the team this role is for (e.g., "Data Science and Analytics," "Product Engineering").
+3. Location
+4. Visa sponsorship: Indicate if the position offers visa sponsorship. Answer only with "[Yes, No, N/A]".
+5. Years of experience required.
+6. Employment type: Specify if the position is part-time, full-time, or contract-based.
+7. Key skills: List the top 5 skills and qualifications in order of importance. Avoid placing very common skills like Python (and related libraries) or SQL, NLP, as these are assumed to be widely held.
+8. What would me my day to day work would look like (dont halucinate, only provide what is given in responsibilities)?
+
+Important instructions:
+1. Sort the skills and qualifications from most important to least important based on the job description.
+2. Keep the list of skills concise, focusing on distinguishing requirements for this role rather than universally common skills(python, sql, nlp).
+3. Ensure the "Top Contender" description is brief, containing only essential keywords to capture the role's core demands.
+"""
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 
@@ -137,21 +150,6 @@ SUMMARIZE_JOB_DESCRIPTION_MODEL = "llama3-70b-8192"
 PROVIDING_SUGGESTIONS_MODEL = "llama3-70b-8192"
 
 COVER_LETTER_GENERATION_MODEL = "llama3-70b-8192"
-
-SUGGESTIONS_JOB_BASED_ON_RESUME_old = """ 
-You will receive two inputs: resume_text and job_description_text. 
-Your task is to analyze the content of both texts and identify ways to align the resume_text more closely with the 
-job_description_text to improve cosine similarity. For each recommendation, provide specific phrases, keywords, or sections 
-from the job_description_text and suggest how they can be directly incorporated into the resume points in resume_text. 
-
-Your suggestions should be formatted so that they can be seamlessly copy-pasted into the resume without extensive rewriting. 
-Use the format and structure of existing resume points wherever possible, and ensure that your recommendations are 
-strictly based on the job description's context without adding unrelated information.
-
-Inputs provided will be in the format as below:
-"resume_text" : "",
-"job_description_text" : ""
-"""
 
 SUGGESTIONS_JOB_BASED_ON_RESUME = """ 
 You will receive two inputs: resume_text and job_description_text. 
