@@ -127,13 +127,15 @@ You are an expert summarizer for job roles, providing insights into the perfect 
 Summarize the job details provided, addressing the following points in order:
 
 1. Company Overview: Provide summary of what the company does, who could be my clients, is it a product based or service based.
-2. Team: Specify the team this role is for (e.g., "Data Science and Analytics," "Product Engineering").
-3. Location
-4. Visa sponsorship: Indicate if the position offers visa sponsorship. Answer only with "[Yes, No, N/A]".
-5. Years of experience required.
-6. Employment type: Specify if the position is part-time, full-time, or contract-based.
-7. Key skills: List the top 5 skills and qualifications in order of importance. Avoid placing very common skills like Python (and related libraries) or SQL, NLP, as these are assumed to be widely held.
-8. What would me my day to day work would look like (dont halucinate, only provide what is given in responsibilities)?
+2. Role name
+3. Team: Specify the team this role is for (e.g., "Data Science and Analytics," "Product Engineering").
+4. Location
+5. Any security clearance required like (Secret or TS/SCI)? 
+5. Visa sponsorship: Indicate if the position offers visa sponsorship. Answer only with "[Yes, No, N/A]".
+6. Years of experience required.
+7. Employment type: Specify if the position is part-time, full-time, or contract-based.
+8. Key skills: List the top 5 skills and qualifications in order of importance. Avoid placing very common skills like Python (and related libraries) or SQL, NLP, as these are assumed to be widely held.
+9. What would me my day to day work would look like (dont halucinate, only provide what is given in responsibilities)?
 
 Important instructions:
 1. Sort the skills and qualifications from most important to least important based on the job description.
@@ -174,19 +176,18 @@ Inputs provided will be in the format as below:
 "job_description_text" : ""
 """
 
-
-COVER_LETTER_GENERATION_PROMPT = """ 
+COVER_LETTER_GENERATION_PROMPT = """
 Act as a professional cover letter crafter. Your task is to draft a personalized cover letter based on the inputs provided: resume_text and job_description_text.
 
-1. First, identify the **four most important qualities** or skills the job description seeks in an ideal candidate. Use these "four points" as the foundation to highlight my strengths and experiences, showcasing why I am a perfect fit for this role.
-   
-2. Identify the **key challenges or pain points** this position aims to address for the company, and articulate how my skills and experiences position me as an ideal candidate to solve them. Emphasize how my unique contributions would support the company's goals and address these challenges.
+First, identify the four most important qualities or skills the job description seeks in an ideal candidate. Use these "four points" as the foundation to highlight my strengths and experiences, showcasing why I am a perfect fit for this role. Additionally, emphasize any specific skills mentioned in the job description and illustrate how I have successfully applied these skills in relevant experiences.
 
-3. Mention how the **company's values align with my own**, explaining why joining this team would create a mutually beneficial and inspiring partnership.
+Identify the key challenges or pain points this position aims to address for the company, and articulate how my skills and experiences position me as an ideal candidate to solve them. Emphasize how my unique contributions would support the company's goals and address these challenges effectively.
 
-4. Keep the tone **cheerful, enthusiastic, and engaging**. Ensure the cover letter is concise, clear, and crafted in a way that feels genuine and enjoyable to read. Avoid copying directly from my resume; instead, present my experiences in an interesting way that demonstrates my enthusiasm and suitability for the role.
+Mention how the company's values align with my own, explaining why joining this team would create a mutually beneficial and inspiring partnership.
 
-Inputs provided will be in the format as below:
-"resume_text" : "",
-"job_description_text" : ""
+Keep the tone cheerful, enthusiastic, and engaging. Ensure the cover letter is concise, clear, and crafted in a way that feels genuine and enjoyable to read. Avoid copying directly from my resume; instead, present my experiences in an interesting way that demonstrates my enthusiasm and suitability for the role.
+
+Bold the most important keywords, especially the specific skills and qualities mentioned in the job description.
+
+Inputs provided will be in the format as below: "resume_text" : "", "job_description_text" :  
 """

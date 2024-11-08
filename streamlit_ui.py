@@ -83,8 +83,6 @@ async def main():
                 
                 st.success("Resume uploaded successfully!")
                 st.write(updated_resume_df)  # Display the DataFrame with embeddings
-                st.write("selected resumes are:")
-                st.write(st.session_state.selected_resumes)
 
         
     # Section to input the job URL
