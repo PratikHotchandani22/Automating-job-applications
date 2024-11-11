@@ -58,3 +58,23 @@ def prepare_data_job_description(df: pd.DataFrame):
 
     # Return the list of dictionaries (ready for insertion into the database)
     return all_data
+
+def prepare_data_rag(df: pd.DataFrame):
+    # Initialize a list to hold all the prepared data for each row
+    all_data = []
+
+    # Iterate over each row in the DataFrame and corresponding embeddings
+    for idx, row_data in df.iterrows():  # Unpack the index and row data
+        # Prepare the JSON structure for each row, including the embeddings
+        data = {
+            "category": row_data.get("category", None),   # Extract submission_id
+            "title": row_data.get("title", None),  # Handle embedding for summary
+            "text": row_data.get("text", None),   # Extract the summary from the DataFrame
+            "text_embedding": row_data.get("text_embedding", None)   # Extract the summary from the DataFrame
+        }
+
+        # Append the prepared data for this row to the list
+        all_data.append(data)
+
+    # Return the list of dictionaries (ready for insertion into the database)
+    return all_data

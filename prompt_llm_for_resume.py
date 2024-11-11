@@ -4,7 +4,7 @@ from langchain_groq import ChatGroq
 import streamlit as st
 from credentials import GROQ_API
 
-async def run_llama_prompt(user_prompt, system_prompt, model):
+async def run_llama_prompt(user_prompt, system_prompt, model, model_temp = 0.2):
     """
     Function to run a custom prompt on LLaMA 3.1 using the Ollama API.
 
@@ -29,7 +29,7 @@ async def run_llama_prompt(user_prompt, system_prompt, model):
         llm = ChatGroq(
             api_key = GROQ_API,
             model=model,
-            temperature=0.2,
+            temperature= model_temp,
             max_tokens=None,
             timeout=None,
             max_retries=2,

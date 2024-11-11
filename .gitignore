@@ -162,5 +162,5 @@ cython_debug/
 #.idea/
 
 /Extras
-/tmp_dir
+/temp_dir
 credentials.py

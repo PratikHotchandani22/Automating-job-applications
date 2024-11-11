@@ -47,6 +47,7 @@ async def extract_job_description(url):
             job_descriptions = json.loads(result.extracted_content)
             if job_descriptions:
                 print("Extracted job description content")
+                print("job description is: ", job_descriptions)
             else:
                 print("No job description data extracted.")
         except json.JSONDecodeError:
@@ -107,6 +108,8 @@ async def extract_job_details(url):
             job_details = json.loads(result.extracted_content)
             if job_details:
                 print("Extracted job details content")
+                print("job description is: ", job_details)
+
             else:
                 print("No job details data extracted.")
         except json.JSONDecodeError:

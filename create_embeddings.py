@@ -43,6 +43,23 @@ async def generate_embeddings(dataframe, embedding_model, embedding_of):
         dataframe['job_description_embeddings'] = embeddings
         return dataframe
     
+    elif embedding_of == "rag_text":
+        embeddings = []
+        for index, row in dataframe.iterrows():
+            rag_text = row['text']
+            
+            # Generate embeddings using OpenAI API
+            response = openai_client.embeddings.create(
+                input=rag_text,
+                model="text-embedding-3-small"
+            )
+            
+            embeddings.append(response.data[0].embedding)  # Append the embedding for each job
+        
+        # Add embeddings to the DataFrame
+        dataframe['text_embedding'] = embeddings
+        return dataframe
+    
     else:
         return "Incorrect embedding of parameter passed."
 
