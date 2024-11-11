@@ -169,12 +169,27 @@ Your task is to analyze both texts to enhance alignment and improve cosine simil
 
 5. For each recommendation, specify exactly where the update should be made in resume_text, whether in the skills section, specific bullet points under work experience, or any other relevant section.
 
+6. From the RAG data provided, provide a header **Best suggestions from RAG data**, and format the response such that all `text` values for the same `category` and `title` are grouped together. Format the response like this:
+
+**category**
+   - **title**
+     - **text 1**
+     - **text 2**
+     - **text 3**
+     - ...
+
+7. Ensure that all the `text` values for the same category and title are listed under that title, without repeating the category and title for each text.
+
+8. From the actionable points identified in S-T-A-R format, for each point prepare only one line that could be added directly into the resume.
+
 Except for the skills section part, present each suggestion in the S-T-A-R format (Situation, Task, Analysis, Result), ensuring it is clear, relevant, and immediately usable in the resume.
 
 Inputs provided will be in the format as below:
 "resume_text" : "",
-"job_description_text" : ""
+"job_description_text" : "",
+"rag_text" : ""
 """
+
 
 COVER_LETTER_GENERATION_PROMPT = """
 Act as a professional cover letter crafter. Your task is to draft a personalized cover letter based on the inputs provided: resume_text and job_description_text.
@@ -191,3 +206,92 @@ Bold the most important keywords, especially the specific skills and qualities m
 
 Inputs provided will be in the format as below: "resume_text" : "", "job_description_text" :  
 """
+
+RAG_DATA_STRUCTURNG_PROMPT = """
+You are an assistant that formats text data into JSON entries based on specific categories. Each entry contains `category`, `title`, and `text` fields, where `text` may contain multiple sentences or bullet points.
+
+Your task is to:
+
+1. Separate each sentence or bullet point in the `text` field into individual JSON entries.
+2. For each entry, retain the original `category` and `title`, while expanding the `text` so that each line has its own JSON object.
+
+Instructions based on `category`:
+
+- **Work Experience**:
+   - Expand each task or achievement into a separate `text` entry.
+   - Retain metrics, tools, and descriptive elements.
+
+- **Achievements**:
+   - Expand each achievement into its own `text` entry with added context where possible.
+
+- **Skills**:
+   - List each skill individually, specifying its context or application if relevant.
+
+Expected Output Format:
+
+Return a list of JSON strings where each object has the following format:
+{
+  "category": "<category>",
+  "title": "<title>",
+  "text": "<expanded single line of text>"
+}
+Dont return anything else, for example dont return "Here is the processed output in JSON Format"
+For example:
+
+Input:
+[
+  {
+    "category": "Work Experience",
+    "title": "Bose",
+    "text": "• Collected and curated high-quality language data for competitive and tech review analysis from Reddit via API, enhancing data comprehensiveness by 35% for model evaluation. • Integrated metrics collection in an AI interview assistant, capturing detailed insights on user engagement, feature relevance, and satisfaction scores, informing product sentiment analysis."
+  },
+  {
+    "category": "Skills",
+    "title": "Additional Skills",
+    "text": "Python, SQL, Databricks"
+  }
+]
+
+Output:
+[
+  {
+    "category": "Work Experience",
+    "title": "Bose",
+    "text": "Collected and curated high-quality language data for competitive and tech review analysis from Reddit via API."
+  },
+  {
+    "category": "Work Experience",
+    "title": "Bose",
+    "text": "Enhanced data comprehensiveness by 35% to improve model evaluation."
+  },
+  {
+    "category": "Work Experience",
+    "title": "Bose",
+    "text": "Integrated metrics collection in an AI interview assistant."
+  },
+  {
+    "category": "Work Experience",
+    "title": "Bose",
+    "text": "Captured detailed insights on user engagement, feature relevance, and satisfaction scores to inform product sentiment analysis."
+  },
+  {
+    "category": "Skills",
+    "title": "Additional Skills",
+    "text": "Python"
+  },
+  {
+    "category": "Skills",
+    "title": "Additional Skills",
+    "text": "SQL"
+  },
+  {
+    "category": "Skills",
+    "title": "Additional Skills",
+    "text": "Databricks"
+  }
+]
+
+Please process the entire `user_prompt` input according to these instructions and return the expanded output in JSON format.
+"""
+
+RAG_DATA_STRUCTURING_MODEL = "llama3-70b-8192"

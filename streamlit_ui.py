@@ -5,10 +5,10 @@ import json
 from prompt_llm_for_resume import  run_llama_prompt, summarize_job_description, parse_response_to_df, save_job_dict_response
 from supabase_backend import create_supabase_connection, chunk_data, insert_data_into_table, fetch_data_from_table
 from create_embeddings import generate_embeddings
-from find_optimal_resume import process_resumes, get_file_paths, find_best_resume, suggest_resume_improvements, prepare_cover_letter
-from supabase_helper_functions import prepare_data_resume, prepare_data_job_description
+from find_optimal_resume import find_rag_data_match_percentage, process_resumes, get_file_paths, find_best_resume, suggest_resume_improvements, prepare_cover_letter
+from supabase_helper_functions import prepare_data_rag, prepare_data_resume, prepare_data_job_description
 import pandas as pd
-from configuration import COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
+from configuration import RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
 
 async def main():
     # Initialize session state for resume and job link if they don't exist
@@ -16,6 +16,17 @@ async def main():
         st.session_state.resume = None
     if "job_link" not in st.session_state:
         st.session_state.job_link = ""
+
+    # Initialize the session state for form fields if not already initialized
+    if "category" not in st.session_state:
+        st.session_state["category"] = ""
+    if "title" not in st.session_state:
+        st.session_state["title"] = ""
+    if "text" not in st.session_state:
+        st.session_state["text"] = ""
+    
+    if "rag_df" not in st.session_state:
+        st.session_state["rag_df"] = None
 
     st.session_state.job_emb = pd.DataFrame()
     # Set the title for the app
@@ -84,11 +95,108 @@ async def main():
                 st.success("Resume uploaded successfully!")
                 st.write(updated_resume_df)  # Display the DataFrame with embeddings
 
-        
+    # Initialize session state for entries
+    if "entries" not in st.session_state:
+        st.session_state.entries = []
+
+    # Create a checkbox
+    include_rag_data = st.checkbox("Include RAG data")
+
+    # Use the checkbox value to conditionally include RAG data
+    if include_rag_data:
+        st.write("RAG data will be included in the processing.")
+        rag_df = await fetch_data_from_table(supabase_client, 'extra_info')
+        st.session_state["rag_df"] = rag_df
+        #st.write(rag_df)
+
+    else:
+        st.write("RAG data is excluded from the processing.")
+        st.session_state["rag_df"] = None
+
+
+    # Toggle form visibility on button click
+    if st.button("Add Extra Info for RAG System"):
+        st.session_state.form_visible = True  # Show the form
+
+    # Show the form if the button is clicked
+    if "form_visible" in st.session_state and st.session_state.form_visible:
+        with st.form("extra_info_form"):
+            
+
+            # Input fields for category, title, and text
+            category = st.selectbox(
+                "Category",
+                options=["Work Experience", "Project", "Skills", "Achievements", "Certifications"],
+                index=["Work Experience", "Project", "Skills", "Achievements", "Certifications"].index(st.session_state.category) if st.session_state.category else 0
+            )
+            title = st.text_input("Title", help="A short title or name for the entry", value=st.session_state.title)
+            text = st.text_area("Text", help="Detailed description of skills, experience, or project", value=st.session_state.text)
+
+            # Button to add current entry to the current_entries list
+            if st.form_submit_button("Add Entry (+)"):
+                if category and title and text:
+                    # Add the entry to the current session state list for this form
+                    st.session_state.entries.append({
+                        "category": category,
+                        "title": title,
+                        "text": text
+                    })
+
+                    # TODO: Fix this (the inputs are not getting cleared)
+                    # Reset the fields after adding the entry
+                    st.session_state["category"] = ""
+                    st.session_state["title"] = ""
+                    st.session_state["text"] = ""
+
+                    st.success("Entry added. You can add more or submit all entries.")
+
+            # Show current entries for user confirmation
+            st.write("Current Entries:")
+            for entry in st.session_state.entries:
+                st.write(f"- **Category**: {entry['category']}, **Title**: {entry['title']}, **Text**: {entry['text']}")
+
+            # Button to submit all entries at once
+            if st.form_submit_button("Submit All"):
+                # Clear current form entries (not in the main list)
+                #st.session_state.entries.clear()  # Clear current entries
+                st.session_state.form_visible = False  # Hide form after submission
+                #st.write("Prompting llm to structure data properly...")
+                json_entries = json.dumps(st.session_state.entries)
+                structured_rag_data = await run_llama_prompt(json_entries, RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, model_temp= 0)
+                #st.write(structured_rag_data)
+                
+                # Convert the string to a list of dictionaries
+                data_list = json.loads(structured_rag_data)
+
+                # Convert the list of dictionaries to a DataFrame
+                rag_df = pd.DataFrame(data_list)
+                #st.write(rag_df)
+
+
+                # generating embedding of the "text" key in the rag df 
+                #st.write("generating embedding of extra text.")
+                updated_rag_df = await generate_embeddings(rag_df, EMBEDDING_MODEL , "rag_text")  # Step 2: Generate embeddings
+                #st.write(updated_rag_df)
+                rag_prepared_data = prepare_data_rag(updated_rag_df)
+                response_insert = await insert_data_into_table(supabase_client, "extra_info", rag_prepared_data, batch_size=100)
+                st.success("All entries successfully saved!")
+
+                #st.write("inserted data into supabase table: ", response_insert)
+
+                # inserting rag data into subpabase table
+
+                    
+                # Create DataFrame
+                #df = pd.DataFrame(structured_rag_data)
+                #st.write(df)
+                #st.write("All entries: ", st.session_state.entries)
+
     # Section to input the job URL
     st.subheader("Enter Job URL")
     job_url = st.text_input("Paste the job URL here")
     st.session_state.job_link = job_url
+
+
 
     # Submit button
     if st.button("Submit"):
@@ -141,8 +249,20 @@ async def main():
             st.write("Resume Percentage Match: ")
             st.write(updated_emb_df[['resume_name', 'percentage_match']])
 
+            st.write("RAG data percentage Match: ")
+            best_rag_data, updated_rag_df_percentage = find_rag_data_match_percentage(st.session_state["rag_df"], st.session_state.job_emb)
+
+            st.write("best match with rag data: ")
+            best_rag_data = best_rag_data.sort_values(by='percentage_match', ascending=False)
+            best_rag_data = best_rag_data[['category','title','text']]
+            st.write(best_rag_data)
+            #st.write(updated_rag_df_percentage)
+
             ## Providing suggestions based on selected resume or the restume with the highest match.
-            suggestions = await suggest_resume_improvements(SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, PROVIDING_SUGGESTIONS_MODEL)
+            #st.write("rag data passed is: ", best_rag_data['text'])
+            #data_for_rag = best_rag_data[['category','title','text']]
+            rag_data_prompt = best_rag_data.to_json(orient="records")
+            suggestions = await suggest_resume_improvements(SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, rag_data_prompt, PROVIDING_SUGGESTIONS_MODEL)
             
             with st.expander("Suggestions: "):
                 st.write(suggestions)
