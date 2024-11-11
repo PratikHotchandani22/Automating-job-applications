@@ -296,7 +296,7 @@ Please process the entire `user_prompt` input according to these instructions an
 
 RAG_DATA_STRUCTURING_MODEL = "llama3-70b-8192"
 
-IDENTIFY_JOB_DESCRIPTION = """
+IDENTIFY_JOB_DESCRIPTION_PROMPT = """
 Extract the main job description, including qualifications, responsibilities, skills, and any relevant information directly related to the nature of the job role. Do not include company information, application instructions, or compensation details. The output should focus on the key qualifications, tasks, responsibilities, and desired skills listed for the role.
 For the following input, return only the job description section:
 """
