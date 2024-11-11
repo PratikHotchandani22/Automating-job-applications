@@ -8,7 +8,7 @@ from create_embeddings import generate_embeddings
 from find_optimal_resume import find_rag_data_match_percentage, process_resumes, get_file_paths, find_best_resume, suggest_resume_improvements, prepare_cover_letter
 from supabase_helper_functions import prepare_data_rag, prepare_data_resume, prepare_data_job_description
 import pandas as pd
-from configuration import RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
+from configuration import IDENTIFY_JOB_DESCRIPTION, IDENTIFY_JOB_DESCRIPTION_MODEL, RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
 
 async def main():
     # Initialize session state for resume and job link if they don't exist
@@ -16,6 +16,10 @@ async def main():
         st.session_state.resume = None
     if "job_link" not in st.session_state:
         st.session_state.job_link = ""
+    if "job_entry" not in st.session_state:
+        st.session_state.job_entry = ""
+    if "job_data" not in st.session_state:
+        st.session_state.job_data = ""
 
     # Initialize the session state for form fields if not already initialized
     if "category" not in st.session_state:
@@ -191,35 +195,48 @@ async def main():
                 #st.write(df)
                 #st.write("All entries: ", st.session_state.entries)
 
-    # Section to input the job URL
-    st.subheader("Enter Job URL")
-    job_url = st.text_input("Paste the job URL here")
-    st.session_state.job_link = job_url
+    # Select between existing resume or new resume
+    option = st.radio("Choose an option:", ["Provide Job URL", "Enter job description manually"])
 
+    if option == "Provide Job URL":
 
+        # Section to input the job URL
+        #st.subheader("Enter Job URL")
+        job_url = st.text_input("Paste the job URL here")
+        st.session_state.job_link = job_url
+        job_description_input = ""
+    
+    elif option == "Enter job description manually":
+        job_description_input = st.text_area("Paste the job description here", height=200)
+        st.session_state.job_entry = job_description_input
+        st.session_state.job_link = ""
 
     # Submit button
     if st.button("Submit"):
-        if st.session_state.job_link:
-            st.write("Extracting job details from the posting..")
+        if st.session_state.get("job_link", "").strip() or st.session_state.get("job_entry", "").strip():
 
-            job_description = await extract_job_description(st.session_state.job_link)
-            job_details = await extract_job_details(st.session_state.job_link)
+            if st.session_state.get("job_link", "").strip():
+                st.write("Extracting job details from the posting..")
 
-            # Create a dictionary combining both variables
-            job_data = {
-                "job_description": job_description,
-                "job_details": job_details
-            }
+                job_description = await extract_job_description(st.session_state.job_link)
+                job_details = await extract_job_details(st.session_state.job_link)
 
+                # Create a dictionary combining both variables
+                job_data = {
+                    "job_description": job_description,
+                    "job_details": job_details
+                }
 
-            # Show detailed summary inside an expander:
-            #with st.expander("Job Description details: "):
-            #    st.write(job_data)
+                job_data_prompt = json.dumps(job_data)
+                st.session_state.job_data = job_data_prompt
+
+            else:
+                st.session_state.job_data = json.dumps(st.session_state.job_entry)
+                job_description = await run_llama_prompt(st.session_state.job_data, IDENTIFY_JOB_DESCRIPTION, IDENTIFY_JOB_DESCRIPTION_MODEL)
 
             # Prompting llm using groq api for llama to identify details from a job description
-            job_data_prompt = json.dumps(job_data)
-            llama_response = await run_llama_prompt(job_data_prompt, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
+            #job_data_prompt = json.dumps(job_data)
+            llama_response = await run_llama_prompt(st.session_state.job_data, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
 
             # Show detailed summary inside an expander:
             #with st.expander("View detailed summary"):

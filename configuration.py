@@ -130,12 +130,13 @@ Summarize the job details provided, addressing the following points in order:
 2. Role name
 3. Team: Specify the team this role is for (e.g., "Data Science and Analytics," "Product Engineering").
 4. Location
-5. Any security clearance required like (Secret or TS/SCI)? 
-5. Visa sponsorship: Indicate if the position offers visa sponsorship. Answer only with "[Yes, No, N/A]".
-6. Years of experience required.
-7. Employment type: Specify if the position is part-time, full-time, or contract-based.
-8. Key skills: List the top 5 skills and qualifications in order of importance. Avoid placing very common skills like Python (and related libraries) or SQL, NLP, as these are assumed to be widely held.
-9. What would me my day to day work would look like (dont halucinate, only provide what is given in responsibilities)?
+5. Salary
+6. Any security clearance required like (Secret or TS/SCI)? 
+7. Visa sponsorship: Indicate if the position offers visa sponsorship. Answer only with "[Yes, No, N/A]".
+8. Years of experience required.
+9. Employment type: Specify if the position is part-time, full-time, or contract-based.
+10. Key skills: List the top 5 skills and qualifications in order of importance. Avoid placing very common skills like Python (and related libraries) or SQL, NLP, as these are assumed to be widely held.
+11. What would me my day to day work would look like (dont halucinate, only provide what is given in responsibilities)?
 
 Important instructions:
 1. Sort the skills and qualifications from most important to least important based on the job description.
@@ -189,7 +190,6 @@ Inputs provided will be in the format as below:
 "job_description_text" : "",
 "rag_text" : ""
 """
-
 
 COVER_LETTER_GENERATION_PROMPT = """
 Act as a professional cover letter crafter. Your task is to draft a personalized cover letter based on the inputs provided: resume_text and job_description_text.
@@ -295,3 +295,10 @@ Please process the entire `user_prompt` input according to these instructions an
 """
 
 RAG_DATA_STRUCTURING_MODEL = "llama3-70b-8192"
+
+IDENTIFY_JOB_DESCRIPTION = """
+Extract the main job description, including qualifications, responsibilities, skills, and any relevant information directly related to the nature of the job role. Do not include company information, application instructions, or compensation details. The output should focus on the key qualifications, tasks, responsibilities, and desired skills listed for the role.
+For the following input, return only the job description section:
+"""
+
+IDENTIFY_JOB_DESCRIPTION_MODEL = "llama3-70b-8192"
