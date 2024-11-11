@@ -27,6 +27,7 @@ def prepare_data_job_description(df: pd.DataFrame):
     for idx, row_data in df.iterrows():
         # Prepare the JSON structure for each row, matching the database columns
         data = {
+            "job_link" : row_data.get("job_link",None),
             "company_name": row_data.get("company_name", None),
             "position_name": row_data.get("position_name", None),
             "seniority_level": row_data.get("seniority_level", None),

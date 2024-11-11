@@ -233,6 +233,7 @@ async def main():
             # Creating a dataframe from the llm response
             job_df = parse_response_to_df(llama_response)
             job_df['job_description'] = json.dumps(job_description)
+            job_df['job_link'] = st.session_state.job_link
             
 
             ## Generating embedding for job description:
