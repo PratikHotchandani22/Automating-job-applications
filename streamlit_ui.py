@@ -9,6 +9,9 @@ from find_optimal_resume import find_rag_data_match_percentage, process_resumes,
 from supabase_helper_functions import prepare_data_rag, prepare_data_resume, prepare_data_job_description
 import pandas as pd
 from configuration import IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPTION_MODEL, RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
+from helper_functions import save_as_pdf, save_as_docx
+from streamlit_quill import st_quill
+
 
 async def main():
     # Initialize session state for resume and job link if they don't exist
@@ -20,6 +23,8 @@ async def main():
         st.session_state.job_entry = ""
     if "job_data" not in st.session_state:
         st.session_state.job_data = ""
+    if "cover_letter" not in st.session_state:
+        st.session_state.cover_letter = " empty cover letter"    
 
     # Initialize the session state for form fields if not already initialized
     if "category" not in st.session_state:
@@ -196,7 +201,7 @@ async def main():
                 #st.write("All entries: ", st.session_state.entries)
 
     # Select between existing resume or new resume
-    option = st.radio("Choose an option:", ["Provide Job URL", "Enter job description manually"])
+    option = st.radio("Choose an option:", ["Provide Job URL (works only for Glassdoor urls)", "Enter job description manually"])
 
     if option == "Provide Job URL":
 
@@ -212,6 +217,7 @@ async def main():
         st.session_state.job_link = ""
 
     # Submit button
+    
     if st.button("Submit"):
         if st.session_state.get("job_link", "").strip() or st.session_state.get("job_entry", "").strip():
 
@@ -237,10 +243,6 @@ async def main():
             # Prompting llm using groq api for llama to identify details from a job description
             #job_data_prompt = json.dumps(job_data)
             llama_response = await run_llama_prompt(st.session_state.job_data, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
-
-            # Show detailed summary inside an expander:
-            #with st.expander("View detailed summary"):
-            #    st.write(llama_response)
 
             ## Prompting llm using groq api for job description summarization
             summary_response = await summarize_job_description(SUMMARY_PROMPT, llama_response, SUMMARIZE_JOB_DESCRIPTION_MODEL)
@@ -272,13 +274,11 @@ async def main():
 
             st.write("best match with rag data: ")
             best_rag_data = best_rag_data.sort_values(by='percentage_match', ascending=False)
-            best_rag_data = best_rag_data[['category','title','text']]
             st.write(best_rag_data)
+            best_rag_data = best_rag_data[['category','title','text']]
             #st.write(updated_rag_df_percentage)
 
             ## Providing suggestions based on selected resume or the restume with the highest match.
-            #st.write("rag data passed is: ", best_rag_data['text'])
-            #data_for_rag = best_rag_data[['category','title','text']]
             rag_data_prompt = best_rag_data.to_json(orient="records")
             suggestions = await suggest_resume_improvements(SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, rag_data_prompt, PROVIDING_SUGGESTIONS_MODEL)
             
@@ -287,14 +287,37 @@ async def main():
             save_job_dict_response(suggestions, "suggestions")
 
             ## Providing suggestions based on selected resume or the restume with the highest match.
-            cover_letter = await prepare_cover_letter(COVER_LETTER_GENERATION_PROMPT, llama_response, best_resume_text, COVER_LETTER_GENERATION_MODEL)
+            st.session_state.cover_letter = await prepare_cover_letter(COVER_LETTER_GENERATION_PROMPT, llama_response, best_resume_text, COVER_LETTER_GENERATION_MODEL)
+            
             # Show detailed summary inside an expander:
             with st.expander("Cover letter: "):
-                st.write(cover_letter)
-            save_job_dict_response(cover_letter, "cover_letter")
+               st.write(st.session_state.cover_letter)
 
-            
+            save_job_dict_response(st.session_state.cover_letter, "cover_letter")
 
+            # Add download buttons
+            st.write("Download Cover Letter:")
+            #cover_letter_string = json.dumps(cover_letter)
+            # Generate files
+            pdf_data = save_as_pdf(st.session_state.cover_letter)
+            docx_data = save_as_docx(st.session_state.cover_letter)
+
+            # Add download buttons with unique keys
+            st.download_button(
+                label="Download as PDF",
+                data=pdf_data,
+                file_name="cover_letter.pdf",
+                mime="application/pdf",
+                key="download_pdf"
+            )
+
+            st.download_button(
+                label="Download as Word Document",
+                data=docx_data,
+                file_name="cover_letter.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="download_docx"
+            )
             
         else:
             st.error("Please upload at least one resume and provide a job URL before submitting.")

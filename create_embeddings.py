@@ -3,7 +3,7 @@ import pandas as pd
 import pandas as pd
 from openai import OpenAI
 from credentials import OPENAI_API
-
+import streamlit as st
 
 async def generate_embeddings(dataframe, embedding_model, embedding_of):
     # Ensure that OpenAI API client is set up
