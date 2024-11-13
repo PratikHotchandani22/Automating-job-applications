@@ -73,7 +73,6 @@ def find_rag_data_match_percentage(rag_df, job_desc_embedding):
     #best_rag_data = best_rag_row['text']  # Extract the rag text
     return best_rag_data, rag_df  # Return best match rag text and full DataFrame with percentage matches
 
-
 async def get_file_paths(uploaded_files):
     file_paths = []
     

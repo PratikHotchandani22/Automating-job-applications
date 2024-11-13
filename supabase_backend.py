@@ -3,13 +3,13 @@ from supabase import create_client, Client
 import asyncio
 from itertools import islice
 import pandas as pd
+import streamlit as st
 
 # Initialize the client
 async def create_supabase_connection():
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     print("Supabase connection created: ", supabase)
     return supabase
-
 
 # Function to split the data into batches of a specific size
 def chunk_data(data, batch_size):
@@ -35,8 +35,6 @@ async def insert_data_into_table(supabase, table_name, job_data_json, batch_size
     except Exception as e:
         print(f"Error during insertion: {e}")
         raise
-
-
 
 # Fetch information from the database  
 async def fetch_data_from_table(supabase, table_name):

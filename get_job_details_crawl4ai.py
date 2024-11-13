@@ -2,6 +2,7 @@ import json
 import asyncio
 from crawl4ai import AsyncWebCrawler
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+import streamlit as st
 
 def main_get_job_link():
     job_link = input("Please share the job link that you want the details from\n")

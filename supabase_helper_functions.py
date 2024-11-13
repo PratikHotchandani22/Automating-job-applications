@@ -1,4 +1,5 @@
 import pandas as pd
+import streamlit as st
 
 def prepare_data_resume(df: pd.DataFrame):
     # Initialize a list to hold all the prepared data for each row

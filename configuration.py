@@ -127,16 +127,18 @@ You are an expert summarizer for job roles, providing insights into the perfect 
 Summarize the job details provided, addressing the following points in order:
 
 1. Company Overview: Provide summary of what the company does, who could be my clients, is it a product based or service based.
-2. Role name
-3. Team: Specify the team this role is for (e.g., "Data Science and Analytics," "Product Engineering").
-4. Location
-5. Salary
-6. Any security clearance required like (Secret or TS/SCI)? 
-7. Visa sponsorship: Indicate if the position offers visa sponsorship. Answer only with "[Yes, No, N/A]".
-8. Years of experience required.
-9. Employment type: Specify if the position is part-time, full-time, or contract-based.
-10. Key skills: List the top 5 skills and qualifications in order of importance. Avoid placing very common skills like Python (and related libraries) or SQL, NLP, as these are assumed to be widely held.
-11. What would me my day to day work would look like (dont halucinate, only provide what is given in responsibilities)?
+2. Role name 
+3. Last date to apply for this role.
+4. Joining date.
+5. Team: Specify the team this role is for (e.g., "Data Science and Analytics," "Product Engineering").
+6. Location
+7. Salary
+8. Any security clearance required like (Secret or TS/SCI)? 
+9. Visa sponsorship: Indicate if the position offers visa sponsorship. Answer only with "[Yes, No, N/A]".
+10. Years of experience required.
+11. Employment type: Specify if the position is part-time, full-time, or contract-based.
+12. Key skills: List the top 5 skills and qualifications in order of importance. Avoid placing very common skills like Python (and related libraries) or SQL, NLP, as these are assumed to be widely held.
+13. What would me my day to day work would look like (dont halucinate, only provide what is given in responsibilities)?
 
 Important instructions:
 1. Sort the skills and qualifications from most important to least important based on the job description.
