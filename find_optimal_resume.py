@@ -5,6 +5,7 @@ from resume_text import extract_text_from_docx, extract_resume_sections_langchai
 from sklearn.metrics.pairwise import cosine_similarity
 from prompt_llm_for_resume import run_llama_prompt
 import streamlit as st
+from prompt_openai import run_openai_chat_completion
 
 TEMP_DIR = "temp_dir"
 os.makedirs(TEMP_DIR, exist_ok=True)  # This will create the directory if it does not exist
@@ -85,7 +86,7 @@ async def get_file_paths(uploaded_files):
 
     return file_paths
 
-async def suggest_resume_improvements(system_prompt, structured_job_data, resume_text, rag_text, model_name):
+async def suggest_resume_improvements(openai_client, system_prompt, structured_job_data, resume_text, rag_text, model_name, model_temp):
     
     ## Construct a user_prompt that will have structure job description 
     # Convert all columns in the job description DataFrame to a single text string
@@ -97,12 +98,13 @@ async def suggest_resume_improvements(system_prompt, structured_job_data, resume
     "job_description_text" : "{structured_job_data}",
     "rag_text" : "{rag_text}",
     '''
+    
     # Generate suggestions using the LLaMA model
-    suggestions = await run_llama_prompt(user_prompt, system_prompt ,model_name)
+    suggestions = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
     
     return suggestions
 
-async def prepare_cover_letter(system_prompt, llama_response, best_resume_text, model_name):
+async def prepare_cover_letter(openai_client, system_prompt, llama_response, best_resume_text, model_name, model_temp):
 
     ## Construct a user_prompt that will have structure job description 
     # Convert all columns in the job description DataFrame to a single text string
@@ -113,8 +115,9 @@ async def prepare_cover_letter(system_prompt, llama_response, best_resume_text, 
     "resume_text" : "{best_resume_text}",
     "job_description_text" : "{llama_response}"
     '''
+    input_text = system_prompt + user_prompt
 
     # Generate suggestions using the LLaMA model
-    cover_letter = await run_llama_prompt(user_prompt, system_prompt ,model_name)
+    cover_letter = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
     
     return cover_letter
