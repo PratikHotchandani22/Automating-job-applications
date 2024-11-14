@@ -52,7 +52,10 @@ Please extract and label the following details:
     "Joining date": null,
     "Team name": null,
     "Location": null,
+    "Reference job code: : null, 
     "Salary": null,
+    "Hiring Manager": null,
+    "Email address to contant" : null,
     "Hybrid or Remote?": null,
     "Company description": null,
     "Team description": null,
@@ -122,91 +125,142 @@ Please provide the job description text from which you require information.
 """
 
 SUMMARY_PROMPT = """
-You are an expert summarizer for job roles, providing insights into the perfect summary of the job's requirements. Your job is to clearly summarize the top necessary skills, qualifications, and requirements needed for success in this role.
+You are an expert summarizer for job roles. Your task is to clearly and accurately extract all necessary details from the job posting, even if they are embedded in less structured text. Ensure no important detail is overlooked, especially critical application instructions or role-specific information. Summarize the job details provided, addressing the following points in order:
 
-Summarize the job details provided, addressing the following points in order:
+1. **Company Overview:** Summarize what the company does, its primary industry, potential clients, and whether it is product-based or service-based.
+2. **Role Name and Reference Job Code:** Identify the role name and any reference job code provided. For the reference job code, look into Application Instruction section of the input. If not specified, explicitly state "Not provided."
+3. **Last Date to Apply:** Extract the last date to apply. If not mentioned, state "Not specified."
+4. **Joining Date:** Include the joining date if available. Otherwise, state "Not specified."
+5. **Team:** Specify the team this role is associated with (e.g., "Data Science and Analytics," "Product Engineering"). If not mentioned, state "Not specified."
+6. **Location:** Clearly state the job location, including remote or hybrid work options if mentioned.
+7. **Salary:** Include the salary or range if provided. Otherwise, state "Not specified."
+8. **Hiring Manager:** Identify the hiring manager's name if mentioned. Otherwise, state "Not provided."
+9. **Email Address or Contact Information:** Extract any email address or specific instructions to apply (e.g., mailing address, online form). Ensure this is not missed. Look into Application Instruction section of the input to find the value.
+10. **Security Clearance Required:** Note if a security clearance is needed (e.g., "Secret," "TS/SCI"). If not mentioned, state "Not specified."
+11. **Visa Sponsorship:** Specify if visa sponsorship is available. Answer with "[Yes, No, N/A]."
+12. **Years of Experience Required:** Clearly state the number of years of experience required for the role.
+13. **Employment Type:** Specify whether the position is part-time, full-time, or contract-based.
+14. **Key Skills:** List the top 5 most important skills and qualifications in order of priority. Exclude universally common skills like Python, SQL, and NLP unless they are explicitly emphasized.
+15. **Day-to-Day Responsibilities:** Summarize the main responsibilities as described in the job posting. Avoid hallucinating; include only what is explicitly mentioned.
 
-1. Company Overview: Provide summary of what the company does, who could be my clients, is it a product based or service based.
-2. Role name 
-3. Last date to apply for this role.
-4. Joining date.
-5. Team: Specify the team this role is for (e.g., "Data Science and Analytics," "Product Engineering").
-6. Location
-7. Salary
-8. Any security clearance required like (Secret or TS/SCI)? 
-9. Visa sponsorship: Indicate if the position offers visa sponsorship. Answer only with "[Yes, No, N/A]".
-10. Years of experience required.
-11. Employment type: Specify if the position is part-time, full-time, or contract-based.
-12. Key skills: List the top 5 skills and qualifications in order of importance. Avoid placing very common skills like Python (and related libraries) or SQL, NLP, as these are assumed to be widely held.
-13. What would me my day to day work would look like (dont halucinate, only provide what is given in responsibilities)?
+### **Important Instructions:**
+- Pay extra attention to extracting details like the reference job code, email address, and specific application instructions. If any of these details are provided but unclear, ensure they are captured accurately.
+- Sort the skills and qualifications by importance, focusing on distinguishing requirements for this role over general ones.
+- If a detail is genuinely missing, explicitly state "Not provided" or "Not specified" to ensure clarity.
+- Provide the output as a clear and concise summary in a readable format.
 
-Important instructions:
-1. Sort the skills and qualifications from most important to least important based on the job description.
-2. Keep the list of skills concise, focusing on distinguishing requirements for this role rather than universally common skills(python, sql, nlp).
-3. Ensure the "Top Contender" description is brief, containing only essential keywords to capture the role's core demands.
 """
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 
-IDENTIFY_DETAILS_FORM_RESUME_MODEL = "llama-3.1-8b-instant"
+IDENTIFY_DETAILS_FORM_RESUME_MODEL = "gpt-4o-mini"
 
-IDENTIFY_DETAILS_FROM_JOB_MODEL = "llama-3.1-8b-instant"
+IDENTIFY_DETAILS_FROM_JOB_MODEL = "gpt-4o-mini"
 
-SUMMARIZE_JOB_DESCRIPTION_MODEL = "llama3-70b-8192"
+SUMMARIZE_JOB_DESCRIPTION_MODEL = "gpt-4o-mini"
 
-PROVIDING_SUGGESTIONS_MODEL = "llama3-70b-8192"
+PROVIDING_SUGGESTIONS_MODEL = "gpt-4o-mini"
 
-COVER_LETTER_GENERATION_MODEL = "llama3-70b-8192"
+COVER_LETTER_GENERATION_MODEL = "gpt-4o-mini"
 
-SUGGESTIONS_JOB_BASED_ON_RESUME = """ 
-You will receive two inputs: resume_text and job_description_text. 
-Your task is to analyze both texts to enhance alignment and improve cosine similarity between resume_text and job_description_text.
+SUGGESTIONS_JOB_BASED_ON_RESUME = """
+Analyze the following inputs:  
+- `resume_text`: [Insert resume text]  
+- `job_description_text`: [Insert job description text]  
+- `rag_text`: [Insert RAG text, if any]  
 
-1. Start by reviewing job_description_text to identify technical keywords. Compare these keywords against the skills section in resume_text. For each missing keyword, suggest where it should be added in the skills category and provide the answer as a list of necessary additions for each section.
+Perform the following tasks step-by-step:  
 
-2. Identify specific skills, experience, and responsibilities mentioned in the job description but not present in the resume. 
+### 1. Technical Keyword Analysis  
+- Extract technical keywords from `job_description_text` and compare them with the skills section in `resume_text`.  
+- Identify only the missing keywords that are not present in the skills section of `resume_text`.  
+- Suggest where these missing keywords should be added, providing a list formatted as:  
+  - **Skills Section Additions**:  
+    - [Missing Skill 1]: Add under [sub-section, if applicable].  
+    - [Missing Skill 2]: Add under [sub-section, if applicable]. 
 
-3. Based on these identified skills, experience, and responsibilities, prepare concise, actionable points that can be seamlessly added to the resume.
+Give only missing keywords in response.
+---
 
-4. Ensure all suggestions are tailored to reflect the real work experience and achievements in resume_text. Avoid generic or AI-generated language by closely aligning recommendations with actual experience described in the resume.
+### 2. Skill, Experience, and Responsibility Gap Analysis  
+- Identify skills, experiences, or responsibilities mentioned in `job_description_text` that are not present in `resume_text`.  
 
-5. For each recommendation, specify exactly where the update should be made in resume_text, whether in the skills section, specific bullet points under work experience, or any other relevant section.
+---
 
-6. From the RAG data provided, provide a header **Best suggestions from RAG data**, and format the response such that all `text` values for the same `category` and `title` are grouped together. Format the response like this:
+### 3. Best Suggestions from RAG Data (if applicable)  
+- If `rag_text` is provided, review its `text` values grouped by `category` and `title`. Group all texts under the same `category` and `title` as follows:  
+  - **[Category] - [Title]**:  
+    - [Grouped RAG text values]  
 
-**category**
-   - **title**
-     - **text 1**
-     - **text 2**
-     - **text 3**
-     - ...
+---
 
-7. Ensure that all the `text` values for the same category and title are listed under that title, without repeating the category and title for each text.
+### 4. Cross-reference RAG Data with Missing Skills  
+- Match identified gaps from step 2 with the provided `rag_text`. Indicate if the missing skills, experiences, or responsibilities are covered in the RAG data.  
 
-8. From the actionable points identified in S-T-A-R format, for each point prepare only one line that could be added directly into the resume.
+---
 
-Except for the skills section part, present each suggestion in the S-T-A-R format (Situation, Task, Analysis, Result), ensuring it is clear, relevant, and immediately usable in the resume.
+### 5. Achievement Framework  
+- For each identified gap or enhancement (from steps 2 and 4), draft impactful accomplishment statements using the framework:  
+  - "Accomplished [X] as measured by [Y] by doing [Z]."  
 
-Inputs provided will be in the format as below:
-"resume_text" : "",
-"job_description_text" : "",
-"rag_text" : ""
+- Ensure each statement:  
+  1. **Includes quantifiable metrics**: Specify measurable impacts like percentages (e.g., "20% improvement"), reductions (e.g., "40% reduction"), or absolute figures (e.g., "100K+ dataset").  
+  2. **Is concise**: Limit each statement to one line, avoiding unnecessary repetition or wordiness.  
+  3. **Highlights technical expertise**: Name tools, methods, or frameworks used (e.g., Databricks, Pinecone, OpenAI).  
+  4. **Uses actionable verbs**: Start statements with strong action verbs like "Enhanced," "Created," "Streamlined," or "Optimized."  
+  5. **Focuses on impact**: Clearly articulate the result or value added (e.g., improved performance, reduced costs, or increased efficiency).  
+
+- Align each statement with real experiences or achievements from `resume_text` and `rag_text`. Ensure the final points stand out to technical reviewers by being clear, impactful, and results-driven.  
+
+
+---
+
+### 7. Notes  
+- Ensure suggestions are tailored and reflect authentic experiences described in `resume_text` or `rag_text`. Avoid generic statements.  
+- Dont provide any response from model for this note.
+---
+
+**Inputs:**  
+`resume_text`: [Insert resume here]  
+`job_description_text`: [Insert job description here]  
+`rag_text`: [Insert RAG data here]  
+
+**Output:**  
+Provide a structured response following the above instructions, ensuring actionable and meaningful recommendations to improve alignment and enhance cosine similarity between the resume and job description.  
 """
 
 COVER_LETTER_GENERATION_PROMPT = """
-Act as a professional cover letter crafter. Your task is to draft a personalized cover letter based on the inputs provided: resume_text and job_description_text.
+Act as a professional cover letter crafter. Your task is to draft a highly personalized and engaging cover letter based on the inputs provided: resume_text and job_description_text.
 
-First, identify the four most important qualities or skills the job description seeks in an ideal candidate. Use these "four points" as the foundation to highlight my strengths and experiences, showcasing why I am a perfect fit for this role. Additionally, emphasize any specific skills mentioned in the job description and illustrate how I have successfully applied these skills in relevant experiences.
+1. **Focus on Alignment with the Role:**  
+   - Identify the four most important qualities, skills, or qualifications mentioned in the job description. Use these as the foundation to craft a narrative that highlights my strengths, experiences, and unique value to the role.  
+   - Showcase how I have successfully applied these skills in relevant past experiences, using specific examples to make the narrative impactful and engaging.
 
-Identify the key challenges or pain points this position aims to address for the company, and articulate how my skills and experiences position me as an ideal candidate to solve them. Emphasize how my unique contributions would support the company's goals and address these challenges effectively.
+2. **Address Company-Specific Challenges:**  
+   - Analyze the job description to identify key challenges or pain points the role seeks to address. Clearly articulate how my skills, experiences, and problem-solving abilities position me as the ideal candidate to tackle these challenges.  
+   - Include a brief mention of industry or role-related trends (if applicable) to demonstrate a forward-looking approach.
 
-Mention how the company's values align with my own, explaining why joining this team would create a mutually beneficial and inspiring partnership.
+3. **Demonstrate Enthusiasm and Cultural Fit:**  
+   - Reflect the company’s values and culture, explaining why I am excited about joining the organization and how this aligns with my personal and professional goals.  
+   - Express genuine enthusiasm for contributing to the company’s mission and team while maintaining a tone of confidence and professionalism.  
 
-Keep the tone cheerful, enthusiastic, and engaging. Ensure the cover letter is concise, clear, and crafted in a way that feels genuine and enjoyable to read. Avoid copying directly from my resume; instead, present my experiences in an interesting way that demonstrates my enthusiasm and suitability for the role.
+4. **Compelling Structure and Tone:**  
+   - Begin with an attention-grabbing introduction that conveys my excitement for the role and highlights what I bring to the table.  
+   - Use the body paragraphs to illustrate my top skills, accomplishments, and how they address the company’s specific needs.  
+   - Conclude with a summary of my value, a thank-you to the hiring manager, and a call-to-action for the next step (e.g., an interview).  
 
-Bold the most important keywords, especially the specific skills and qualities mentioned in the job description.
+5. **Avoid Resume Repetition:**  
+   - Do not copy directly from my resume. Instead, present my experiences in an engaging, story-like manner that demonstrates my impact and suitability for the role.  
 
-Inputs provided will be in the format as below: "resume_text" : "", "job_description_text" :  
+6. **Formatting and Style:**  
+   - Use a cheerful, enthusiastic, and professional tone that feels genuine and enjoyable to read.  
+   - Ensure the letter is concise, clear, and skimmable, keeping it brief enough to read at a glance.  
+   - Bold the most important keywords and phrases, especially those related to the specific skills and qualities mentioned in the job description.
+
+Inputs provided will be in the following format:  
+"resume_text": "",  
+"job_description_text": ""  
+
 """
 
 RAG_DATA_STRUCTURNG_PROMPT = """
@@ -296,11 +350,14 @@ Output:
 Please process the entire `user_prompt` input according to these instructions and return the expanded output in JSON format.
 """
 
-RAG_DATA_STRUCTURING_MODEL = "llama3-70b-8192"
+RAG_DATA_STRUCTURING_MODEL = "gpt-4o-mini"
 
 IDENTIFY_JOB_DESCRIPTION_PROMPT = """
-Extract the main job description, including qualifications, responsibilities, skills, and any relevant information directly related to the nature of the job role. Do not include company information, application instructions, or compensation details. The output should focus on the key qualifications, tasks, responsibilities, and desired skills listed for the role.
+Act as a professional job posting analyzer. Your task is to process the provided text and extract all relevant and meaningful information about the job and the company, even if the text includes irrelevant or repetitive content. Filter out any unnecessary data (such as ads, promotional messages, unrelated links, or redundant instructions) and focus only on the details that matter.
+Your goal is to ensure no valuable information is missed, specially information related to hiring manager and their contact information.
 For the following input, return only the job description section:
 """
 
-IDENTIFY_JOB_DESCRIPTION_MODEL = "llama3-70b-8192"
+IDENTIFY_JOB_DESCRIPTION_MODEL = "gpt-4o-mini"
+
+
