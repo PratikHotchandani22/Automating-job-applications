@@ -163,41 +163,6 @@ PROVIDING_SUGGESTIONS_MODEL = "gpt-4o-mini"
 
 COVER_LETTER_GENERATION_MODEL = "gpt-4o-mini"
 
-SUGGESTIONS_JOB_BASED_ON_RESUME_old = """ 
-You will receive three inputs: resume_text, job_description_text and rag_text. 
-Your task is to analyze all the provided input texts to enhance alignment and improve cosine similarity between resume_text and job_description_text.
-
-1. Start by reviewing job_description_text to identify technical keywords. Compare these keywords against the skills section in resume_text. For each missing keyword, suggest where it should be added in the skills category and provide the answer as a list of necessary additions for each section.
-
-2. Identify specific skills, experience, and responsibilities mentioned in the job description but not present in the resume. 
-
-3. Based on these identified skills, experience, and responsibilities, prepare concise, actionable points that can be seamlessly added to the resume.
-
-4. Ensure all suggestions are tailored to reflect the real work experience and achievements in resume_text. Avoid generic or AI-generated language by closely aligning recommendations with actual experience described in the resume.
-
-5. For each recommendation, specify exactly where the update should be made in resume_text, whether in the skills section, specific bullet points under work experience, or any other relevant section.
-
-6. Only if there is any RAG data provided, provide a header **Best suggestions from RAG data**, and format the response such that all `text` values for the same `category` and `title` are grouped together. Format the response like this:
-
-**category**
-   - **title**
-     - **text 1**
-     - **text 2**
-     - **text 3**
-     - ...
-
-7. Ensure that all the `text` values for the same category and title are listed under that title, without repeating the category and title for each text.
-
-8. From the actionable points identified in S-T-A-R format, for each point prepare only one line that could be added directly into the resume.
-
-Except for the skills section part, present each suggestion in the S-T-A-R format (Situation, Task, Analysis, Result), ensuring it is clear, relevant, and immediately usable in the resume.
-
-Inputs provided will be in the format as below:
-"resume_text" : "",
-"job_description_text" : "",
-"rag_text" : ""
-"""
-
 SUGGESTIONS_JOB_BASED_ON_RESUME = """
 Analyze the following inputs:  
 - `resume_text`: [Insert resume text]  
