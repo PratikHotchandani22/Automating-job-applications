@@ -3,42 +3,34 @@ from openai import OpenAI
 from credentials import OPENAI_API
 import asyncio
 
-# Initialize the OpenAI client
-async def initialize_openai_client():
-    client = OpenAI(api_key=OPENAI_API)
-    return client
 
-async def main():
-    openai_client = await initialize_openai_client()
+async def generate_ui():
 
     # Initialize session state for messages and job description
     if "messages" not in st.session_state:
         st.session_state.messages = [
             {"role": "system", "content": "You are a helpful assistant specialized in answering questions based on a specific job description. Only provide information directly related to the given job description. If a question is not relevant to the job description, politely inform the user that you can only answer questions about the provided job description."}
         ]
-    if "job_description" not in st.session_state:
-        st.session_state.job_description = ""
+    if "job_data" not in st.session_state:
+        st.session_state.job_data = ""  # Initialize job data as empty
 
-    # Streamlit app layout
     st.title("Job Description QA Chatbot")
     st.caption("Provide a job description, and I'll answer questions related to it.")
 
     # Job description input
-    with st.sidebar:
-        st.header("Job Description")
-        job_desc_input = st.text_area(
-            "Paste the job description here:",
-            value=st.session_state.job_description,
-            height=300,
-        )
-        if st.button("Update Job Description"):
-            st.session_state.job_description = job_desc_input
-            st.session_state.messages = [
-                {"role": "system", "content": "You are a helpful assistant specialized in answering questions based on a specific job description. Only provide information directly related to the given job description. If a question is not relevant to the job description, politely inform the user that you can only answer questions about the provided job description."},
-                {"role": "user", "content": f"Here's the job description:\n\n{job_desc_input}\n\nPlease answer questions based only on this job description."},
-                {"role": "assistant", "content": "Understood. I will answer questions based solely on the provided job description. How may I assist you?"}
-            ]
-            st.success("Job description updated!")
+    job_desc_input = st.text_area(
+        "Paste the job description here:",
+        value=st.session_state.job_data,
+        height=300,
+    )
+
+    if job_desc_input.strip():  # Update the session state with the job description
+        st.session_state.job_data = job_desc_input
+        st.session_state.messages = [
+            {"role": "system", "content": "You are a helpful assistant specialized in answering questions based on a specific job description. Only provide information directly related to the given job description. If a question is not relevant to the job description, politely inform the user that you can only answer questions about the provided job description."},
+            {"role": "user", "content": f"Here's the job description:\n\n{job_desc_input}\n\nPlease answer questions based only on this job description."},
+            {"role": "assistant", "content": "Understood. I will answer questions based solely on the provided job description. How may I assist you?"}
+        ]
 
     # Chat history container
     chat_container = st.container()
@@ -63,14 +55,14 @@ async def main():
 
         # Stream response from OpenAI
         response_text = ""
-        stream = openai_client.chat.completions.create(
+        stream = st.session_state.openai_client.chat.completions.create(
             model="gpt-4o-mini",  # Replace with your desired model
             messages=st.session_state.messages,
             stream=True,
             temperature=0.3,  # Lower temperature for more focused responses
             max_tokens=150,  # Limit response length
         )
-        
+
         for chunk in stream:
             if chunk.choices[0].delta.content is not None:
                 token = chunk.choices[0].delta.content
@@ -106,17 +98,12 @@ async def main():
 
     # Input box at the bottom
     with input_container:
-        with st.form("user_input_form", clear_on_submit=True):
-            user_input = st.text_input("Your question:", key="user_input")
-            submit_button = st.form_submit_button("Send")
+        user_input = st.text_input("Your question:", key="user_input")
 
-            # Generate and display response
-            if submit_button and user_input:
-                if st.session_state.job_description.strip():
-                    await generate_response(user_input)
-                else:
-                    st.warning("Please provide a job description before asking questions.")
-
-# Ensure the event loop is run properly
-if __name__ == "__main__":
-    asyncio.run(main())
+        # Generate and display response when input is provided
+        if user_input.strip():
+            if st.session_state.job_data.strip():
+                await generate_response(user_input)
+                st.session_state.user_input = ""  # Clear input box after processing
+            else:
+                st.warning("Please provide a job description before asking questions.")
