@@ -6,6 +6,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from prompt_llm_for_resume import run_llama_prompt
 import streamlit as st
 from prompt_openai import run_openai_chat_completion
+import json
 
 TEMP_DIR = "temp_dir"
 os.makedirs(TEMP_DIR, exist_ok=True)  # This will create the directory if it does not exist
@@ -29,8 +30,9 @@ async def process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model
         
         # Extracting sections using LLM
         print("Extracting sections using LLM...")
-        resume_llm_response = await extract_resume_sections_langchain(IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model, resume_text)
-        
+        #resume_llm_response = await extract_resume_sections_langchain(IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model, resume_text)
+        resume_llm_response = await run_openai_chat_completion(st.session_state.openai_client, json.dumps(resume_text), IDENTIFY_DETAILS_FROM_RESUME_PROMPT,model)
+
         # Cleaning the LLM response
         cleaned_resume_llm_response = clean_llm_response_for_resume(resume_llm_response)
 
