@@ -43,7 +43,8 @@ async def main():
     st.title("Is This Job for You?")
 
     supabase_client = await create_supabase_connection()
-    
+    st.session_state.openai_client = await initialize_openai_client()
+
    # Select between existing resume or new resume
     option = st.radio("Choose an option:", ["Select Existing Resume", "Upload New Resume"])
 
@@ -221,7 +222,7 @@ async def main():
     
     if st.button("Submit"):
         if st.session_state.get("job_link", "").strip() or st.session_state.get("job_entry", "").strip():
-            st.session_state.openai_client = await initialize_openai_client()
+            #st.session_state.openai_client = await initialize_openai_client()
 
             if st.session_state.get("job_link", "").strip():
                 st.write("Extracting job details from the posting..")

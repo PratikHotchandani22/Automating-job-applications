@@ -67,8 +67,16 @@ async def extract_resume_sections_langchain(prompt, model_name, resume_text):
     except Exception as e:
         return f"Unexpected Error: {str(e)}"
 
+
+def remove_json_prefix(text):
+    # Remove "json" at the start and any leading whitespace after it
+    if text.strip().startswith("json"):
+        return text.strip()[4:].strip()
+    return text.strip()
+
 def clean_llm_response_for_resume(response):
-    cleaned_json_text = response.replace('\n', '').strip()
+    modified_text = remove_json_prefix(response)
+    cleaned_json_text = modified_text.replace('\n', '').strip()
     cleaned_json_text = cleaned_json_text.replace('[', '').strip()
     cleaned_json_text = cleaned_json_text.replace(']', '').strip()
     cleaned_json_text = cleaned_json_text.replace("```", '').strip()
