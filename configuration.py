@@ -230,7 +230,7 @@ Give only missing keywords in response.
 Provide a structured response following the above instructions, ensuring actionable and meaningful recommendations to improve alignment and enhance cosine similarity between the resume and job description.  
 """
 
-COVER_LETTER_GENERATION_PROMPT = """
+COVER_LETTER_GENERATION_PROMP_old = """
 Act as a professional cover letter crafter. Your task is to draft a highly personalized and engaging cover letter based on the inputs provided: resume_text and job_description_text.
 
 1. **Focus on Alignment with the Role:**  
@@ -263,6 +263,44 @@ Inputs provided will be in the following format:
 "job_description_text": ""  
 
 """
+
+COVER_LETTER_GENERATION_PROMPT = """
+Act as a professional cover letter crafter. Your task is to draft a **highly personalized and engaging cover letter** based on the inputs provided: resume_text and job_description_text.
+
+1. **Focus on Alignment with the Role:**  
+   - Identify the four most important qualities, skills, or qualifications mentioned in the job description. Use these as the foundation to craft a **specific and tailored narrative** that highlights my strengths, experiences, and unique value to the role.  
+   - Use **clear and precise examples** of how I have successfully applied these skills in relevant past experiences, avoiding vague or filler language.
+
+2. **Address Company-Specific Challenges:**  
+   - Analyze the job description to identify **key challenges or pain points** the role seeks to address. Clearly articulate how my skills, experiences, and problem-solving abilities position me as the **ideal candidate** to tackle these challenges.  
+   - If any required skills or experiences are not present, emphasize my **eagerness to learn** and **demonstrated ability to adapt quickly** by referencing examples from my resume or relevant projects.  
+   - Include a brief mention of industry or role-related trends (if applicable) to demonstrate a **forward-looking approach.**
+
+3. **Demonstrate Enthusiasm, Learning Interest, and Cultural Fit:**  
+   - Reflect the company’s values and culture, explaining why I am excited about joining the organization and how this aligns with my personal and professional goals.  
+   - Showcase my **interest in learning new skills** and **growing within the role**, backed by examples of my **fast learning abilities** and **curiosity** in past projects or experiences.  
+   - Express genuine enthusiasm for contributing to the company’s mission and team while maintaining a tone of **confidence and professionalism**.
+
+4. **Compelling Structure and Tone:**  
+   - Begin with an **attention-grabbing introduction** that conveys my excitement for the role and highlights what I bring to the table.  
+   - Use the body paragraphs to illustrate my top skills, accomplishments, and how they address the company’s specific needs while **showcasing my eagerness to grow and learn.**  
+   - Conclude with a summary of my value, a **thank-you to the hiring manager**, and a **call-to-action** for the next step (e.g., an interview).  
+
+5. **Avoid Resume Repetition:**  
+   - Do not copy directly from my resume. Instead, present my experiences in an **engaging, story-like manner** that demonstrates my impact and suitability for the role.  
+   - Highlight transferable skills and learning interest in areas where my experience might not align perfectly with the job description.
+
+6. **Formatting and Style:**  
+   - Use a **cheerful, enthusiastic, and professional tone** that feels genuine and enjoyable to read.  
+   - Ensure the letter is **concise, clear, and skimmable**, keeping it brief enough to read at a glance.  
+   - **Bold the most important keywords and phrases**, especially those related to the specific skills, qualities, and learning interest mentioned in the job description.
+
+Inputs provided will be in the following format:  
+"resume_text": "",  
+"job_description_text": ""  
+"""
+
+
 
 RAG_DATA_STRUCTURNG_PROMPT = """
 You are an assistant that formats text data into JSON entries based on specific categories. Each entry contains `category`, `title`, and `text` fields, where `text` may contain multiple sentences or bullet points.
