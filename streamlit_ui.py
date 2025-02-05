@@ -11,9 +11,9 @@ import pandas as pd
 from configuration import IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPTION_MODEL, RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
 from helper_functions import save_as_pdf, save_as_docx
 from prompt_openai import run_openai_chat_completion, initialize_openai_client
+import numpy as np
 
-async def main():
-    # Initialize session state for resume and job link if they don't exist
+def initialize_session_states():
     if "resume" not in st.session_state:
         st.session_state.resume = None
     if "job_link" not in st.session_state:
@@ -23,37 +23,56 @@ async def main():
     if "job_data" not in st.session_state:
         st.session_state.job_data = ""
     if "cover_letter" not in st.session_state:
-        st.session_state.cover_letter = " empty cover letter"    
+        st.session_state.cover_letter = "empty cover letter"    
     if "openai_client" not in st.session_state:
         st.session_state.openai_client = None 
-
-    # Initialize the session state for form fields if not already initialized
+    if "entries" not in st.session_state:
+        st.session_state.entries = []
     if "category" not in st.session_state:
         st.session_state["category"] = ""
     if "title" not in st.session_state:
         st.session_state["title"] = ""
     if "text" not in st.session_state:
         st.session_state["text"] = ""
-    
     if "rag_df" not in st.session_state:
         st.session_state["rag_df"] = None
+    if "job_emb" not in st.session_state:
+        st.session_state["job_emb"] = None
+    if "rag_form_visible" not in st.session_state:
+        st.session_state["rag_form_visible"] = False
+    if "include_rag_data_checkbox" not in st.session_state:
+        st.session_state["include_rag_data_checkbox"] = False 
+    if "job_link_option" not in st.session_state:
+        st.session_state["job_link_option"] = None    
+    if "resume_option" not in st.session_state:
+        st.session_state["resume_option"] = False
+    if "supabase_client" not in st.session_state:
+        st.session_state["supabase_client"] = None
+
+async def initialize_clients():
+    st.session_state["supabase_client"] = await create_supabase_connection()
+    st.session_state["openai_client"] = await initialize_openai_client()
+
+async def main():
+    # Initialize session state for resume and job link if they don't exist
+    initialize_session_states()
+
+    # initialize clients
+    await initialize_clients()
 
     st.session_state.job_emb = pd.DataFrame()
     # Set the title for the app
     st.title("Is This Job for You?")
 
-    supabase_client = await create_supabase_connection()
-    st.session_state.openai_client = await initialize_openai_client()
-
    # Select between existing resume or new resume
-    option = st.radio("Choose an option:", ["Select Existing Resume", "Upload New Resume"])
+    st.session_state["resume_option"] = st.radio("Choose an option:", ["Select Existing Resume", "Upload New Resume"])
 
-    if option == "Select Existing Resume":
+    if st.session_state["resume_option"] == "Select Existing Resume":
         st.subheader("Select a Resume")
 
         # Call the fetch_data_from_table function
         # Replace 'supabase_client' and 'resume_data' with your actual Supabase client and table name
-        df = await fetch_data_from_table(supabase_client, 'resume_data')
+        df = await fetch_data_from_table(st.session_state["supabase_client"], 'resume_data')
 
         if not df.empty:
             resume_names = df['resume_name'].tolist()  # Assuming you have a 'resume_name' column
@@ -76,14 +95,13 @@ async def main():
                     selected_details = df[df['resume_name'].isin(selected_resumes)]
                     st.write("Selected Resume Details:")
                     st.dataframe(selected_details)  # Display the filtered DataFrame
-                    #st.session_state.selected_resumes = selected_details 
                     st.session_state.resume = selected_details
                 else:
                     st.write("No resumes selected.")
         else:
             st.write("No resumes available.")
 
-    elif option == "Upload New Resume":
+    elif st.session_state["resume_option"] == "Upload New Resume":
         st.subheader("Upload a New Resume")
         uploaded_files = st.file_uploader("Choose a resume files", type=["docx"], accept_multiple_files=True)
         
@@ -101,22 +119,19 @@ async def main():
                 resume_df = await process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, IDENTIFY_DETAILS_FORM_RESUME_MODEL)  # Step 1: Process resumes
                 updated_resume_df = await generate_embeddings(resume_df, EMBEDDING_MODEL , "resume")  # Step 2: Generate embeddings
                 resume_prepared_data = prepare_data_resume(updated_resume_df)
-                response_insert = await insert_data_into_table(supabase_client, "resume_data", resume_prepared_data, batch_size=100)
+                response_insert = await insert_data_into_table(st.session_state["supabase_client"], "resume_data", resume_prepared_data, batch_size=100)
                 
                 st.success("Resume uploaded successfully!")
                 st.write(updated_resume_df)  # Display the DataFrame with embeddings
 
-    # Initialize session state for entries
-    if "entries" not in st.session_state:
-        st.session_state.entries = []
 
     # Create a checkbox
-    include_rag_data = st.checkbox("Include RAG data")
+    st.session_state["include_rag_data_checkbox"] = st.checkbox("Include RAG data")
 
     # Use the checkbox value to conditionally include RAG data
-    if include_rag_data:
+    if st.session_state["include_rag_data_checkbox"]:
         st.write("RAG data will be included in the processing.")
-        rag_df = await fetch_data_from_table(supabase_client, 'extra_info')
+        rag_df = await fetch_data_from_table(st.session_state["supabase_client"], 'extra_info')
         st.session_state["rag_df"] = rag_df
         #st.write(rag_df)
 
@@ -127,13 +142,12 @@ async def main():
 
     # Toggle form visibility on button click
     if st.button("Add Extra Info for RAG System"):
-        st.session_state.form_visible = True  # Show the form
+        st.session_state.rag_form_visible = True  # Show the form
 
     # Show the form if the button is clicked
-    if "form_visible" in st.session_state and st.session_state.form_visible:
+    if st.session_state.rag_form_visible:
         with st.form("extra_info_form"):
             
-
             # Input fields for category, title, and text
             category = st.selectbox(
                 "Category",
@@ -170,7 +184,7 @@ async def main():
             if st.form_submit_button("Submit All"):
                 # Clear current form entries (not in the main list)
                 #st.session_state.entries.clear()  # Clear current entries
-                st.session_state.form_visible = False  # Hide form after submission
+                st.session_state.rag_form_visible = False  # Hide form after submission
                 #st.write("Prompting llm to structure data properly...")
                 json_entries = json.dumps(st.session_state.entries)
                 structured_rag_data = await run_llama_prompt(json_entries, RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, model_temp= 0)
@@ -189,7 +203,7 @@ async def main():
                 updated_rag_df = await generate_embeddings(rag_df, EMBEDDING_MODEL , "rag_text")  # Step 2: Generate embeddings
                 #st.write(updated_rag_df)
                 rag_prepared_data = prepare_data_rag(updated_rag_df)
-                response_insert = await insert_data_into_table(supabase_client, "extra_info", rag_prepared_data, batch_size=100)
+                response_insert = await insert_data_into_table(st.session_state["supabase_client"], "extra_info", rag_prepared_data, batch_size=100)
                 st.success("All entries successfully saved!")
 
                 #st.write("inserted data into supabase table: ", response_insert)
@@ -203,9 +217,9 @@ async def main():
                 #st.write("All entries: ", st.session_state.entries)
 
     # Select between existing resume or new resume
-    option = st.radio("Choose an option:", ["Provide Job URL (works only for Glassdoor urls)", "Enter job description manually"])
+    st.session_state["job_link_option"] = st.radio("Choose an option:", ["Provide Job URL (works only for Glassdoor urls)", "Enter job description manually"])
 
-    if option == "Provide Job URL (works only for Glassdoor urls)":
+    if st.session_state["job_link_option"]  == "Provide Job URL (works only for Glassdoor urls)":
 
         # Section to input the job URL
         #st.subheader("Enter Job URL")
@@ -213,14 +227,14 @@ async def main():
         st.session_state.job_link = job_url
         job_description_input = ""
     
-    elif option == "Enter job description manually":
+    elif st.session_state["job_link_option"]  == "Enter job description manually":
         job_description_input = st.text_area("Paste the job description here", height=200)
         st.session_state.job_entry = job_description_input
         st.session_state.job_link = ""
 
     # Submit button
     
-    if st.button("Submit"):
+    if st.button("Analyze"):
         if st.session_state.get("job_link", "").strip() or st.session_state.get("job_entry", "").strip():
             #st.session_state.openai_client = await initialize_openai_client()
 
@@ -272,7 +286,7 @@ async def main():
             #st.dataframe(job_emb)
             st.session_state.job_emb = job_emb
             job_prepared_data = prepare_data_job_description(job_emb)
-            response_insert = await insert_data_into_table(supabase_client, "job_info", job_prepared_data, batch_size=100)
+            response_insert = await insert_data_into_table(st.session_state["supabase_client"], "job_info", job_prepared_data, batch_size=100)
 
             # Assuming job_emb_df['job_emb'].values[0] is the single embedding vector for the job description
             best_resume_text, updated_emb_df = find_best_resume(st.session_state.resume, st.session_state.job_emb)
@@ -292,9 +306,6 @@ async def main():
                 suggestions = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, rag_data_prompt, PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
             else:
                 suggestions = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
-
-            
-
          
             with st.expander("Suggestions: "):
                 st.write(suggestions)
@@ -333,6 +344,7 @@ async def main():
                 key="download_docx"
             )
             
+
         else:
             st.error("Please upload at least one resume and provide a job URL before submitting.")
 
