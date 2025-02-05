@@ -53,79 +53,65 @@ async def initialize_clients():
     st.session_state["supabase_client"] = await create_supabase_connection()
     st.session_state["openai_client"] = await initialize_openai_client()
 
-async def main():
-    # Initialize session state for resume and job link if they don't exist
-    initialize_session_states()
+async def get_resumes_ui():
+    st.subheader("Select a Resume")
 
-    # initialize clients
-    await initialize_clients()
+    # Call the fetch_data_from_table function
+    # Replace 'supabase_client' and 'resume_data' with your actual Supabase client and table name
+    df = await fetch_data_from_table(st.session_state["supabase_client"], 'resume_data')
 
-    st.session_state.job_emb = pd.DataFrame()
-    # Set the title for the app
-    st.title("Is This Job for You?")
+    if not df.empty:
+        resume_names = df['resume_name'].tolist()
+        
+        # Add checkbox for selecting all resumes
+        select_all = st.checkbox("Select All Resumes")
 
-   # Select between existing resume or new resume
-    st.session_state["resume_option"] = st.radio("Choose an option:", ["Select Existing Resume", "Upload New Resume"])
-
-    if st.session_state["resume_option"] == "Select Existing Resume":
-        st.subheader("Select a Resume")
-
-        # Call the fetch_data_from_table function
-        # Replace 'supabase_client' and 'resume_data' with your actual Supabase client and table name
-        df = await fetch_data_from_table(st.session_state["supabase_client"], 'resume_data')
-
-        if not df.empty:
-            resume_names = df['resume_name'].tolist()  # Assuming you have a 'resume_name' column
-            
-            # Add checkbox for selecting all resumes
-            select_all = st.checkbox("Select All Resumes")
-
-            # Use a multiselect widget to allow multiple or single resume selection
-            if select_all:
-                selected_resumes = resume_names  # Select all resumes if checkbox is checked
+        # Use a multiselect widget to allow multiple or single resume selection
+        if select_all:
+            selected_resumes = resume_names  # Select all resumes if checkbox is checked
+            selected_details = df[df['resume_name'].isin(selected_resumes)]
+            #st.session_state.selected_resumes = selected_details
+            st.session_state.resume = selected_details
+        else:
+            selected_resumes = st.multiselect("Choose resume(s):", resume_names)
+        
+        if not select_all and st.button("Select"):
+            # Display selected resume details
+            if selected_resumes:
                 selected_details = df[df['resume_name'].isin(selected_resumes)]
-                #st.session_state.selected_resumes = selected_details
+                st.write("Selected Resume Details:")
+                st.dataframe(selected_details)  # Display the filtered DataFrame
                 st.session_state.resume = selected_details
             else:
-                selected_resumes = st.multiselect("Choose resume(s):", resume_names)
-            
-            if not select_all and st.button("Select"):
-                # Display selected resume details
-                if selected_resumes:
-                    selected_details = df[df['resume_name'].isin(selected_resumes)]
-                    st.write("Selected Resume Details:")
-                    st.dataframe(selected_details)  # Display the filtered DataFrame
-                    st.session_state.resume = selected_details
-                else:
-                    st.write("No resumes selected.")
-        else:
-            st.write("No resumes available.")
+                st.write("No resumes selected.")
+    else:
+        st.write("No resumes available.")
 
-    elif st.session_state["resume_option"] == "Upload New Resume":
-        st.subheader("Upload a New Resume")
-        uploaded_files = st.file_uploader("Choose a resume files", type=["docx"], accept_multiple_files=True)
+async def upload_resume():
+    st.subheader("Upload a New Resume")
+    uploaded_files = st.file_uploader("Choose a resume files", type=["docx"], accept_multiple_files=True)
+
+    if uploaded_files is not None and len(uploaded_files)>=1:
+
+        st.write("You have selected the following files:")
+        for uploaded_file in uploaded_files:
+            st.session_state.resume = uploaded_file
+            st.write(uploaded_file.name)
         
-        if uploaded_files is not None and len(uploaded_files)>=1:
-
-            st.write("You have selected the following files:")
-            for uploaded_file in uploaded_files:
-                st.session_state.resume = uploaded_file
-                st.write(uploaded_file.name)
+        # Button to trigger the upload process
+        if st.button("Upload"):
+            # Prepare data and insert into database
+            file_paths = await get_file_paths(uploaded_files)
+            resume_df = await process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, IDENTIFY_DETAILS_FORM_RESUME_MODEL)  # Step 1: Process resumes
+            updated_resume_df = await generate_embeddings(resume_df, EMBEDDING_MODEL , "resume")  # Step 2: Generate embeddings
+            resume_prepared_data = prepare_data_resume(updated_resume_df)
+            response_insert = await insert_data_into_table(st.session_state["supabase_client"], "resume_data", resume_prepared_data, batch_size=100)
             
-            # Button to trigger the upload process
-            if st.button("Upload"):
-                # Prepare data and insert into database
-                file_paths = await get_file_paths(uploaded_files)
-                resume_df = await process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, IDENTIFY_DETAILS_FORM_RESUME_MODEL)  # Step 1: Process resumes
-                updated_resume_df = await generate_embeddings(resume_df, EMBEDDING_MODEL , "resume")  # Step 2: Generate embeddings
-                resume_prepared_data = prepare_data_resume(updated_resume_df)
-                response_insert = await insert_data_into_table(st.session_state["supabase_client"], "resume_data", resume_prepared_data, batch_size=100)
-                
-                st.success("Resume uploaded successfully!")
-                st.write(updated_resume_df)  # Display the DataFrame with embeddings
+            st.success("Resume uploaded successfully!")
+            st.write(updated_resume_df)  # Display the DataFrame with embeddings
 
-
-    # Create a checkbox
+async def include_rag_data():
+# Create a checkbox
     st.session_state["include_rag_data_checkbox"] = st.checkbox("Include RAG data")
 
     # Use the checkbox value to conditionally include RAG data
@@ -139,7 +125,7 @@ async def main():
         st.write("RAG data is excluded from the processing.")
         st.session_state["rag_df"] = None
 
-
+async def add_extra_rag_data():
     # Toggle form visibility on button click
     if st.button("Add Extra Info for RAG System"):
         st.session_state.rag_form_visible = True  # Show the form
@@ -183,39 +169,25 @@ async def main():
             # Button to submit all entries at once
             if st.form_submit_button("Submit All"):
                 # Clear current form entries (not in the main list)
-                #st.session_state.entries.clear()  # Clear current entries
-                st.session_state.rag_form_visible = False  # Hide form after submission
-                #st.write("Prompting llm to structure data properly...")
+
+                st.session_state.rag_form_visible = False 
                 json_entries = json.dumps(st.session_state.entries)
                 structured_rag_data = await run_llama_prompt(json_entries, RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, model_temp= 0)
-                #st.write(structured_rag_data)
+             
                 
                 # Convert the string to a list of dictionaries
                 data_list = json.loads(structured_rag_data)
 
                 # Convert the list of dictionaries to a DataFrame
                 rag_df = pd.DataFrame(data_list)
-                #st.write(rag_df)
 
-
-                # generating embedding of the "text" key in the rag df 
-                #st.write("generating embedding of extra text.")
-                updated_rag_df = await generate_embeddings(rag_df, EMBEDDING_MODEL , "rag_text")  # Step 2: Generate embeddings
+                updated_rag_df = await generate_embeddings(rag_df, EMBEDDING_MODEL , "rag_text")  
                 #st.write(updated_rag_df)
                 rag_prepared_data = prepare_data_rag(updated_rag_df)
                 response_insert = await insert_data_into_table(st.session_state["supabase_client"], "extra_info", rag_prepared_data, batch_size=100)
                 st.success("All entries successfully saved!")
 
-                #st.write("inserted data into supabase table: ", response_insert)
-
-                # inserting rag data into subpabase table
-
-                    
-                # Create DataFrame
-                #df = pd.DataFrame(structured_rag_data)
-                #st.write(df)
-                #st.write("All entries: ", st.session_state.entries)
-
+async def job_posting_submission():
     # Select between existing resume or new resume
     st.session_state["job_link_option"] = st.radio("Choose an option:", ["Provide Job URL (works only for Glassdoor urls)", "Enter job description manually"])
 
@@ -231,6 +203,34 @@ async def main():
         job_description_input = st.text_area("Paste the job description here", height=200)
         st.session_state.job_entry = job_description_input
         st.session_state.job_link = ""
+
+async def main():
+    # Initialize session state for resume and job link if they don't exist
+    initialize_session_states()
+
+    # initialize clients
+    await initialize_clients()
+
+    st.session_state.job_emb = pd.DataFrame()
+
+    # Set the title for the app
+    st.title("Is This Job for You?")
+
+   # Select between existing resume or new resume
+    st.session_state["resume_option"] = st.radio("Choose an option:", ["Select Existing Resume", "Upload New Resume"])
+
+    if st.session_state["resume_option"] == "Select Existing Resume":
+        await get_resumes_ui()
+
+    elif st.session_state["resume_option"] == "Upload New Resume":
+        await upload_resume()
+
+    await include_rag_data()
+    
+    #await add_extra_rag_data()
+
+    await job_posting_submission()
+    
 
     # Submit button
     
