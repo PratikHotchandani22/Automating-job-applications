@@ -1,14 +1,15 @@
 import os
 from openai import OpenAI
 from credentials import OPENAI_API
-
+import json
+import streamlit as st
 
 # Initialize the OpenAI client
 async def initialize_openai_client():
     client = OpenAI(api_key=OPENAI_API)
     return client
 
-async def run_openai_chat_completion(client, user_prompt, system_prompt, model, temperature=0.2):
+async def run_openai_chat_completion(client, llama_response, system_prompt, model, temperature=0.2):
     """
     Function to run a custom prompt on OpenAI's Chat Completion API.
 
@@ -22,6 +23,8 @@ async def run_openai_chat_completion(client, user_prompt, system_prompt, model, 
     Returns:
     - str: The response from the model or an error message.
     """
+    user_prompt = json.dumps(llama_response)
+
     try:
         # Validate inputs
         if not isinstance(user_prompt, str) or not user_prompt.strip():

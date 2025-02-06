@@ -48,84 +48,94 @@ def initialize_session_states():
         st.session_state["resume_option"] = False
     if "supabase_client" not in st.session_state:
         st.session_state["supabase_client"] = None
+    if "job_description" not in st.session_state:
+        st.session_state["job_description"] = None
+    if "summary_response" not in st.session_state:
+        st.session_state["summary_response"] = None
+    if "parsed_job_df" not in st.session_state:
+        st.session_state["parsed_job_df"] = pd.DataFrame()
+    if "best_resume_text" not in st.session_state:
+        st.session_state["best_resume_text"] = None
+    if "updated_emb_df" not in st.session_state:
+        st.session_state["updated_emb_df"] = None    
+    if "best_rag_data" not in st.session_state:
+        st.session_state["best_rag_data"] = pd.DataFrame()  
+    if "rag_data_prompt" not in st.session_state:
+        st.session_state["rag_data_prompt"] = None
+    if "llama_response" not in st.session_state:
+        st.session_state["llama_response"] = None  
+    if "suggestions" not in st.session_state:
+        st.session_state["suggestions"] = None    
+        
+        
+        
+        
+        
+        
 
 async def initialize_clients():
     st.session_state["supabase_client"] = await create_supabase_connection()
     st.session_state["openai_client"] = await initialize_openai_client()
 
-async def main():
-    # Initialize session state for resume and job link if they don't exist
-    initialize_session_states()
+async def get_resumes_ui():
+    st.subheader("Select a Resume")
 
-    # initialize clients
-    await initialize_clients()
+    # Call the fetch_data_from_table function
+    # Replace 'supabase_client' and 'resume_data' with your actual Supabase client and table name
+    df = await fetch_data_from_table(st.session_state["supabase_client"], 'resume_data')
 
-    st.session_state.job_emb = pd.DataFrame()
-    # Set the title for the app
-    st.title("Is This Job for You?")
-
-   # Select between existing resume or new resume
-    st.session_state["resume_option"] = st.radio("Choose an option:", ["Select Existing Resume", "Upload New Resume"])
-
-    if st.session_state["resume_option"] == "Select Existing Resume":
-        st.subheader("Select a Resume")
-
-        # Call the fetch_data_from_table function
-        # Replace 'supabase_client' and 'resume_data' with your actual Supabase client and table name
-        df = await fetch_data_from_table(st.session_state["supabase_client"], 'resume_data')
-
-        if not df.empty:
-            resume_names = df['resume_name'].tolist()  # Assuming you have a 'resume_name' column
-            
-            # Add checkbox for selecting all resumes
-            select_all = st.checkbox("Select All Resumes")
-
-            # Use a multiselect widget to allow multiple or single resume selection
-            if select_all:
-                selected_resumes = resume_names  # Select all resumes if checkbox is checked
-                selected_details = df[df['resume_name'].isin(selected_resumes)]
-                #st.session_state.selected_resumes = selected_details
-                st.session_state.resume = selected_details
-            else:
-                selected_resumes = st.multiselect("Choose resume(s):", resume_names)
-            
-            if not select_all and st.button("Select"):
-                # Display selected resume details
-                if selected_resumes:
-                    selected_details = df[df['resume_name'].isin(selected_resumes)]
-                    st.write("Selected Resume Details:")
-                    st.dataframe(selected_details)  # Display the filtered DataFrame
-                    st.session_state.resume = selected_details
-                else:
-                    st.write("No resumes selected.")
-        else:
-            st.write("No resumes available.")
-
-    elif st.session_state["resume_option"] == "Upload New Resume":
-        st.subheader("Upload a New Resume")
-        uploaded_files = st.file_uploader("Choose a resume files", type=["docx"], accept_multiple_files=True)
+    if not df.empty:
+        resume_names = df['resume_name'].tolist()
         
-        if uploaded_files is not None and len(uploaded_files)>=1:
+        # Add checkbox for selecting all resumes
+        select_all = st.checkbox("Select All Resumes")
 
-            st.write("You have selected the following files:")
-            for uploaded_file in uploaded_files:
-                st.session_state.resume = uploaded_file
-                st.write(uploaded_file.name)
+        # Use a multiselect widget to allow multiple or single resume selection
+        if select_all:
+            selected_resumes = resume_names  # Select all resumes if checkbox is checked
+            selected_details = df[df['resume_name'].isin(selected_resumes)]
+            #st.session_state.selected_resumes = selected_details
+            st.session_state.resume = selected_details
+        else:
+            selected_resumes = st.multiselect("Choose resume(s):", resume_names)
+        
+        if not select_all and st.button("Select"):
+            # Display selected resume details
+            if selected_resumes:
+                st.session_state.resume = df[df['resume_name'].isin(selected_resumes)]
+                st.write("Selected Resume Details:")
+                st.dataframe(st.session_state.resume)  # Display the filtered DataFrame
+                #st.session_state.resume = selected_details
+            else:
+                st.write("No resumes selected.")
+    else:
+        st.write("No resumes available.")
+
+async def upload_resume():
+    st.subheader("Upload a New Resume")
+    uploaded_files = st.file_uploader("Choose a resume files", type=["docx"], accept_multiple_files=True)
+
+    if uploaded_files is not None and len(uploaded_files)>=1:
+
+        st.write("You have selected the following files:")
+        for uploaded_file in uploaded_files:
+            st.session_state.resume = uploaded_file
+            st.write(uploaded_file.name)
+        
+        # Button to trigger the upload process
+        if st.button("Upload"):
+            # Prepare data and insert into database
+            file_paths = await get_file_paths(uploaded_files)
+            resume_df = await process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, IDENTIFY_DETAILS_FORM_RESUME_MODEL)  # Step 1: Process resumes
+            updated_resume_df = await generate_embeddings(resume_df, EMBEDDING_MODEL , "resume")  # Step 2: Generate embeddings
+            resume_prepared_data = prepare_data_resume(updated_resume_df)
+            response_insert = await insert_data_into_table(st.session_state["supabase_client"], "resume_data", resume_prepared_data, batch_size=100)
             
-            # Button to trigger the upload process
-            if st.button("Upload"):
-                # Prepare data and insert into database
-                file_paths = await get_file_paths(uploaded_files)
-                resume_df = await process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, IDENTIFY_DETAILS_FORM_RESUME_MODEL)  # Step 1: Process resumes
-                updated_resume_df = await generate_embeddings(resume_df, EMBEDDING_MODEL , "resume")  # Step 2: Generate embeddings
-                resume_prepared_data = prepare_data_resume(updated_resume_df)
-                response_insert = await insert_data_into_table(st.session_state["supabase_client"], "resume_data", resume_prepared_data, batch_size=100)
-                
-                st.success("Resume uploaded successfully!")
-                st.write(updated_resume_df)  # Display the DataFrame with embeddings
+            st.success("Resume uploaded successfully!")
+            st.write(updated_resume_df)  # Display the DataFrame with embeddings
 
-
-    # Create a checkbox
+async def include_rag_data():
+# Create a checkbox
     st.session_state["include_rag_data_checkbox"] = st.checkbox("Include RAG data")
 
     # Use the checkbox value to conditionally include RAG data
@@ -139,7 +149,7 @@ async def main():
         st.write("RAG data is excluded from the processing.")
         st.session_state["rag_df"] = None
 
-
+async def add_extra_rag_data():
     # Toggle form visibility on button click
     if st.button("Add Extra Info for RAG System"):
         st.session_state.rag_form_visible = True  # Show the form
@@ -183,39 +193,25 @@ async def main():
             # Button to submit all entries at once
             if st.form_submit_button("Submit All"):
                 # Clear current form entries (not in the main list)
-                #st.session_state.entries.clear()  # Clear current entries
-                st.session_state.rag_form_visible = False  # Hide form after submission
-                #st.write("Prompting llm to structure data properly...")
+
+                st.session_state.rag_form_visible = False 
                 json_entries = json.dumps(st.session_state.entries)
                 structured_rag_data = await run_llama_prompt(json_entries, RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, model_temp= 0)
-                #st.write(structured_rag_data)
+             
                 
                 # Convert the string to a list of dictionaries
                 data_list = json.loads(structured_rag_data)
 
                 # Convert the list of dictionaries to a DataFrame
                 rag_df = pd.DataFrame(data_list)
-                #st.write(rag_df)
 
-
-                # generating embedding of the "text" key in the rag df 
-                #st.write("generating embedding of extra text.")
-                updated_rag_df = await generate_embeddings(rag_df, EMBEDDING_MODEL , "rag_text")  # Step 2: Generate embeddings
+                updated_rag_df = await generate_embeddings(rag_df, EMBEDDING_MODEL , "rag_text")  
                 #st.write(updated_rag_df)
                 rag_prepared_data = prepare_data_rag(updated_rag_df)
                 response_insert = await insert_data_into_table(st.session_state["supabase_client"], "extra_info", rag_prepared_data, batch_size=100)
                 st.success("All entries successfully saved!")
 
-                #st.write("inserted data into supabase table: ", response_insert)
-
-                # inserting rag data into subpabase table
-
-                    
-                # Create DataFrame
-                #df = pd.DataFrame(structured_rag_data)
-                #st.write(df)
-                #st.write("All entries: ", st.session_state.entries)
-
+async def job_posting_submission():
     # Select between existing resume or new resume
     st.session_state["job_link_option"] = st.radio("Choose an option:", ["Provide Job URL (works only for Glassdoor urls)", "Enter job description manually"])
 
@@ -232,6 +228,34 @@ async def main():
         st.session_state.job_entry = job_description_input
         st.session_state.job_link = ""
 
+async def main():
+    # Initialize session state for resume and job link if they don't exist
+    initialize_session_states()
+
+    # initialize clients
+    await initialize_clients()
+
+    st.session_state.job_emb = pd.DataFrame()
+
+    # Set the title for the app
+    st.title("Is This Job for You?")
+
+   # Select between existing resume or new resume
+    st.session_state["resume_option"] = st.radio("Choose an option:", ["Select Existing Resume", "Upload New Resume"])
+
+    if st.session_state["resume_option"] == "Select Existing Resume":
+        await get_resumes_ui()
+
+    elif st.session_state["resume_option"] == "Upload New Resume":
+        await upload_resume()
+
+    await include_rag_data()
+    
+    #await add_extra_rag_data()
+
+    await job_posting_submission()
+    
+
     # Submit button
     
     if st.button("Analyze"):
@@ -239,14 +263,16 @@ async def main():
             #st.session_state.openai_client = await initialize_openai_client()
 
             if st.session_state.get("job_link", "").strip():
+
+
                 st.write("Extracting job details from the posting..")
 
-                job_description = await extract_job_description(st.session_state.job_link)
+                st.session_state["job_description"] = await extract_job_description(st.session_state.job_link)
                 job_details = await extract_job_details(st.session_state.job_link)
 
                 # Create a dictionary combining both variables
                 job_data = {
-                    "job_description": job_description,
+                    "job_description": st.session_state["job_description"],
                     "job_details": job_details
                 }
 
@@ -256,63 +282,63 @@ async def main():
             else:
                 st.session_state.job_data = json.dumps(st.session_state.job_entry)
                 #job_description = await run_llama_prompt(st.session_state.job_data, IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPTION_MODEL)
-                job_description = await run_openai_chat_completion(st.session_state.openai_client, st.session_state.job_data, IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPTION_MODEL)
+                st.session_state["job_description"] = await run_openai_chat_completion(st.session_state.openai_client, st.session_state.job_data, IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPTION_MODEL)
 
 
             with st.expander("View Job Description"):
-                st.write(job_description)
+                st.write(st.session_state["job_description"])
 
             # Prompting llm using groq api for llama to identify details from a job description
             #job_data_prompt = json.dumps(job_data)
-            llama_response = await run_openai_chat_completion(st.session_state.openai_client, st.session_state.job_data, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
+            st.session_state["llama_response"] = await run_openai_chat_completion(st.session_state.openai_client, st.session_state.job_data, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
             #llama_response = await run_llama_prompt(st.session_state.job_data, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
-            llama_response_str = json.dumps(llama_response)
+            #llama_response_str = json.dumps(st.session_state["llama_response"])
 
             ## Prompting llm using groq api for job description summarization
             #summary_response = await summarize_job_description(SUMMARY_PROMPT, llama_response, SUMMARIZE_JOB_DESCRIPTION_MODEL)
-            summary_response = await run_openai_chat_completion(st.session_state.openai_client, llama_response_str, SUMMARY_PROMPT, SUMMARIZE_JOB_DESCRIPTION_MODEL)
+            st.session_state["summary_response"] = await run_openai_chat_completion(st.session_state.openai_client, st.session_state["llama_response"], SUMMARY_PROMPT, SUMMARIZE_JOB_DESCRIPTION_MODEL)
 
             with st.expander("View Summary"):
-                st.write(summary_response)
+                st.write(st.session_state["summary_response"])
             
             # Creating a dataframe from the llm response
-            job_df = parse_response_to_df(llama_response)
-            job_df['job_description'] = json.dumps(job_description)
-            job_df['job_link'] = st.session_state.job_link
+            st.session_state["parsed_job_df"] = parse_response_to_df(st.session_state["llama_response"])
+            st.session_state["parsed_job_df"]['job_description'] = json.dumps(st.session_state["job_description"])
+            st.session_state["parsed_job_df"]['job_link'] = st.session_state.job_link
             
 
             ## Generating embedding for job description:
-            job_emb = await generate_embeddings(job_df, EMBEDDING_MODEL, "job")  # Step 2: Generate embeddings
+            st.session_state.job_emb  = await generate_embeddings(st.session_state["parsed_job_df"], EMBEDDING_MODEL, "job")  # Step 2: Generate embeddings
             #st.dataframe(job_emb)
-            st.session_state.job_emb = job_emb
-            job_prepared_data = prepare_data_job_description(job_emb)
+            
+            job_prepared_data = prepare_data_job_description(st.session_state.job_emb )
             response_insert = await insert_data_into_table(st.session_state["supabase_client"], "job_info", job_prepared_data, batch_size=100)
 
             # Assuming job_emb_df['job_emb'].values[0] is the single embedding vector for the job description
-            best_resume_text, updated_emb_df = find_best_resume(st.session_state.resume, st.session_state.job_emb)
+            st.session_state["best_resume_text"], st.session_state["updated_emb_df"] = find_best_resume(st.session_state.resume, st.session_state.job_emb)
             # Print the DataFrame with percentage matches
             
             st.write("Resume Percentage Match: ")
-            st.write(updated_emb_df[['resume_name', 'percentage_match']])
+            st.write(st.session_state["updated_emb_df"][['resume_name', 'percentage_match']])
 
             if st.session_state["rag_df"] is not None and not st.session_state["rag_df"].empty:
                 st.write("RAG data percentage Match: ")
-                best_rag_data, updated_rag_df_percentage = find_rag_data_match_percentage(st.session_state["rag_df"], st.session_state.job_emb)
-                best_rag_data = best_rag_data.sort_values(by='percentage_match', ascending=False)
-                st.write(best_rag_data)
-                best_rag_data = best_rag_data[['category', 'title', 'text']]
+                st.session_state["best_rag_data"], updated_rag_df_percentage = find_rag_data_match_percentage(st.session_state["rag_df"], st.session_state.job_emb)
+                st.session_state["best_rag_data"] = st.session_state["best_rag_data"].sort_values(by='percentage_match', ascending=False)
+                st.write(st.session_state["best_rag_data"])
+                st.session_state["best_rag_data"] = st.session_state["best_rag_data"][['category', 'title', 'text']]
                 # Providing suggestions based on selected resume or the resume with the highest match.
-                rag_data_prompt = best_rag_data.to_json(orient="records")
-                suggestions = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, rag_data_prompt, PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+                st.session_state["rag_data_prompt"] = st.session_state["best_rag_data"].to_json(orient="records")
+                st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], st.session_state["rag_data_prompt"], PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
             else:
-                suggestions = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, llama_response, best_resume_text, "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+                st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
          
             with st.expander("Suggestions: "):
-                st.write(suggestions)
-            save_job_dict_response(suggestions, "suggestions")
+                st.write(st.session_state["suggestions"])
+            save_job_dict_response(st.session_state["suggestions"], "suggestions")
 
             ## Providing suggestions based on selected resume or the restume with the highest match.
-            st.session_state.cover_letter = await prepare_cover_letter(st.session_state.openai_client, COVER_LETTER_GENERATION_PROMPT, llama_response, best_resume_text, COVER_LETTER_GENERATION_MODEL, model_temp = 0.2)
+            st.session_state.cover_letter = await prepare_cover_letter(st.session_state.openai_client, COVER_LETTER_GENERATION_PROMPT, st.session_state["llama_response"], st.session_state["best_resume_text"], COVER_LETTER_GENERATION_MODEL, model_temp = 0.2)
 
             # Show detailed summary inside an expander:
             with st.expander("Cover letter: "):
@@ -324,9 +350,10 @@ async def main():
             st.write("Download Cover Letter:")
             #cover_letter_string = json.dumps(cover_letter)
             # Generate files
-            pdf_data = save_as_pdf(st.session_state.cover_letter)
+            #pdf_data = save_as_pdf(st.session_state.cover_letter)
             docx_data = save_as_docx(st.session_state.cover_letter)
 
+            """
             # Add download buttons with unique keys
             st.download_button(
                 label="Download as PDF",
@@ -335,6 +362,8 @@ async def main():
                 mime="application/pdf",
                 key="download_pdf"
             )
+            """
+
 
             st.download_button(
                 label="Download as Word Document",
