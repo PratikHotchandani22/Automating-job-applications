@@ -300,7 +300,81 @@ Inputs provided will be in the following format:
 "job_description_text": ""  
 """
 
+RECRUITER_EMAIL_PROMPT = """
+Act as a job seeker writing a concise, point-wise email to the recruiter of a job posting. Using the resume below and the provided job description, craft an email that:
 
+1. Opens professionally and mentions the specific role being applied for.
+2. Clearly states that this role is the candidate's top priority.
+3. Highlights 2-3 key qualifications from their resume that directly match the job requirements.
+4. Politely requests a follow-up, such as scheduling a call or discussing next steps.
+
+[Insert resume text here]
+[Insert job description here]
+
+Structure:  
+- Subject line: Clear and specific (e.g., "Application for [Job Title] – [Your Name]").  
+- Email body:  
+  1. Professional greeting and introduction.  
+  2. Bullet points summarizing why this role is their top priority and why they are the ideal candidate (use resume and JD to align qualifications).  
+  3. Closing with a polite call-to-action requesting a call or further discussion.
+
+Avoid:  
+- Long paragraphs or overly detailed explanations.  
+- Generic statements like "I am a perfect fit" without evidence.  
+- Casual language or emojis.
+"""
+
+RECRUITER_LINKEDIN_PROMPT = """Act as a job seeker crafting a LinkedIn connection request. Using the resume below and the provided job description, write a concise message (≤300 characters) that:
+
+1. Opens professionally
+2. States this role is their top priority
+3. Highlights 2-3 key qualifications from their resume that directly match the job requirements
+4. Requests a 15-minute call
+5. Maintains enthusiastic yet professional tone
+
+[Insert resume text here]
+[Insert job description here]
+
+Structure:  
+- First line: Attention-grabbing subject (e.g., "Top Priority: [Job Title] Role")
+- Body: Concise value proposition using specific matches between resume and JD
+- Closing: Clear call-to-action for call
+
+Avoid:  
+- Generic phrases like "I'm perfect for this role"
+- Lengthy paragraphs
+- Emojis or informal language
+
+Example output:
+With 5+ years leading omnichannel campaigns  and a track record of 30%+ YoY growth,  I'm eager to bring this expertise to [Company]. Would you have 15 minutes this week to discuss? Thank you for considering!
+"""
+
+CONNECTION_LINKEDIN_PROMPT = """
+Act as a job seeker crafting a LinkedIn connection request. Using the resume below and the provided job description, write a concise message (≤300 characters) to a professional working at the company of the job posting. The message should:
+
+1. Open professionally and mention the shared interest in the company/role.
+2. Clearly state that this job is their top priority.
+3. Highlight 2-3 key qualifications from their resume that directly match the job requirements.
+4. Politely request either a short call to discuss insights about the role or a referral.
+
+[Insert resume text here]
+[Insert job description here]
+
+Structure:  
+- First line: Professional introduction and interest in the company/role.
+- Body: Concise value proposition using specific matches between resume and JD.
+- Closing: Clear call-to-action for either a call or referral.
+
+Avoid:  
+- Generic phrases like "I'm perfect for this role."
+- Lengthy paragraphs.
+- Emojis or overly casual language.
+
+Example Output:
+Hi [Name], I’m excited about [Job Title] at [Company]—it’s my top priority! With [specific skill/experience 1] and [specific skill/experience 2] aligning with the role, I’d love your insights or referral. Could we connect for a quick chat? Thanks for your time!
+"""
+
+LINKEDIN_EMAIL_MODEL = "gpt-4o-mini"
 
 RAG_DATA_STRUCTURNG_PROMPT = """
 You are an assistant that formats text data into JSON entries based on specific categories. Each entry contains `category`, `title`, and `text` fields, where `text` may contain multiple sentences or bullet points.

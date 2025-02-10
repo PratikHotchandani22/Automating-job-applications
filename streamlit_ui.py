@@ -12,6 +12,8 @@ from configuration import IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPT
 from helper_functions import save_as_pdf, save_as_docx
 from prompt_openai import run_openai_chat_completion, initialize_openai_client
 import numpy as np
+from configuration import RECRUITER_EMAIL_PROMPT, RECRUITER_LINKEDIN_PROMPT, CONNECTION_LINKEDIN_PROMPT, LINKEDIN_EMAIL_MODEL
+from emails_connection_messages import generate_connection_messages_email
 
 def initialize_session_states():
     if "resume" not in st.session_state:
@@ -65,13 +67,16 @@ def initialize_session_states():
     if "llama_response" not in st.session_state:
         st.session_state["llama_response"] = None  
     if "suggestions" not in st.session_state:
-        st.session_state["suggestions"] = None    
-        
-        
-        
-        
-        
-        
+        st.session_state["suggestions"] = None     
+
+    if "linkedin_recruiter_message" not in st.session_state:
+        st.session_state["linkedin_recruiter_message"] = None     
+
+    if "recruiter_email" not in st.session_state:
+        st.session_state["recruiter_email"] = None     
+
+    if "linkedin_connection_message" not in st.session_state:
+        st.session_state["linkedin_connection_message"] = None     
 
 async def initialize_clients():
     st.session_state["supabase_client"] = await create_supabase_connection()
@@ -351,7 +356,25 @@ async def main():
             #cover_letter_string = json.dumps(cover_letter)
             # Generate files
             #pdf_data = save_as_pdf(st.session_state.cover_letter)
-            docx_data = save_as_docx(st.session_state.cover_letter)
+            #docx_data = save_as_docx(st.session_state.cover_letter)
+
+            # Show detailed summary inside an expander:
+            st.session_state["linkedin_recruiter_message"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
+            with st.expander("LinkedIn Recruiter Message: "):
+               st.write(st.session_state.linkedin_recruiter_message)
+
+            
+            # Show detailed summary inside an expander:
+            st.session_state["recruiter_email"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_EMAIL_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
+            with st.expander("Recruiter Email: "):
+               st.write(st.session_state.recruiter_email)
+
+            
+            # Show detailed summary inside an expander:
+            st.session_state["linkedin_connection_message"] = await generate_connection_messages_email(st.session_state.openai_client, CONNECTION_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
+            with st.expander("LinkedIn Connection Message: "):
+               st.write(st.session_state.linkedin_connection_message)
+
 
             """
             # Add download buttons with unique keys
@@ -362,7 +385,6 @@ async def main():
                 mime="application/pdf",
                 key="download_pdf"
             )
-            """
 
 
             st.download_button(
@@ -373,10 +395,10 @@ async def main():
                 key="download_docx"
             )
             
+            """
 
         else:
             st.error("Please upload at least one resume and provide a job URL before submitting.")
-
 
 # Ensure the event loop is run properly
 if __name__ == "__main__":
