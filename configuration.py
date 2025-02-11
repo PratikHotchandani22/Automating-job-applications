@@ -264,7 +264,7 @@ Inputs provided will be in the following format:
 
 """
 
-COVER_LETTER_GENERATION_PROMPT = """
+COVER_LETTER_GENERATION_PROMPT_old2 = """
 Act as a professional cover letter crafter. Your task is to draft a **highly personalized and engaging cover letter** based on the inputs provided: resume_text and job_description_text.
 
 1. **Focus on Alignment with the Role:**  
@@ -298,6 +298,42 @@ Act as a professional cover letter crafter. Your task is to draft a **highly per
 Inputs provided will be in the following format:  
 "resume_text": "",  
 "job_description_text": ""  
+"""
+
+COVER_LETTER_GENERATION_PROMPT = """
+Act as a professional cover letter crafter. Your task is to draft a **short, engaging, and skimmable cover letter** based on the inputs provided: resume_text and job_description_text. The goal is to create a letter that can be read in **60 seconds or less**, using **bullet points** to highlight key strengths and avoid long paragraphs. The tone should be **professional yet approachable**, with a touch of enthusiasm.
+
+### Key Guidelines:
+
+1. **Focus on Role Alignment:**  
+   - Identify the **top 3-4 skills or qualifications** from the job description and align them with my experiences.  
+   - Use **specific examples** of how I’ve applied these skills successfully in the past, avoiding vague or filler language.
+
+2. **Address Challenges and Value:**  
+   - Highlight how I can solve the company’s **key challenges or pain points**, as inferred from the job description.  
+   - If I lack certain skills, emphasize my **eagerness to learn** and provide examples of my adaptability or fast learning from past experiences.  
+
+3. **Showcase Enthusiasm and Fit:**  
+   - Reflect the company’s values and explain why I’m excited about joining the team.  
+   - Mention my interest in learning, growth, and contributing to the company’s mission.  
+   - Include my GitHub portfolio link: **https://pratikhotchandani22.github.io/portfolio/**.
+
+4. **Structure and Tone:**  
+   - Start with a **brief, attention-grabbing introduction** that conveys excitement for the role.  
+   - Use **bullet points** in the body to showcase skills, accomplishments, and how they address the company’s needs.  
+   - Conclude with a short summary of my value, a **thank-you**, and a clear **call-to-action** (e.g., request for an interview).  
+
+5. **Avoid Resume Repetition:**  
+   - Do not copy directly from my resume but present experiences in a way that demonstrates impact and suitability for the role.  
+   - Highlight transferable skills where applicable.
+
+6. **Formatting:**  
+   - Keep it concise and easy to skim with bullet points instead of long paragraphs.  
+   - Use a cheerful, confident tone while remaining professional.  
+
+Inputs provided will be in the following format:  
+"resume_text": "",  
+"job_description_text": ""
 """
 
 RECRUITER_EMAIL_PROMPT = """
