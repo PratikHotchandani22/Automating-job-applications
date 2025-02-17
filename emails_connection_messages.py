@@ -14,10 +14,12 @@ async def generate_connection_messages_email(openai_client, system_prompt, struc
     "resume_text" : "{resume_text}",
     "job_description_text" : "{structured_job_data}"
     '''
+    if model_name != "claude-3-5-sonnet-20240620":
+        # Generate suggestions using the LLaMA model
+        suggestions = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
     
-    # Generate suggestions using the LLaMA model
-    suggestions = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
-    #suggestions = await run_liteLLM_call(json.dumps(user_prompt), system_prompt, model_name)
+    else:
+        suggestions = await run_liteLLM_call(json.dumps(user_prompt), system_prompt, model_name)
 
     return suggestions
 

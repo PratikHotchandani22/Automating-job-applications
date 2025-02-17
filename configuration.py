@@ -463,9 +463,9 @@ Example Output:
 Hi [Name], I’m excited about [Job Title] at [Company]—it’s my top priority! With [specific skill/experience 1] and [specific skill/experience 2] aligning with the role, I’d love your insights or referral. Could we connect for a quick chat? Thanks for your time!
 """
 
-LINKEDIN_EMAIL_MODEL_old = "gpt-4o-mini"
+LINKEDIN_EMAIL_MODEL = "gpt-4o-mini"
 
-LINKEDIN_EMAIL_MODEL = "claude-3-5-sonnet-20240620"
+RECRUITER_EMAIL_MODEL = "claude-3-5-sonnet-20240620"
 
 RAG_DATA_STRUCTURNG_PROMPT = """
 You are an assistant that formats text data into JSON entries based on specific categories. Each entry contains `category`, `title`, and `text` fields, where `text` may contain multiple sentences or bullet points.

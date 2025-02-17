@@ -12,7 +12,7 @@ from configuration import IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPT
 from helper_functions import save_as_pdf, save_as_docx
 from prompt_openai import run_openai_chat_completion, initialize_openai_client
 import numpy as np
-from configuration import RECRUITER_EMAIL_PROMPT, RECRUITER_LINKEDIN_PROMPT, CONNECTION_LINKEDIN_PROMPT, LINKEDIN_EMAIL_MODEL
+from configuration import RECRUITER_EMAIL_PROMPT, RECRUITER_LINKEDIN_PROMPT, CONNECTION_LINKEDIN_PROMPT, LINKEDIN_EMAIL_MODEL, RECRUITER_EMAIL_MODEL
 from emails_connection_messages import generate_connection_messages_email
 from llm_api_calls_LiteLLM import run_liteLLM_call
 import os
@@ -84,6 +84,12 @@ def initialize_session_states():
 
     if "linkedin_connection_message" not in st.session_state:
         st.session_state["linkedin_connection_message"] = None     
+
+    # Initialize session state for checkboxes
+    if 'generate_cover_letter' not in st.session_state:
+        st.session_state.generate_cover_letter = False
+    if 'reach_out' not in st.session_state:
+        st.session_state.reach_out = False
 
 async def initialize_clients():
     st.session_state["supabase_client"] = await create_supabase_connection()
@@ -240,9 +246,88 @@ async def job_posting_submission():
         st.session_state.job_entry = job_description_input
         st.session_state.job_link = ""
 
+def update_selections():
+    """Callback to update individual checkboxes when Select All changes"""
+    st.session_state.generate_cover_letter = st.session_state.select_all
+    st.session_state.reach_out = st.session_state.select_all
+
+async def generate_suggestions_cover_letter():
+
+    # Creating a dataframe from the llm response
+    st.session_state["parsed_job_df"] = parse_response_to_df(st.session_state["llama_response"])
+    st.session_state["parsed_job_df"]['job_description'] = json.dumps(st.session_state["job_description"])
+    st.session_state["parsed_job_df"]['job_link'] = st.session_state.job_link
+
+    ## Generating embedding for job description:
+    st.session_state.job_emb  = await generate_embeddings(st.session_state["parsed_job_df"], EMBEDDING_MODEL, "job")  # Step 2: Generate embeddings
+    #st.dataframe(job_emb)
+    
+    job_prepared_data = prepare_data_job_description(st.session_state.job_emb )
+    response_insert = await insert_data_into_table(st.session_state["supabase_client"], "job_info", job_prepared_data, batch_size=100)
+
+    # Assuming job_emb_df['job_emb'].values[0] is the single embedding vector for the job description
+    st.session_state["best_resume_text"], st.session_state["updated_emb_df"] = find_best_resume(st.session_state.resume, st.session_state.job_emb)
+    # Print the DataFrame with percentage matches
+    
+    st.write("Resume Percentage Match: ")
+    st.write(st.session_state["updated_emb_df"][['resume_name', 'percentage_match']])
+
+    if st.session_state["rag_df"] is not None and not st.session_state["rag_df"].empty:
+        st.write("RAG data percentage Match: ")
+        st.session_state["best_rag_data"], updated_rag_df_percentage = find_rag_data_match_percentage(st.session_state["rag_df"], st.session_state.job_emb)
+        st.session_state["best_rag_data"] = st.session_state["best_rag_data"].sort_values(by='percentage_match', ascending=False)
+        st.write(st.session_state["best_rag_data"])
+        st.session_state["best_rag_data"] = st.session_state["best_rag_data"][['category', 'title', 'text']]
+        # Providing suggestions based on selected resume or the resume with the highest match.
+        st.session_state["rag_data_prompt"] = st.session_state["best_rag_data"].to_json(orient="records")
+        st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], st.session_state["rag_data_prompt"], PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+    else:
+        st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+
+    with st.expander("Suggestions: "):
+        st.write(st.session_state["suggestions"])
+    save_job_dict_response(st.session_state["suggestions"], "suggestions")
+
+    ## Providing suggestions based on selected resume or the restume with the highest match.
+    st.session_state.cover_letter = await prepare_cover_letter(st.session_state.openai_client, COVER_LETTER_GENERATION_PROMPT, st.session_state["llama_response"], st.session_state["best_resume_text"], COVER_LETTER_GENERATION_MODEL, model_temp = 0.2)
+
+    # Show detailed summary inside an expander:
+    with st.expander("Cover letter: "):
+        st.write(st.session_state.cover_letter)
+
+    save_job_dict_response(st.session_state.cover_letter, "cover_letter")
+
+    # Add download buttons
+    st.write("Download Cover Letter:")
+    #cover_letter_string = json.dumps(cover_letter)
+    # Generate files
+    #pdf_data = save_as_pdf(st.session_state.cover_letter)
+    #docx_data = save_as_docx(st.session_state.cover_letter)
+
+async def generate_reach_out_messages():
+    # Show detailed summary inside an expander:
+    st.session_state["linkedin_recruiter_message"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
+    with st.expander("LinkedIn Recruiter Message: "):
+        st.write(st.session_state.linkedin_recruiter_message)
+
+    
+    # Show detailed summary inside an expander:
+    st.session_state["recruiter_email"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_EMAIL_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], RECRUITER_EMAIL_MODEL, model_temp = 0.2)
+    with st.expander("Recruiter Email: "):
+        st.write(st.session_state.recruiter_email)
+
+    
+    # Show detailed summary inside an expander:
+    st.session_state["linkedin_connection_message"] = await generate_connection_messages_email(st.session_state.openai_client, CONNECTION_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
+    with st.expander("LinkedIn Connection Message: "):
+        st.write(st.session_state.linkedin_connection_message)
+
 async def main():
     # Initialize session state for resume and job link if they don't exist
     initialize_session_states()
+
+    # Calculate Select All state based on individual checkboxes
+    select_all_state = st.session_state.cover_letter and st.session_state.reach_out
 
     # initialize clients
     await initialize_clients()
@@ -266,7 +351,17 @@ async def main():
     #await add_extra_rag_data()
 
     await job_posting_submission()
-    
+
+    # Individual checkboxes
+    st.checkbox('Cover Letter and Suggestions', key='generate_cover_letter')
+    st.checkbox('Reach out Messages', key='reach_out')
+    # Select All checkbox
+    st.checkbox(
+        'Generate All',
+        key='select_all',
+        value=select_all_state,
+        on_change=update_selections
+    )
 
     # Submit button
     
@@ -312,76 +407,20 @@ async def main():
 
             with st.expander("View Summary"):
                 st.write(st.session_state["summary_response"])
+
+            if select_all_state:
+
+                await generate_suggestions_cover_letter()
+
+                await generate_reach_out_messages()
             
-            # Creating a dataframe from the llm response
-            st.session_state["parsed_job_df"] = parse_response_to_df(st.session_state["llama_response"])
-            st.session_state["parsed_job_df"]['job_description'] = json.dumps(st.session_state["job_description"])
-            st.session_state["parsed_job_df"]['job_link'] = st.session_state.job_link
+            elif st.session_state["reach_out"]:
+
+                await generate_reach_out_messages()
             
+            else: 
 
-            ## Generating embedding for job description:
-            st.session_state.job_emb  = await generate_embeddings(st.session_state["parsed_job_df"], EMBEDDING_MODEL, "job")  # Step 2: Generate embeddings
-            #st.dataframe(job_emb)
-            
-            job_prepared_data = prepare_data_job_description(st.session_state.job_emb )
-            response_insert = await insert_data_into_table(st.session_state["supabase_client"], "job_info", job_prepared_data, batch_size=100)
-
-            # Assuming job_emb_df['job_emb'].values[0] is the single embedding vector for the job description
-            st.session_state["best_resume_text"], st.session_state["updated_emb_df"] = find_best_resume(st.session_state.resume, st.session_state.job_emb)
-            # Print the DataFrame with percentage matches
-            
-            st.write("Resume Percentage Match: ")
-            st.write(st.session_state["updated_emb_df"][['resume_name', 'percentage_match']])
-
-            if st.session_state["rag_df"] is not None and not st.session_state["rag_df"].empty:
-                st.write("RAG data percentage Match: ")
-                st.session_state["best_rag_data"], updated_rag_df_percentage = find_rag_data_match_percentage(st.session_state["rag_df"], st.session_state.job_emb)
-                st.session_state["best_rag_data"] = st.session_state["best_rag_data"].sort_values(by='percentage_match', ascending=False)
-                st.write(st.session_state["best_rag_data"])
-                st.session_state["best_rag_data"] = st.session_state["best_rag_data"][['category', 'title', 'text']]
-                # Providing suggestions based on selected resume or the resume with the highest match.
-                st.session_state["rag_data_prompt"] = st.session_state["best_rag_data"].to_json(orient="records")
-                st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], st.session_state["rag_data_prompt"], PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
-            else:
-                st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
-         
-            with st.expander("Suggestions: "):
-                st.write(st.session_state["suggestions"])
-            save_job_dict_response(st.session_state["suggestions"], "suggestions")
-
-            ## Providing suggestions based on selected resume or the restume with the highest match.
-            st.session_state.cover_letter = await prepare_cover_letter(st.session_state.openai_client, COVER_LETTER_GENERATION_PROMPT, st.session_state["llama_response"], st.session_state["best_resume_text"], COVER_LETTER_GENERATION_MODEL, model_temp = 0.2)
-
-            # Show detailed summary inside an expander:
-            with st.expander("Cover letter: "):
-               st.write(st.session_state.cover_letter)
-
-            save_job_dict_response(st.session_state.cover_letter, "cover_letter")
-
-            # Add download buttons
-            st.write("Download Cover Letter:")
-            #cover_letter_string = json.dumps(cover_letter)
-            # Generate files
-            #pdf_data = save_as_pdf(st.session_state.cover_letter)
-            #docx_data = save_as_docx(st.session_state.cover_letter)
-
-            # Show detailed summary inside an expander:
-            st.session_state["linkedin_recruiter_message"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
-            with st.expander("LinkedIn Recruiter Message: "):
-               st.write(st.session_state.linkedin_recruiter_message)
-
-            
-            # Show detailed summary inside an expander:
-            st.session_state["recruiter_email"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_EMAIL_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
-            with st.expander("Recruiter Email: "):
-               st.write(st.session_state.recruiter_email)
-
-            
-            # Show detailed summary inside an expander:
-            st.session_state["linkedin_connection_message"] = await generate_connection_messages_email(st.session_state.openai_client, CONNECTION_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
-            with st.expander("LinkedIn Connection Message: "):
-               st.write(st.session_state.linkedin_connection_message)
-
+                await generate_suggestions_cover_letter()
 
             """
             # Add download buttons with unique keys
