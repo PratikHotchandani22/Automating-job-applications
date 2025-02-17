@@ -14,6 +14,13 @@ from prompt_openai import run_openai_chat_completion, initialize_openai_client
 import numpy as np
 from configuration import RECRUITER_EMAIL_PROMPT, RECRUITER_LINKEDIN_PROMPT, CONNECTION_LINKEDIN_PROMPT, LINKEDIN_EMAIL_MODEL
 from emails_connection_messages import generate_connection_messages_email
+from llm_api_calls_LiteLLM import run_liteLLM_call
+import os
+from credentials import OPENAI_API, ANTHROPIC_API
+
+## set ENV variables
+os.environ["OPENAI_API_KEY"] = OPENAI_API
+os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API
 
 def initialize_session_states():
     if "resume" not in st.session_state:
