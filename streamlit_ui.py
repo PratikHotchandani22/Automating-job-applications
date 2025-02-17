@@ -298,7 +298,7 @@ async def generate_suggestions_cover_letter():
     save_job_dict_response(st.session_state.cover_letter, "cover_letter")
 
     # Add download buttons
-    st.write("Download Cover Letter:")
+    #st.write("Download Cover Letter:")
     #cover_letter_string = json.dumps(cover_letter)
     # Generate files
     #pdf_data = save_as_pdf(st.session_state.cover_letter)
