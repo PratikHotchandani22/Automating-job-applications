@@ -1,7 +1,7 @@
 SUPABASE_RESUME_TABLE = "resume_data"
 JOB_DETAILS_TABLE_NAME = "job_info"
 
-IDENTIFY_DETAILS_FROM_RESUME_PROMPT = (
+IDENTIFY_DETAILS_FROM_RESUME_PROMPT_old = (
 "You are a professional AI model tasked with extracting specific sections and their content from a resume. "
 "The resume is provided to you in free text format, and your job is to identify the following sections and extract their corresponding content. "
 "You will return the extracted information as a list of sentences, formatted as strings, with each sentence representing a key detail from the resume.\n\n"
@@ -35,8 +35,57 @@ IDENTIFY_DETAILS_FROM_RESUME_PROMPT = (
 "Skills: Python, NLP, Machine Learning, PySpark, Databricks..."
 "Project: Developed an NLP model using BERT, achieving 95% accuracy..."
 "Experience: Worked at Bose Corporation, leading ML initiatives for customer data..."
-"Please make sure the output is a well-formed list and only include the information provided in the resume text. Each sentence should be informative and capture the essence of the section."
+"Please make sure the output is a well-formed list and only include the information provided in the resume text. Each sentence should be informative and capture the essence of the section. Just provide the output directly, dont provide any other sentence like here is the output you want.. "
 )
+
+IDENTIFY_DETAILS_FROM_RESUME_PROMPT = """ 
+You are a professional AI model tasked with extracting specific sections and their content from a resume. 
+The resume will be provided to you in free text format, and your job is to identify the following sections and extract their corresponding content. 
+You will return the extracted information as a list of sentences, formatted as strings, with each sentence representing a key detail from the resume.
+
+Sections to identify and extract:
+
+1. Name: The full name of the individual.
+2. Contact Information: This includes email, phone number, LinkedIn, and GitHub details.
+3. Education: For each degree, include:
+   - University/Institution name
+   - Degree
+   - GPA (if available)
+   - Location
+   - Duration of the study (start year - end year)
+   - Relevant courses listed
+4. Experience: For each experience entry, include:
+   - Job title
+   - Company name
+   - Location
+   - Duration (start date - end date)
+   - List of bullet points summarizing responsibilities or achievements
+5. Projects: For each project, include:
+   - Project name
+   - Technologies used
+   - Brief description of the project
+   - Key achievements or impact
+6. Achievements: Any professional awards or recognitions
+7. Technical Skills: List of technical skills including programming languages, libraries, and tools
+
+Format your response as a list of strings, where each element in the list is a single sentence summarizing key information from the resume. Each sentence should start with a category label in all caps, followed by a colon and a space. For example:
+
+NAME: John Doe
+CONTACT: Email: john.doe@email.com, Phone: (123) 456-7890, LinkedIn: linkedin.com/in/johndoe
+EDUCATION: Master of Science in Computer Science, Stanford University, Stanford, CA, GPA: 3.8, 2018-2020
+EXPERIENCE: Software Engineer at Google, Mountain View, CA, June 2020 - Present: Developed machine learning algorithms for image recognition
+PROJECT: ChatBot Assistant - Developed an AI-powered chatbot using Python and TensorFlow, improving customer service response times by 40%
+ACHIEVEMENT: First place in the 2019 Stanford AI Hackathon
+SKILLS: Python, Java, C++, TensorFlow, PyTorch, SQL, Git
+
+Please ensure that:
+1. Each sentence starts with the appropriate category label in all caps.
+2. Information is concise but comprehensive, capturing the essence of each section.
+3. Only information provided in the resume text is included.
+4. The output is a well-formed list of sentences.
+5. There are no introductory or concluding sentences; only the extracted information should be provided.
+
+Begin extracting and formatting the information from the provided resume text now."""
 
 IDENTIFY_DETAILS_FROM_JOB_PROMPT = """
 You are a skilled job application parser. Your task is to extract and organize specific information from a provided job description text, responding only with a JSON dictionary format containing only the requested details. 
@@ -156,13 +205,17 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 
 IDENTIFY_DETAILS_FORM_RESUME_MODEL = "gpt-4o-mini"
 
+#IDENTIFY_DETAILS_FORM_RESUME_MODEL = "claude-3-5-sonnet-20240620"
+
 IDENTIFY_DETAILS_FROM_JOB_MODEL = "gpt-4o-mini"
 
 SUMMARIZE_JOB_DESCRIPTION_MODEL = "gpt-4o-mini"
 
 PROVIDING_SUGGESTIONS_MODEL = "gpt-4o-mini"
 
-COVER_LETTER_GENERATION_MODEL = "gpt-4o-mini"
+#COVER_LETTER_GENERATION_MODEL = "gpt-4o-mini"
+
+COVER_LETTER_GENERATION_MODEL = "claude-3-5-sonnet-20240620"
 
 SUGGESTIONS_JOB_BASED_ON_RESUME = """
 Analyze the following inputs:  
@@ -410,7 +463,9 @@ Example Output:
 Hi [Name], I’m excited about [Job Title] at [Company]—it’s my top priority! With [specific skill/experience 1] and [specific skill/experience 2] aligning with the role, I’d love your insights or referral. Could we connect for a quick chat? Thanks for your time!
 """
 
-LINKEDIN_EMAIL_MODEL = "gpt-4o-mini"
+LINKEDIN_EMAIL_MODEL_old = "gpt-4o-mini"
+
+LINKEDIN_EMAIL_MODEL = "claude-3-5-sonnet-20240620"
 
 RAG_DATA_STRUCTURNG_PROMPT = """
 You are an assistant that formats text data into JSON entries based on specific categories. Each entry contains `category`, `title`, and `text` fields, where `text` may contain multiple sentences or bullet points.

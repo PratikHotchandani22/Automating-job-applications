@@ -7,6 +7,12 @@ from prompt_llm_for_resume import run_llama_prompt
 import streamlit as st
 from prompt_openai import run_openai_chat_completion
 import json
+from credentials import ANTHROPIC_API
+from llm_api_calls_LiteLLM import run_liteLLM_call
+
+
+os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API
+
 
 TEMP_DIR = "temp_dir"
 os.makedirs(TEMP_DIR, exist_ok=True)  # This will create the directory if it does not exist
@@ -33,6 +39,7 @@ async def process_resumes(file_paths, IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model
         #resume_llm_response = await extract_resume_sections_langchain(IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model, resume_text)
         resume_llm_response = await run_openai_chat_completion(st.session_state.openai_client, json.dumps(resume_text), IDENTIFY_DETAILS_FROM_RESUME_PROMPT,model)
 
+        #resume_llm_response = await run_liteLLM_call(json.dumps(resume_text), IDENTIFY_DETAILS_FROM_RESUME_PROMPT, model)
         # Cleaning the LLM response
         cleaned_resume_llm_response = clean_llm_response_for_resume(resume_llm_response)
 
@@ -117,9 +124,9 @@ async def prepare_cover_letter(openai_client, system_prompt, llama_response, bes
     "resume_text" : "{best_resume_text}",
     "job_description_text" : "{llama_response}"
     '''
-    input_text = system_prompt + user_prompt
 
     # Generate suggestions using the LLaMA model
-    cover_letter = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
-    
+    #cover_letter = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
+    cover_letter = await run_liteLLM_call(json.dumps(user_prompt), system_prompt, model_name)
+
     return cover_letter
