@@ -9,6 +9,7 @@ from prompt_openai import run_openai_chat_completion
 import json
 from credentials import ANTHROPIC_API
 from llm_api_calls_LiteLLM import run_liteLLM_call
+from prompt_anthropic import run_anthropic_chat_completion
 
 
 os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API
@@ -127,6 +128,7 @@ async def prepare_cover_letter(openai_client, system_prompt, llama_response, bes
 
     # Generate suggestions using the LLaMA model
     #cover_letter = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
-    cover_letter = await run_liteLLM_call(json.dumps(user_prompt), system_prompt, model_name)
+    #cover_letter = await run_liteLLM_call(json.dumps(user_prompt), system_prompt, model_name)
+    cover_letter = await run_anthropic_chat_completion(st.session_state.anthropic_client, json.dumps(user_prompt), system_prompt, model_name)
 
-    return cover_letter
+    return cover_letter['content']
