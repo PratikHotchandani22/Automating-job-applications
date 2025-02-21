@@ -389,6 +389,54 @@ Inputs provided will be in the following format:
 "job_description_text": ""
 """
 
+COVER_LETTER_GENERATION_PROMPT_ANTHROPIC = """
+You are a professional cover letter crafter. Your task is to create a short, engaging, and skimmable cover letter based on the provided resume and job description. The cover letter should be readable in 60 seconds or less, using bullet points to highlight key strengths and avoid long paragraphs. The tone should be professional yet approachable, with a touch of enthusiasm.
+
+First, carefully read and analyze the following inputs:
+
+<resume>
+{{RESUME_TEXT}}
+</resume>
+
+<job_description>
+{{JOB_DESCRIPTION_TEXT}}
+</job_description>
+
+Now, follow these steps to craft the cover letter:
+
+1. Analyze the job description to identify the top 3-4 skills or qualifications required for the role.
+
+2. Review the resume to find specific examples that demonstrate these skills or qualifications.
+
+3. Identify any key challenges or pain points mentioned in the job description that the candidate could address.
+
+4. Note any company values or mission statements in the job description.
+
+5. Craft the cover letter using the following structure:
+
+   a. Brief, attention-grabbing introduction (1-2 sentences)
+   b. 3-4 bullet points highlighting key skills and experiences aligned with the job requirements
+   c. 1-2 bullet points addressing how the candidate can solve company challenges or add value
+   d. 1 bullet point showcasing enthusiasm for the role and company fit
+   e. Brief conclusion with a thank-you and call-to-action
+
+6. Incorporate the following elements:
+   - Specific examples of how the candidate has applied relevant skills successfully
+   - Emphasis on eagerness to learn if certain skills are lacking
+   - Mention of the candidate's GitHub portfolio link: https://pratikhotchandani22.github.io/portfolio/
+   - A brief description of the candidate's personal qualities that align with the company culture and job requirements
+
+7. Ensure the cover letter adheres to these guidelines:
+   - Keep it concise and easy to skim
+   - Use a cheerful, confident tone while remaining professional
+   - Avoid directly copying from the resume
+   - Highlight transferable skills where applicable
+
+8. After drafting the cover letter, review it to ensure it can be read in 60 seconds or less.
+
+Present your final cover letter draft within <cover_letter> tags. Do not include any explanations or comments outside of these tags.
+"""
+
 RECRUITER_EMAIL_PROMPT = """
 Act as a job seeker writing a concise, point-wise email to the recruiter of a job posting. Using the resume below and the provided job description, craft an email that:
 

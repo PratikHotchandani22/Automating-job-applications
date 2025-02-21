@@ -17,6 +17,7 @@ from emails_connection_messages import generate_connection_messages_email
 from llm_api_calls_LiteLLM import run_liteLLM_call
 import os
 from credentials import OPENAI_API, ANTHROPIC_API
+from prompt_anthropic import initialize_anthropic_client, run_anthropic_chat_completion
 
 ## set ENV variables
 os.environ["OPENAI_API_KEY"] = OPENAI_API
@@ -90,10 +91,13 @@ def initialize_session_states():
         st.session_state.generate_cover_letter = False
     if 'reach_out' not in st.session_state:
         st.session_state.reach_out = False
+    if 'anthropic_client' not in st.session_state:
+        st.session_state.anthropic_client = None
 
 async def initialize_clients():
     st.session_state["supabase_client"] = await create_supabase_connection()
     st.session_state["openai_client"] = await initialize_openai_client()
+    st.session_state["anthropic_client"] = await initialize_anthropic_client(ANTHROPIC_API)
 
 async def get_resumes_ui():
     st.subheader("Select a Resume")
