@@ -10,6 +10,7 @@ import json
 from credentials import ANTHROPIC_API
 from llm_api_calls_LiteLLM import run_liteLLM_call
 from prompt_anthropic import run_anthropic_chat_completion
+import re
 
 
 os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API
@@ -116,6 +117,7 @@ async def suggest_resume_improvements(openai_client, system_prompt, structured_j
 
 async def prepare_cover_letter(openai_client, system_prompt, llama_response, best_resume_text, model_name, model_temp):
 
+
     ## Construct a user_prompt that will have structure job description 
     # Convert all columns in the job description DataFrame to a single text string
     #job_description_text = " ".join(structured_job_data.fillna("").astype(str).values.flatten())
@@ -133,3 +135,32 @@ async def prepare_cover_letter(openai_client, system_prompt, llama_response, bes
     
     
     return cover_letter['content']
+
+
+def extract_tags_content(content, tags_list):
+    """
+    Extract content from specified tags and return it as a formatted string.
+    
+    Args:
+        content (str): The input text containing tagged content
+        tags_list (list): List of tag names to extract
+    
+    Returns:
+        str: Formatted string with all extracted content
+    """
+    result = []
+    
+    for tag in tags_list:
+        # Regex pattern that handles potential malformed XML and duplicate tags
+        pattern = f"<{tag}>(.*?)</{tag}>"
+        matches = re.findall(pattern, content, re.DOTALL)
+        
+        if matches:
+            for match in matches:
+                # Clean up the extracted content (remove leading/trailing whitespace)
+                cleaned_content = match.strip()
+                # Add the tagged content with a header to the result
+                result.append(f"{tag}:\n{cleaned_content}\n")
+    
+    # Join all extracted content with double line breaks for UI display
+    return "\n".join(result)

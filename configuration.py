@@ -191,7 +191,6 @@ You are an expert summarizer for job roles. Your task is to clearly and accurate
 13. **Employment Type:** Specify whether the position is part-time, full-time, or contract-based.
 14. **Key Skills:** List the top 5 most important skills and qualifications in order of priority. Exclude universally common skills like Python, SQL, and NLP unless they are explicitly emphasized.
 15. **Day-to-Day Responsibilities:** Summarize the main responsibilities as described in the job posting. Avoid hallucinating; include only what is explicitly mentioned.
-16. Provide a one line bio that would summarize the perfect candidate for this role. For example: "Senior AI/ML Engineer skilled in OpenAI and open-source LLMs to deploy scalable AI solutions."
 
 ### **Important Instructions:**
 - Pay extra attention to extracting details like the reference job code, email address, and specific application instructions. If any of these details are provided but unclear, ensure they are captured accurately.
@@ -641,4 +640,86 @@ For the following input, return only the job description section:
 
 IDENTIFY_JOB_DESCRIPTION_MODEL = "gpt-4o-mini"
 
+RESUME_SUMMARY_PROMPT = """
+Here is the candidate's experience:
 
+<candidate_experience>
+{{CANDIDATE_EXPERIENCE}}
+</candidate_experience>
+
+Here is the job description:
+
+<job_description>
+{{JOB_DESCRIPTION}}
+</job_description>
+
+You are an expert resume writer specializing in creating tailored summaries for data scientists, applied AI engineers, and machine learning engineers. Your task is to create a personalized and effective resume summary based on the information provided above.
+
+Please follow these steps to create an effective resume summary:
+
+1. Perform a detailed analysis of the job requirements and the candidate's qualifications. Wrap your analysis inside <detailed_analysis> tags:
+
+<detailed_analysis>
+a. Job Analysis:
+   - List key job requirements (technical skills, experience, domain knowledge)
+   - Identify main responsibilities
+   - Note any unique challenges or pain points mentioned
+   - Provide specific quotes from the job description for each point
+
+b. Candidate Analysis:
+   - Match the candidate's skills and experience to job requirements
+   - Identify relevant projects or achievements
+   - List specific quantifiable achievements from the candidate's experience
+   - Note how the candidate's experience aligns with company needs
+   - Provide specific quotes from the candidate's experience for each point
+
+c. Unique Selling Points:
+   - Identify 3-5 unique selling points of the candidate based on their experience and the job requirements
+
+d. Summary Brainstorming:
+   - Draft a strong opening statement
+   - Select 2-3 key technical skills most relevant to the job
+   - Choose a notable, quantifiable achievement
+   - Identify how the candidate addresses a specific pain point
+   - Show how the candidate's experience aligns with company needs
+
+e. Draft Multiple Summaries:
+   - Create 3 different versions of the resume summary
+   - For each version, count the number of lines to ensure it's within 2-3 lines
+   - Select the best version that meets all criteria
+
+f. Ensure Conciseness:
+   - Review your selected draft and identify ways to condense information
+   - Prioritize the most impactful points to fit within 2-3 lines
+   - Count the final number of lines to confirm it meets the requirement
+</detailed_analysis>
+
+2. Based on your analysis, create a personalized resume summary that meets the following criteria:
+   - Begins with a strong opening statement about the candidate's experience and primary expertise
+   - Highlights 2-3 key technical skills most relevant to the job
+   - Includes a notable, quantifiable achievement
+   - Addresses a specific pain point or challenge from the job description
+   - Demonstrates alignment with company needs
+   - Is concise (2-3 lines, absolutely no more than 3 lines)
+   - Does not mention the company name directly
+
+Present your final resume summary within <resume_summary> tags.
+
+3. Provide a brief explanation of how each element of the summary addresses the job requirements and company needs. Enclose this explanation in <explanation> tags.
+
+Your output should follow this structure:
+
+<resume_summary>
+[Concise 2-3 line summary tailored to the job description and candidate experience]
+</resume_summary>
+
+<explanation>
+- Opening statement: [How it showcases relevant experience]
+- Key skills: [Why these skills were chosen]
+- Notable achievement: [How it demonstrates value]
+- Addressing pain point: [How the candidate solves a company problem]
+- Alignment with needs: [How the candidate fits the role]
+</explanation>
+"""
+
+RESUME_SUMMARY_MODEL = "claude-3-5-sonnet-20240620"

@@ -5,14 +5,14 @@ import json
 from prompt_llm_for_resume import  run_llama_prompt, summarize_job_description, parse_response_to_df, save_job_dict_response
 from supabase_backend import create_supabase_connection, chunk_data, insert_data_into_table, fetch_data_from_table
 from create_embeddings import generate_embeddings
-from find_optimal_resume import find_rag_data_match_percentage, process_resumes, get_file_paths, find_best_resume, suggest_resume_improvements, prepare_cover_letter
+from find_optimal_resume import find_rag_data_match_percentage, process_resumes, get_file_paths, find_best_resume, suggest_resume_improvements, prepare_cover_letter, extract_tags_content
 from supabase_helper_functions import prepare_data_rag, prepare_data_resume, prepare_data_job_description
 import pandas as pd
 from configuration import IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPTION_MODEL, RAG_DATA_STRUCTURNG_PROMPT, RAG_DATA_STRUCTURING_MODEL, COVER_LETTER_GENERATION_PROMPT, COVER_LETTER_GENERATION_MODEL, PROVIDING_SUGGESTIONS_MODEL, SUGGESTIONS_JOB_BASED_ON_RESUME, IDENTIFY_DETAILS_FORM_RESUME_MODEL, SUMMARIZE_JOB_DESCRIPTION_MODEL, IDENTIFY_DETAILS_FROM_JOB_PROMPT, SUMMARY_PROMPT, EMBEDDING_MODEL, IDENTIFY_DETAILS_FROM_JOB_MODEL, IDENTIFY_DETAILS_FROM_RESUME_PROMPT
 from helper_functions import save_as_pdf, save_as_docx
 from prompt_openai import run_openai_chat_completion, initialize_openai_client
 import numpy as np
-from configuration import RECRUITER_EMAIL_PROMPT, RECRUITER_LINKEDIN_PROMPT, CONNECTION_LINKEDIN_PROMPT, LINKEDIN_EMAIL_MODEL, RECRUITER_EMAIL_MODEL
+from configuration import RECRUITER_EMAIL_PROMPT, RECRUITER_LINKEDIN_PROMPT, CONNECTION_LINKEDIN_PROMPT, LINKEDIN_EMAIL_MODEL, RECRUITER_EMAIL_MODEL, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL
 from emails_connection_messages import generate_connection_messages_email
 from llm_api_calls_LiteLLM import run_liteLLM_call
 import os
@@ -93,6 +93,12 @@ def initialize_session_states():
         st.session_state.reach_out = False
     if 'anthropic_client' not in st.session_state:
         st.session_state.anthropic_client = None
+    if 'master_resume' not in st.session_state:
+        st.session_state.master_resume = None
+    if 'master_resume_job_description_combined' not in st.session_state:
+        st.session_state.master_resume_job_description_combined = None
+    if 'resume_summary' not in st.session_state:
+        st.session_state.resume_summary = None
 
 async def initialize_clients():
     st.session_state["supabase_client"] = await create_supabase_connection()
@@ -107,6 +113,20 @@ async def get_resumes_ui():
     df = await fetch_data_from_table(st.session_state["supabase_client"], 'resume_data')
 
     if not df.empty:
+        # Find the row where resume_name is "Pratik Hotchandani Master Resume 2"
+        master_resume_row = df[df['resume_name'] == "Pratik Hotchandani Master Resume 2"]
+
+        # Store it in session state
+        if not master_resume_row.empty:
+            st.session_state['master_resume'] = master_resume_row.iloc[0]
+            
+            # Remove the row from the dataframe
+            df = df[df['resume_name'] != "Pratik Hotchandani Master Resume 2"].reset_index(drop=True)
+            
+            print("Master resume found and stored in session state")
+        else:
+            print("Master resume not found")
+
         resume_names = df['resume_name'].tolist()
         
         # Add checkbox for selecting all resumes
@@ -317,6 +337,7 @@ async def generate_reach_out_messages():
     
     # Show detailed summary inside an expander:
     st.session_state["recruiter_email"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_EMAIL_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], RECRUITER_EMAIL_MODEL, model_temp = 0.2)
+    st.session_state["recruiter_email"] = extract_tags_content(st.session_state.recruiter_email,['subject','email'])
     with st.expander("Recruiter Email: "):
         st.write(st.session_state.recruiter_email)
 
@@ -325,6 +346,12 @@ async def generate_reach_out_messages():
     st.session_state["linkedin_connection_message"] = await generate_connection_messages_email(st.session_state.openai_client, CONNECTION_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
     with st.expander("LinkedIn Connection Message: "):
         st.write(st.session_state.linkedin_connection_message)
+
+async def generate_resume_summary(user_prompt):
+    st.session_state["resume_summary"] = await run_anthropic_chat_completion(st.session_state.anthropic_client, user_prompt, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL)
+    st.session_state["resume_summary"] = extract_tags_content(st.session_state.resume_summary['content'],['resume_summary'])
+    with st.expander("Ideal Resume Summary: "):
+        st.write(st.session_state["resume_summary"])
 
 async def main():
     # Initialize session state for resume and job link if they don't exist
@@ -404,6 +431,7 @@ async def main():
             st.session_state["llama_response"] = await run_openai_chat_completion(st.session_state.openai_client, st.session_state.job_data, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
             #llama_response = await run_llama_prompt(st.session_state.job_data, IDENTIFY_DETAILS_FROM_JOB_PROMPT, IDENTIFY_DETAILS_FROM_JOB_MODEL)
             #llama_response_str = json.dumps(st.session_state["llama_response"])
+            
 
             ## Prompting llm using groq api for job description summarization
             #summary_response = await summarize_job_description(SUMMARY_PROMPT, llama_response, SUMMARIZE_JOB_DESCRIPTION_MODEL)
@@ -411,6 +439,19 @@ async def main():
 
             with st.expander("View Summary"):
                 st.write(st.session_state["summary_response"])
+
+            st.session_state.master_resume_job_description_combined = {
+                "job_description": st.session_state["llama_response"],
+                "resume": st.session_state['master_resume']['resume_text']
+            }
+
+            # Convert the combined structure to a JSON string
+            st.session_state.master_resume_job_description_combined = json.dumps(st.session_state.master_resume_job_description_combined)
+
+            print("Conbined data for summary is: ")
+            print(st.session_state.master_resume_job_description_combined)
+
+            await generate_resume_summary(st.session_state.master_resume_job_description_combined)
 
             if select_all_state:
 
@@ -425,27 +466,6 @@ async def main():
             else: 
 
                 await generate_suggestions_cover_letter()
-
-            """
-            # Add download buttons with unique keys
-            st.download_button(
-                label="Download as PDF",
-                data=pdf_data,
-                file_name="cover_letter.pdf",
-                mime="application/pdf",
-                key="download_pdf"
-            )
-
-
-            st.download_button(
-                label="Download as Word Document",
-                data=docx_data,
-                file_name="cover_letter.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="download_docx"
-            )
-            
-            """
 
         else:
             st.error("Please upload at least one resume and provide a job URL before submitting.")
