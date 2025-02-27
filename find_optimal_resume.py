@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import os
-from resume_text import extract_text_from_docx, extract_resume_sections_langchain, clean_llm_response_for_resume
+from resume_text import extract_text_from_docx, clean_llm_response_for_resume
 from sklearn.metrics.pairwise import cosine_similarity
 from prompt_llm_for_resume import run_llama_prompt
 import streamlit as st
@@ -130,5 +130,6 @@ async def prepare_cover_letter(openai_client, system_prompt, llama_response, bes
     #cover_letter = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
     #cover_letter = await run_liteLLM_call(json.dumps(user_prompt), system_prompt, model_name)
     cover_letter = await run_anthropic_chat_completion(st.session_state.anthropic_client, json.dumps(user_prompt), system_prompt, model_name)
-
+    
+    
     return cover_letter['content']
