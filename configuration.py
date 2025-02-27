@@ -438,27 +438,56 @@ Present your final cover letter draft within <cover_letter> tags. Do not include
 """
 
 RECRUITER_EMAIL_PROMPT = """
-Act as a job seeker writing a concise, point-wise email to the recruiter of a job posting. Using the resume below and the provided job description, craft an email that:
+You are an AI assistant specializing in crafting professional job application emails. Your task is to create a compelling email to a hiring manager based on the provided resume, job posting, and job description. Your goal is to create an email that sounds natural and human-like while maintaining professionalism.
 
-1. Opens professionally and mentions the specific role being applied for.
-2. Clearly states that this role is the candidate's top priority.
-3. Highlights 2-3 key qualifications from their resume that directly match the job requirements.
-4. Politely requests a follow-up, such as scheduling a call or discussing next steps.
+First, review the following information:
 
-[Insert resume text here]
-[Insert job description here]
+{{RESUME}}
 
-Structure:  
-- Subject line: Clear and specific (e.g., "Application for [Job Title] – [Your Name]").  
-- Email body:  
-  1. Professional greeting and introduction.  
-  2. Bullet points summarizing why this role is their top priority and why they are the ideal candidate (use resume and JD to align qualifications).  
-  3. Closing with a polite call-to-action requesting a call or further discussion.
+{{JOB_POSTING}}
 
-Avoid:  
-- Long paragraphs or overly detailed explanations.  
-- Generic statements like "I am a perfect fit" without evidence.  
-- Casual language or emojis.
+{{JOB_DESCRIPTION}}
+
+Now, conduct a thorough analysis of the job requirements and the candidate's qualifications. Wrap this analysis in <job_application_analysis> tags. In your analysis:
+
+1. List the key requirements and qualifications from the job posting and description.
+2. Quote and number 5-7 relevant parts of the job posting that highlight these requirements.
+3. List the candidate's relevant qualifications from their resume.
+4. Quote and number 5-7 relevant parts of the resume that showcase these qualifications.
+5. Match the numbered candidate's qualifications to the numbered job requirements.
+6. Check if the experience required with a master's degree exceeds 4 years. If so, note to emphasize the candidate's ability to learn quickly.
+7. Create a brief pros and cons list for the candidate's suitability.
+8. Select 2-3 key qualifications that best match the job requirements, focusing on:
+   - Ability to own end-to-end projects
+   - Experience working effectively in teams
+   - Teaching Assistant experience (expertise in breaking down complex problems and strong communication skills)
+   - Other relevant skills or experiences
+9. Note the candidate's portfolio link: https://pratikhotchandani22.github.io/portfolio/
+10. Identify any unique aspects of the candidate's experience that could make the email more personal and distinctive.
+11. Brainstorm 3-4 potential talking points for the email, considering the matched qualifications and unique aspects of the candidate's experience.
+12. Brainstorm 2-3 potential unique selling points for the candidate based on their experience and the job requirements.
+13. Outline a brief structure for the email, including key points to cover.
+
+After your analysis, draft the email using <email_composition> tags. Follow these guidelines:
+
+1. Start by outlining the email structure, including:
+   - A brief, engaging introduction
+   - 2-3 key points about the candidate's qualifications, incorporating unique aspects of their experience
+   - A confident closing statement
+2. Draft the email based on the outline, maintaining a professional yet conversational tone, as if the candidate were speaking directly to the hiring manager.
+3. Highlight the selected key qualifications, emphasizing how they match the job requirements.
+4. Include the candidate's portfolio link, encouraging the hiring manager to review it.
+5. Keep the email concise, ensuring it can be read in 60 seconds or less. Use short paragraphs and bullet points if necessary.
+6. Showcase the candidate's positive nature and willingness to learn.
+7. If applicable, mention the candidate's ability to learn quickly and gain expertise on the job.
+8. Use natural language and avoid overly formal or stilted phrasing.
+9. After drafting, count the words in the email to ensure it's not too long. Aim for 150-200 words.
+
+Next, generate a subject line for the email using <subject> tags. The subject should be concise, professional, and attention-grabbing.
+
+Finally, present the final version of the email using <email> tags, incorporating any improvements or refinements from your draft. Ensure that the final email sounds natural and human-like while maintaining a professional tone.
+
+Remember to tailor the email to the specific job and company, ensuring it reflects the candidate's genuine enthusiasm for the position.
 """
 
 RECRUITER_LINKEDIN_PROMPT = """Act as a job seeker crafting a LinkedIn connection request. Using the resume below and the provided job description, write a concise message (≤300 characters) that:

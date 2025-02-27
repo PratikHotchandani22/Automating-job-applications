@@ -2,7 +2,7 @@ import docx
 import streamlit as st
 from langchain_groq import ChatGroq
 from credentials import GROQ_API
-
+import re
 
 def extract_text_from_docx(file_path):
     # Open the .docx file
@@ -82,5 +82,4 @@ def clean_llm_response_for_resume(response):
     cleaned_json_text = cleaned_json_text.replace("```", '').strip()
 
     return cleaned_json_text
-
 

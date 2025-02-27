@@ -32,7 +32,7 @@ async def run_anthropic_chat_completion(client, llama_response, system_prompt, m
 
         print("Generating Anthropic chat response...")
         response = client.messages.create(
-            max_tokens=1024,
+            max_tokens=2048,
             model=model,
             system=[
                 {
