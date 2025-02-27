@@ -347,8 +347,15 @@ async def generate_reach_out_messages():
     with st.expander("LinkedIn Connection Message: "):
         st.write(st.session_state.linkedin_connection_message)
 
-async def generate_resume_summary(user_prompt):
-    st.session_state["resume_summary"] = await run_anthropic_chat_completion(st.session_state.anthropic_client, user_prompt, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL)
+async def generate_resume_summary():
+    st.session_state.master_resume_job_description_combined = {
+                "job_description": st.session_state["llama_response"],
+                "resume": st.session_state['master_resume']['resume_text']
+            }
+
+            # Convert the combined structure to a JSON string
+    st.session_state.master_resume_job_description_combined = json.dumps(st.session_state.master_resume_job_description_combined)
+    st.session_state["resume_summary"] = await run_anthropic_chat_completion(st.session_state.anthropic_client, st.session_state.master_resume_job_description_combined, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL)
     st.session_state["resume_summary"] = extract_tags_content(st.session_state.resume_summary['content'],['resume_summary'])
     with st.expander("Ideal Resume Summary: "):
         st.write(st.session_state["resume_summary"])
@@ -440,18 +447,8 @@ async def main():
             with st.expander("View Summary"):
                 st.write(st.session_state["summary_response"])
 
-            st.session_state.master_resume_job_description_combined = {
-                "job_description": st.session_state["llama_response"],
-                "resume": st.session_state['master_resume']['resume_text']
-            }
-
-            # Convert the combined structure to a JSON string
-            st.session_state.master_resume_job_description_combined = json.dumps(st.session_state.master_resume_job_description_combined)
-
-            print("Conbined data for summary is: ")
-            print(st.session_state.master_resume_job_description_combined)
-
-            await generate_resume_summary(st.session_state.master_resume_job_description_combined)
+        
+            await generate_resume_summary()
 
             if select_all_state:
 
