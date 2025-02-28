@@ -12,7 +12,7 @@ from configuration import IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPT
 from helper_functions import save_as_pdf, save_as_docx
 from prompt_openai import run_openai_chat_completion, initialize_openai_client
 import numpy as np
-from configuration import RECRUITER_EMAIL_PROMPT, RECRUITER_LINKEDIN_PROMPT, CONNECTION_LINKEDIN_PROMPT, LINKEDIN_EMAIL_MODEL, RECRUITER_EMAIL_MODEL, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL
+from configuration import COLD_EMAILS_MESSAGES_PROMPT, COLD_EMAILS_MESSAGES_MODEL, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL
 from emails_connection_messages import generate_connection_messages_email
 from llm_api_calls_LiteLLM import run_liteLLM_call
 import os
@@ -99,7 +99,11 @@ def initialize_session_states():
         st.session_state.master_resume_job_description_combined = None
     if 'resume_summary' not in st.session_state:
         st.session_state.resume_summary = None
-
+    if 'cold_email_messages' not in st.session_state:
+        st.session_state.cold_email_messages = None
+    if 'hiring_manager_email' not in st.session_state:
+        st.session_state.hiring_manager_email = None
+        
 async def initialize_clients():
     st.session_state["supabase_client"] = await create_supabase_connection()
     st.session_state["openai_client"] = await initialize_openai_client()
@@ -329,23 +333,25 @@ async def generate_suggestions_cover_letter():
     #docx_data = save_as_docx(st.session_state.cover_letter)
 
 async def generate_reach_out_messages():
+
     # Show detailed summary inside an expander:
-    st.session_state["linkedin_recruiter_message"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
-    with st.expander("LinkedIn Recruiter Message: "):
+    st.session_state["cold_email_messages"] = await generate_connection_messages_email(COLD_EMAILS_MESSAGES_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], COLD_EMAILS_MESSAGES_MODEL, model_temp = 0.2)
+    
+    st.session_state["linkedin_recruiter_message"] = extract_tags_content(st.session_state.cold_email_messages,['linkedin_message_recruiter'])
+    with st.expander("Recruiter LinkedIn Message: "):
         st.write(st.session_state.linkedin_recruiter_message)
 
-    
-    # Show detailed summary inside an expander:
-    st.session_state["recruiter_email"] = await generate_connection_messages_email(st.session_state.openai_client, RECRUITER_EMAIL_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], RECRUITER_EMAIL_MODEL, model_temp = 0.2)
-    st.session_state["recruiter_email"] = extract_tags_content(st.session_state.recruiter_email,['subject','email'])
-    with st.expander("Recruiter Email: "):
+    st.session_state["recruiter_email"] = extract_tags_content(st.session_state.cold_email_messages,['cold_email_recruiter'])
+    with st.expander("Recruiter Cold Email: "):
         st.write(st.session_state.recruiter_email)
 
-    
-    # Show detailed summary inside an expander:
-    st.session_state["linkedin_connection_message"] = await generate_connection_messages_email(st.session_state.openai_client, CONNECTION_LINKEDIN_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], LINKEDIN_EMAIL_MODEL, model_temp = 0.2)
-    with st.expander("LinkedIn Connection Message: "):
+    st.session_state["linkedin_connection_message"] = extract_tags_content(st.session_state.cold_email_messages,['linkedin_message_hiring_manager'])
+    with st.expander("Hiring Manager Linkedin Message: "):
         st.write(st.session_state.linkedin_connection_message)
+
+    st.session_state["hiring_manager_email"] = extract_tags_content(st.session_state.cold_email_messages,['cold_email_hiring_manager'])
+    with st.expander("Hiring Manager Cold Email: "):
+        st.write(st.session_state.hiring_manager_email)
 
 async def generate_resume_summary():
     st.session_state.master_resume_job_description_combined = {
