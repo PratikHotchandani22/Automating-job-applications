@@ -131,7 +131,7 @@ async def prepare_cover_letter(openai_client, system_prompt, llama_response, bes
     # Generate suggestions using the LLaMA model
     #cover_letter = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
     #cover_letter = await run_liteLLM_call(json.dumps(user_prompt), system_prompt, model_name)
-    cover_letter = await run_anthropic_chat_completion(st.session_state.anthropic_client, json.dumps(user_prompt), system_prompt, model_name)
+    cover_letter = await run_anthropic_chat_completion(st.session_state.anthropic_client, json.dumps(user_prompt), system_prompt, model_name, max_tokens = 2048)
     
     
     return cover_letter['content']
@@ -149,7 +149,6 @@ def extract_tags_content(content, tags_list):
         str: Formatted string with all extracted content
     """
     result = []
-    
     for tag in tags_list:
         # Regex pattern that handles potential malformed XML and duplicate tags
         pattern = f"<{tag}>(.*?)</{tag}>"

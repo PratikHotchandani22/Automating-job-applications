@@ -436,113 +436,6 @@ Now, follow these steps to craft the cover letter:
 Present your final cover letter draft within <cover_letter> tags. Do not include any explanations or comments outside of these tags.
 """
 
-RECRUITER_EMAIL_PROMPT = """
-You are an AI assistant specializing in crafting professional job application emails. Your task is to create a compelling email to a hiring manager based on the provided resume, job posting, and job description. Your goal is to create an email that sounds natural and human-like while maintaining professionalism.
-
-First, review the following information:
-
-{{RESUME}}
-
-{{JOB_POSTING}}
-
-{{JOB_DESCRIPTION}}
-
-Now, conduct a thorough analysis of the job requirements and the candidate's qualifications. Wrap this analysis in <job_application_analysis> tags. In your analysis:
-
-1. List the key requirements and qualifications from the job posting and description.
-2. Quote and number 5-7 relevant parts of the job posting that highlight these requirements.
-3. List the candidate's relevant qualifications from their resume.
-4. Quote and number 5-7 relevant parts of the resume that showcase these qualifications.
-5. Match the numbered candidate's qualifications to the numbered job requirements.
-6. Check if the experience required with a master's degree exceeds 4 years. If so, note to emphasize the candidate's ability to learn quickly.
-7. Create a brief pros and cons list for the candidate's suitability.
-8. Select 2-3 key qualifications that best match the job requirements, focusing on:
-   - Ability to own end-to-end projects
-   - Experience working effectively in teams
-   - Teaching Assistant experience (expertise in breaking down complex problems and strong communication skills)
-   - Other relevant skills or experiences
-9. Note the candidate's portfolio link: https://pratikhotchandani22.github.io/portfolio/
-10. Identify any unique aspects of the candidate's experience that could make the email more personal and distinctive.
-11. Brainstorm 3-4 potential talking points for the email, considering the matched qualifications and unique aspects of the candidate's experience.
-12. Brainstorm 2-3 potential unique selling points for the candidate based on their experience and the job requirements.
-13. Outline a brief structure for the email, including key points to cover.
-
-After your analysis, draft the email using <email_composition> tags. Follow these guidelines:
-
-1. Start by outlining the email structure, including:
-   - A brief, engaging introduction
-   - 2-3 key points about the candidate's qualifications, incorporating unique aspects of their experience
-   - A confident closing statement
-2. Draft the email based on the outline, maintaining a professional yet conversational tone, as if the candidate were speaking directly to the hiring manager.
-3. Highlight the selected key qualifications, emphasizing how they match the job requirements.
-4. Include the candidate's portfolio link, encouraging the hiring manager to review it.
-5. Keep the email concise, ensuring it can be read in 60 seconds or less. Use short paragraphs and bullet points if necessary.
-6. Showcase the candidate's positive nature and willingness to learn.
-7. If applicable, mention the candidate's ability to learn quickly and gain expertise on the job.
-8. Use natural language and avoid overly formal or stilted phrasing.
-9. After drafting, count the words in the email to ensure it's not too long. Aim for 150-200 words.
-
-Next, generate a subject line for the email using <subject> tags. The subject should be concise, professional, and attention-grabbing.
-
-Finally, present the final version of the email using <email> tags, incorporating any improvements or refinements from your draft. Ensure that the final email sounds natural and human-like while maintaining a professional tone.
-
-Remember to tailor the email to the specific job and company, ensuring it reflects the candidate's genuine enthusiasm for the position.
-"""
-
-RECRUITER_LINKEDIN_PROMPT = """Act as a job seeker crafting a LinkedIn connection request. Using the resume below and the provided job description, write a concise message (≤300 characters) that:
-
-1. Opens professionally
-2. States this role is their top priority
-3. Highlights 2-3 key qualifications from their resume that directly match the job requirements
-4. Requests a 15-minute call
-5. Maintains enthusiastic yet professional tone
-
-[Insert resume text here]
-[Insert job description here]
-
-Structure:  
-- First line: Attention-grabbing subject (e.g., "Top Priority: [Job Title] Role")
-- Body: Concise value proposition using specific matches between resume and JD
-- Closing: Clear call-to-action for call
-
-Avoid:  
-- Generic phrases like "I'm perfect for this role"
-- Lengthy paragraphs
-- Emojis or informal language
-
-Example output:
-With 5+ years leading omnichannel campaigns  and a track record of 30%+ YoY growth,  I'm eager to bring this expertise to [Company]. Would you have 15 minutes this week to discuss? Thank you for considering!
-"""
-
-CONNECTION_LINKEDIN_PROMPT = """
-Act as a job seeker crafting a LinkedIn connection request. Using the resume below and the provided job description, write a concise message (≤300 characters) to a professional working at the company of the job posting. The message should:
-
-1. Open professionally and mention the shared interest in the company/role.
-2. Clearly state that this job is their top priority.
-3. Highlight 2-3 key qualifications from their resume that directly match the job requirements.
-4. Politely request either a short call to discuss insights about the role or a referral.
-
-[Insert resume text here]
-[Insert job description here]
-
-Structure:  
-- First line: Professional introduction and interest in the company/role.
-- Body: Concise value proposition using specific matches between resume and JD.
-- Closing: Clear call-to-action for either a call or referral.
-
-Avoid:  
-- Generic phrases like "I'm perfect for this role."
-- Lengthy paragraphs.
-- Emojis or overly casual language.
-
-Example Output:
-Hi [Name], I’m excited about [Job Title] at [Company]—it’s my top priority! With [specific skill/experience 1] and [specific skill/experience 2] aligning with the role, I’d love your insights or referral. Could we connect for a quick chat? Thanks for your time!
-"""
-
-LINKEDIN_EMAIL_MODEL = "gpt-4o-mini"
-
-RECRUITER_EMAIL_MODEL = "claude-3-5-sonnet-20240620"
-
 RAG_DATA_STRUCTURNG_PROMPT = """
 You are an assistant that formats text data into JSON entries based on specific categories. Each entry contains `category`, `title`, and `text` fields, where `text` may contain multiple sentences or bullet points.
 
@@ -723,3 +616,110 @@ Your output should follow this structure:
 """
 
 RESUME_SUMMARY_MODEL = "claude-3-5-sonnet-20240620"
+
+COLD_EMAILS_MESSAGES_MODEL = "claude-3-5-sonnet-20240620"
+
+COLD_EMAILS_MESSAGES_PROMPT = """
+You are an AI assistant specialized in crafting personalized cold emails and LinkedIn messages for job applications. Your task is to analyze a job description and resume, then create tailored communications for a hiring manager and a recruiter.
+
+Here is the job description for the position:
+
+<job_description>
+{{JOB_DESCRIPTION}}
+</job_description>
+
+Here is the applicant's resume:
+
+<resume>
+{{RESUME}}
+</resume>
+
+Before composing the emails and LinkedIn messages, please conduct a detailed analysis of the job description and resume. Wrap this analysis inside <application_analysis> tags. In your analysis:
+
+1. List key requirements from the job description.
+2. Extract and list key skills mentioned in the job description.
+3. Identify matching qualifications from the resume.
+4. Create a side-by-side comparison of job requirements and resume qualifications.
+5. Identify any gaps between the job requirements and the applicant's qualifications.
+6. Brainstorm ways to address these gaps in the emails/messages.
+7. Extract the company name from the job description.
+8. Identify the company's values or culture from the job description.
+9. Brainstorm potential value propositions for each email (hiring manager and recruiter).
+10. Identify unique selling points for:
+    a) The hiring manager email
+    b) The recruiter email
+
+After your analysis, create two separate emails and two LinkedIn messages following these guidelines:
+
+For Emails:
+
+1. Subject Line:
+   - For hiring manager: Highlight value proposition and relevance to team needs.
+   - For recruiter: State target position and key qualification.
+
+2. Greeting: Use "Dear Hiring Manager," or "Dear Recruiter," as appropriate.
+
+3. Opening Paragraph:
+   - Hiring manager: Introduce yourself and demonstrate company knowledge.
+   - Recruiter: State position interest and key qualifications.
+
+4. Body Paragraph(s):
+   - Highlight 2-3 relevant skills or experiences aligning with job requirements.
+   - Hiring manager: Focus on specific achievements and potential contributions.
+   - Recruiter: Emphasize qualification match to job requirements.
+
+5. Closing Paragraph:
+   - Express enthusiasm for contributing to the company.
+   - Include a clear call-to-action (e.g., request a brief call or meeting).
+
+6. Signature: Professional sign-off, full name, and contact information.
+
+Keep each email concise (150-200 words) and tailored to the recipient type.
+
+For LinkedIn Messages:
+
+1. Craft three 300-character messages for the hiring manager, highlighting key value propositions and expressing interest in the role.
+2. Craft three 300-character messages for the recruiter, emphasizing top qualifications and stating interest in the position.
+3. Select the best message for each recipient.
+
+Present your response in the following format:
+
+<cold_email_hiring_manager>
+Outline:
+[Brief outline of the email structure]
+
+Email:
+Subject: [Subject line for hiring manager]
+
+[Full body of the email for hiring manager]
+</cold_email_hiring_manager>
+
+<cold_email_recruiter>
+Outline:
+[Brief outline of the email structure]
+
+Email:
+Subject: [Subject line for recruiter]
+
+[Full body of the email for recruiter]
+</cold_email_recruiter>
+
+<linkedin_message_hiring_manager>
+Option 1: [300-character LinkedIn message for hiring manager]
+Option 2: [300-character LinkedIn message for hiring manager]
+Option 3: [300-character LinkedIn message for hiring manager]
+
+Selected message: [Copy the best message here]
+</linkedin_message_hiring_manager>
+
+<linkedin_message_recruiter>
+Option 1: [300-character LinkedIn message for recruiter]
+Option 2: [300-character LinkedIn message for recruiter]
+Option 3: [300-character LinkedIn message for recruiter]
+
+Selected message: [Copy the best message here]
+</linkedin_message_recruiter>
+
+Begin by analyzing the job description and resume, then proceed to craft both emails and LinkedIn messages.
+
+"""
