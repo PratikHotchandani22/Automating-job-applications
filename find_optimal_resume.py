@@ -97,7 +97,7 @@ async def get_file_paths(uploaded_files):
 
     return file_paths
 
-async def suggest_resume_improvements(openai_client, system_prompt, structured_job_data, resume_text, rag_text, model_name, model_temp):
+async def suggest_resume_improvements(client, system_prompt, structured_job_data, resume_text, model_name, max_tokens, model_temp):
     
     ## Construct a user_prompt that will have structure job description 
     # Convert all columns in the job description DataFrame to a single text string
@@ -106,16 +106,16 @@ async def suggest_resume_improvements(openai_client, system_prompt, structured_j
     # Prepare the user_prompt with resume_text and job_description_text
     user_prompt = f'''
     "resume_text" : "{resume_text}",
-    "job_description_text" : "{structured_job_data}",
-    "rag_text" : "{rag_text}",
+    "job_description_text" : "{structured_job_data}"
     '''
-    
+    print("********")
+    print("Generate resume analysis and suggestions using anthropic!!")
     # Generate suggestions using the LLaMA model
-    suggestions = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
-    
-    return suggestions
+    #suggestions = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
+    suggestions = await run_anthropic_chat_completion(client, user_prompt, system_prompt, model_name, max_tokens, model_temp)
+    return suggestions['content']
 
-async def prepare_cover_letter(openai_client, system_prompt, llama_response, best_resume_text, model_name, model_temp):
+async def prepare_cover_letter(system_prompt, llama_response, best_resume_text, model_name, max_tokens, model_temp):
 
 
     ## Construct a user_prompt that will have structure job description 
@@ -131,11 +131,10 @@ async def prepare_cover_letter(openai_client, system_prompt, llama_response, bes
     # Generate suggestions using the LLaMA model
     #cover_letter = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
     #cover_letter = await run_liteLLM_call(json.dumps(user_prompt), system_prompt, model_name)
-    cover_letter = await run_anthropic_chat_completion(st.session_state.anthropic_client, json.dumps(user_prompt), system_prompt, model_name, max_tokens = 2048)
+    cover_letter = await run_anthropic_chat_completion(st.session_state.anthropic_client, json.dumps(user_prompt), system_prompt, model_name, max_tokens, model_temp)
     
     
     return cover_letter['content']
-
 
 def extract_tags_content(content, tags_list):
     """

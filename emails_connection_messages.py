@@ -4,7 +4,7 @@ from prompt_anthropic import run_anthropic_chat_completion
 import streamlit as st
 
 
-async def generate_connection_messages_email(system_prompt, structured_job_data, resume_text, model_name, model_temp):
+async def generate_connection_messages_email(system_prompt, structured_job_data, resume_text, model_name, max_tokens, model_temp):
     
     ## Construct a user_prompt that will have structure job description 
     # Convert all columns in the job description DataFrame to a single text string
@@ -21,7 +21,7 @@ async def generate_connection_messages_email(system_prompt, structured_job_data,
         return suggestions
     
     else:
-        suggestions = await run_anthropic_chat_completion(st.session_state.anthropic_client, json.dumps(user_prompt), system_prompt, model_name, max_tokens = 2500)
+        suggestions = await run_anthropic_chat_completion(st.session_state.anthropic_client, json.dumps(user_prompt), system_prompt, model_name, max_tokens , model_temp)
         return suggestions['content']
 
 

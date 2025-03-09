@@ -9,7 +9,7 @@ async def initialize_anthropic_client(anthropic_api_key):
     return client
 
 
-async def run_anthropic_chat_completion(client, llama_response, system_prompt, model, max_tokens = 1024, temperature=0.2):
+async def run_anthropic_chat_completion(client, llama_response, system_prompt, model, max_tokens, model_temp):
     """
     Function to run a custom prompt on Anthropic's Chat Completion API.
     Args:
@@ -42,7 +42,7 @@ async def run_anthropic_chat_completion(client, llama_response, system_prompt, m
                 }
             ],
             messages=[{"role": "user", "content": user_prompt}],
-            temperature=temperature
+            temperature=model_temp
         )
         print("Response generated from anthropic model..")
         

@@ -210,13 +210,13 @@ IDENTIFY_DETAILS_FROM_JOB_MODEL = "gpt-4o-mini"
 
 SUMMARIZE_JOB_DESCRIPTION_MODEL = "gpt-4o-mini"
 
-PROVIDING_SUGGESTIONS_MODEL = "gpt-4o-mini"
+PROVIDING_SUGGESTIONS_MODEL = "claude-3-5-sonnet-20240620"
 
 #COVER_LETTER_GENERATION_MODEL = "gpt-4o-mini"
 
 COVER_LETTER_GENERATION_MODEL = "claude-3-5-sonnet-20240620"
 
-SUGGESTIONS_JOB_BASED_ON_RESUME = """
+SUGGESTIONS_JOB_BASED_ON_RESUME_old = """
 Analyze the following inputs:  
 - `resume_text`: [Insert resume text]  
 - `job_description_text`: [Insert job description text]  
@@ -280,6 +280,51 @@ Give only missing keywords in response.
 
 **Output:**  
 Provide a structured response following the above instructions, ensuring actionable and meaningful recommendations to improve alignment and enhance cosine similarity between the resume and job description.  
+"""
+
+SUGGESTIONS_JOB_BASED_ON_RESUME = """
+You are an expert resume writer specializing in tailoring work experiences to specific job descriptions. Your task is to analyze a job description and a candidate's current work experience, identify gaps, and refactor the work experience to better align with the job requirements.
+
+First, carefully review the following job description:
+
+<job_description>
+{{JOB_DESCRIPTION}}
+</job_description>
+
+Next, examine the candidate's current work experience:
+
+<work_experience>
+{{WORK_EXPERIENCE}}
+</work_experience>
+
+To complete this task effectively, follow these steps:
+
+1. Analyze the job description and the candidate's current work experience.
+2. Identify gaps between the job requirements and the candidate's experience.
+3. Refactor the work experience to better align with the job requirements.
+4. Review and refine the refactored experience.
+
+Before presenting the final refactored experience, complete your analysis inside <resume_analysis> tags to break down your thought process for each step. This will ensure a thorough and well-reasoned approach to the task. It's OK for this section to be quite long.
+
+In your analysis, be sure to:
+a. List key skills, qualifications, and responsibilities required for the position.
+b. Compare each point from the work experience to the job requirements.
+c. Identify gaps and areas for improvement.
+d. Plan specific modifications for each work experience point.
+
+Important: The refactored experience must be directly related to and based on the candidate's current work experience. Avoid adding drastically different elements; instead, enhance the existing experience to address identified gaps.
+
+After your analysis, present your refactored work experience in the following format:
+
+<refactored_experience>
+[Include the refactored work experience points here, maintaining a similar structure and length to the original work experience]
+</refactored_experience>
+
+<explanation>
+[Provide a brief explanation of the major changes made and how they address the requirements of the job description]
+</explanation>
+
+Remember to use specific, action-oriented language and quantify achievements where possible. The refactored experience should effectively position the candidate for the specific job they are applying for, without fabricating information or adding vague, meaningless statements.
 """
 
 COVER_LETTER_GENERATION_PROMP_old = """
@@ -620,6 +665,7 @@ RESUME_SUMMARY_MODEL = "claude-3-5-sonnet-20240620"
 COLD_EMAILS_MESSAGES_MODEL = "claude-3-5-sonnet-20240620"
 
 COLD_EMAILS_MESSAGES_PROMPT = """
+
 You are an AI assistant specialized in crafting personalized cold emails and LinkedIn messages for job applications. Your task is to analyze a job description and resume, then create tailored communications for a hiring manager and a recruiter.
 
 Here is the job description for the position:
@@ -723,3 +769,118 @@ Selected message: [Copy the best message here]
 Begin by analyzing the job description and resume, then proceed to craft both emails and LinkedIn messages.
 
 """
+
+JOB_ANALYSIS_SUGGESTION_PROMPT = """
+You are an expert resume optimization consultant specializing in tailoring resumes to specific job descriptions. Your task is to refactor a given resume to align perfectly with a provided job description, enhancing its chances of passing Applicant Tracking System (ATS) screening and impressing human recruiters.
+
+Here is the job description you'll be working with:
+
+<job_description>
+{{Job_Description}}
+</job_description>
+
+Here is the candidate's current resume:
+
+<original_resume>
+{{Resume}}
+</original_resume>
+
+Please follow these steps to refactor the resume:
+
+1. Analyze the Job Description
+Wrap your job description analysis inside <job_description_analysis> tags, examining the job description and extracting the following information:
+- Exact job title and company name
+- 10-15 most critical keywords and phrases
+- Required technical skills
+- Required soft skills
+- Experience requirements
+- Educational requirements
+- Any unique or specific requirements that stand out
+For each point, quote specific phrases from the job description that support your analysis. Then, rank the importance of each extracted element on a scale of 1-5, with 5 being the most important.
+
+2. Evaluate the Current Resume
+Wrap your resume evaluation inside <resume_evaluation> tags, reviewing the provided resume and identifying:
+- Current strengths that align with the job description (list explicitly)
+- Missing keywords or skills (list explicitly)
+- Experience descriptions that could be better aligned with the role
+- Overall formatting and structure issues
+- Areas where qualifications are present but not optimally phrased
+For each point, provide specific examples from the resume and suggest specific improvements.
+
+3. Perform Gap Analysis
+Wrap your gap analysis inside <gap_analysis> tags, providing a detailed analysis that identifies:
+- Skills or experiences mentioned in the job description but missing from the resume
+- Qualifications present but not highlighted effectively
+- Areas where experience needs to be reframed to better match job requirements
+For each gap identified, provide a specific suggestion for how to address it in the refactored resume, including example phrasing where appropriate. Additionally, quantify the severity of each gap on a scale of 1-5, with 5 being the most severe.
+
+4. Refactor the Resume
+Based on your analysis, refactor the resume as follows:
+
+a) Rewrite the professional summary to:
+- Clearly state alignment with the exact position
+- Include 3-4 strongest qualifications directly addressing key job requirements
+- Incorporate 2-3 primary keywords naturally
+- Maintain a confident, professional tone
+
+b) Refactor work experience descriptions to:
+- Focus only on experiences and projects relevant to the role
+- Emphasize responsibilities and achievements most relevant to the target job
+- Replace generic language with specific terminology from the job description
+- Transform passive descriptions into active statements with quantifiable results
+- Naturally integrate keywords from the job description
+- Follow the format: [Action Verb] + [Task/Responsibility] + [Result/Impact]
+- Ensure all information remains truthful and directly related to the candidate's actual work history
+
+c) Optimize the skills section to:
+- Prioritize skills directly matching job requirements
+- Add relevant skills from the job description that are possessed but not listed
+- Organize skills into categories mirroring the job description structure
+- Remove skills irrelevant to this specific position
+
+5. ATS Optimization
+Wrap your ATS optimization suggestions inside <ats_optimization> tags, providing specific suggestions for:
+- Optimal keyword density and placement
+- Any other technical considerations to maximize ATS performance
+
+6. Human Readability Check
+Wrap your human readability check inside <human_readability> tags, ensuring the refactored resume remains:
+- Natural and not obviously keyword-stuffed
+- Compelling for human readers
+- Honest and authentic to the actual experience
+- Professionally formatted and concise
+
+7. Output the Refactored Resume
+Provide the refactored resume in the following format:
+
+<refactored_resume>
+<professional_summary>
+[Professional Summary content]
+</professional_summary>
+
+<skills>
+[Skills content, organized by categories]
+</skills>
+
+<work_experience>
+[Work Experience content, including relevant projects]
+</work_experience>
+
+<projects>
+[Any standalone projects not included in Work Experience]
+</projects>
+
+<education>
+[Education details]
+</education>
+
+[Additional Sections as Needed]
+</refactored_resume>
+
+8. List Missing Keywords or Skills
+Wrap your list of missing keywords or skills inside <missing_keywords_skills> tags, listing any keywords or skills from the job description that are not present in the original resume but should be considered for inclusion if the candidate possesses them.
+
+Remember to only include the sections that are present in the original resume and relevant to the job description. Ensure that all information is accurate and truthful to the original resume while optimizing for the target position.
+"""
+
+JOB_ANALYSIS_SUGGESTION_MODEL = "claude-3-5-sonnet-20240620"

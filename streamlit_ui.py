@@ -18,6 +18,7 @@ from llm_api_calls_LiteLLM import run_liteLLM_call
 import os
 from credentials import OPENAI_API, ANTHROPIC_API
 from prompt_anthropic import initialize_anthropic_client, run_anthropic_chat_completion
+from configuration import JOB_ANALYSIS_SUGGESTION_PROMPT, JOB_ANALYSIS_SUGGESTION_MODEL, COVER_LETTER_GENERATION_PROMPT_ANTHROPIC
 
 ## set ENV variables
 os.environ["OPENAI_API_KEY"] = OPENAI_API
@@ -103,7 +104,25 @@ def initialize_session_states():
         st.session_state.cold_email_messages = None
     if 'hiring_manager_email' not in st.session_state:
         st.session_state.hiring_manager_email = None
-        
+    if 'job_analysis_suggestions' not in st.session_state:
+        st.session_state.job_analysis_suggestions = None
+    if 'improvement_suggestions' not in st.session_state:
+        st.session_state.improvement_suggestions = None
+    if 'professional_sumary' not in st.session_state:
+        st.session_state.professional_sumary = None
+    if 'suggestions_skills' not in st.session_state:
+        st.session_state.suggestions_skills = None
+    if 'suggestions_work_ex' not in st.session_state:
+        st.session_state.suggestions_work_ex = None
+    if 'suggestions_project' not in st.session_state:
+        st.session_state.suggestions_project = None
+    if 'missing_keyword_skills' not in st.session_state:
+        st.session_state.missing_keyword_skills = None
+    if 'suggestion_mentorship' not in st.session_state:
+        st.session_state.suggestion_mentorship = None
+    if 'refactored_resume' not in st.session_state:
+        st.session_state.refactored_resume = None
+
 async def initialize_clients():
     st.session_state["supabase_client"] = await create_supabase_connection()
     st.session_state["openai_client"] = await initialize_openai_client()
@@ -117,20 +136,7 @@ async def get_resumes_ui():
     df = await fetch_data_from_table(st.session_state["supabase_client"], 'resume_data')
 
     if not df.empty:
-        # Find the row where resume_name is "Pratik Hotchandani Master Resume 2"
-        master_resume_row = df[df['resume_name'] == "Pratik Hotchandani Master Resume 2"]
-
-        # Store it in session state
-        if not master_resume_row.empty:
-            st.session_state['master_resume'] = master_resume_row.iloc[0]
-            
-            # Remove the row from the dataframe
-            df = df[df['resume_name'] != "Pratik Hotchandani Master Resume 2"].reset_index(drop=True)
-            
-            print("Master resume found and stored in session state")
-        else:
-            print("Master resume not found")
-
+    
         resume_names = df['resume_name'].tolist()
         
         # Add checkbox for selecting all resumes
@@ -290,6 +296,7 @@ async def generate_suggestions_cover_letter():
     st.session_state.job_emb  = await generate_embeddings(st.session_state["parsed_job_df"], EMBEDDING_MODEL, "job")  # Step 2: Generate embeddings
     #st.dataframe(job_emb)
     
+    # code to structure data 
     job_prepared_data = prepare_data_job_description(st.session_state.job_emb )
     response_insert = await insert_data_into_table(st.session_state["supabase_client"], "job_info", job_prepared_data, batch_size=100)
 
@@ -308,16 +315,19 @@ async def generate_suggestions_cover_letter():
         st.session_state["best_rag_data"] = st.session_state["best_rag_data"][['category', 'title', 'text']]
         # Providing suggestions based on selected resume or the resume with the highest match.
         st.session_state["rag_data_prompt"] = st.session_state["best_rag_data"].to_json(orient="records")
-        st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], st.session_state["rag_data_prompt"], PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+        st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.anthropic_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], st.session_state["rag_data_prompt"], PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
     else:
-        st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+        st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.anthropic_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+
+
+    st.session_state["suggestions"] = extract_tags_content(st.session_state.suggestions,['refactored_experience'])
 
     with st.expander("Suggestions: "):
         st.write(st.session_state["suggestions"])
     save_job_dict_response(st.session_state["suggestions"], "suggestions")
 
     ## Providing suggestions based on selected resume or the restume with the highest match.
-    st.session_state.cover_letter = await prepare_cover_letter(st.session_state.openai_client, COVER_LETTER_GENERATION_PROMPT, st.session_state["llama_response"], st.session_state["best_resume_text"], COVER_LETTER_GENERATION_MODEL, model_temp = 0.2)
+    st.session_state.cover_letter = await prepare_cover_letter(st.session_state.openai_client, COVER_LETTER_GENERATION_PROMPT_ANTHROPIC, st.session_state["llama_response"], st.session_state["refactored_resume"], COVER_LETTER_GENERATION_MODEL, model_temp = 0.2)
 
     # Show detailed summary inside an expander:
     with st.expander("Cover letter: "):
@@ -335,7 +345,7 @@ async def generate_suggestions_cover_letter():
 async def generate_reach_out_messages():
 
     # Show detailed summary inside an expander:
-    st.session_state["cold_email_messages"] = await generate_connection_messages_email(COLD_EMAILS_MESSAGES_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], COLD_EMAILS_MESSAGES_MODEL, model_temp = 0.2)
+    st.session_state["cold_email_messages"] = await generate_connection_messages_email(COLD_EMAILS_MESSAGES_PROMPT, st.session_state["summary_response"], st.session_state["best_resume_text"], COLD_EMAILS_MESSAGES_MODEL, max_tokens = 2500, model_temp = 0.2)
     
     st.session_state["linkedin_recruiter_message"] = extract_tags_content(st.session_state.cold_email_messages,['linkedin_message_recruiter'])
     with st.expander("Recruiter LinkedIn Message: "):
@@ -361,10 +371,80 @@ async def generate_resume_summary():
 
             # Convert the combined structure to a JSON string
     st.session_state.master_resume_job_description_combined = json.dumps(st.session_state.master_resume_job_description_combined)
-    st.session_state["resume_summary"] = await run_anthropic_chat_completion(st.session_state.anthropic_client, st.session_state.master_resume_job_description_combined, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL)
+    st.session_state["resume_summary"] = await run_anthropic_chat_completion(st.session_state.anthropic_client, st.session_state.master_resume_job_description_combined, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL, max_tokens = 1024, model_temp = 0.2)
     st.session_state["resume_summary"] = extract_tags_content(st.session_state.resume_summary['content'],['resume_summary'])
     with st.expander("Ideal Resume Summary: "):
         st.write(st.session_state["resume_summary"])
+
+async def analyse_job_provide_suggestions():
+    
+    ## get suggestions from LLM on what to improve in resume
+    st.session_state["job_analysis_suggestions"] = await suggest_resume_improvements(st.session_state.anthropic_client, JOB_ANALYSIS_SUGGESTION_PROMPT, st.session_state["llama_response"], st.session_state["master_resume"], JOB_ANALYSIS_SUGGESTION_MODEL, max_tokens = 4040, model_temp = 0.2)
+
+    ## complete refactored resume
+    st.session_state["refactored_resume"] = extract_tags_content(st.session_state.job_analysis_suggestions,['refactored_resume'])
+
+    
+    ## 1. Missing keyword skills
+    #st.session_state["missing_keyword_skills"] = extract_tags_content(st.session_state.job_analysis_suggestions,['missing_keyword_skills'])
+    with st.expander("suggestion!!: "):
+        st.write(st.session_state["job_analysis_suggestions"])
+
+    ## 1. Missing keyword skills
+    st.session_state["missing_keywords_skills"] = extract_tags_content(st.session_state.job_analysis_suggestions,['missing_keywords_skills'])
+    with st.expander("missing_keywords_skills: "):
+        st.write(st.session_state["missing_keywords_skills"])
+
+    ## 2. Professional Summary
+    st.session_state["professional_sumary"] = extract_tags_content(st.session_state.job_analysis_suggestions,['professional_summary'])
+    with st.expander("professional_sumary: "):
+        st.write(st.session_state["professional_sumary"])
+    
+     ## 3. skills
+    st.session_state["suggestions_skills"] = extract_tags_content(st.session_state.job_analysis_suggestions,['skills'])
+    with st.expander("suggestions_skills: "):
+        st.write(st.session_state["suggestions_skills"])
+
+    ## 4. work experience
+    st.session_state["suggestions_work_ex"] = extract_tags_content(st.session_state.job_analysis_suggestions,['work_experience'])
+    with st.expander("suggestions_work_ex: "):
+        st.write(st.session_state["suggestions_work_ex"])
+
+    ## 5. projects
+    st.session_state["suggestions_project"] = extract_tags_content(st.session_state.job_analysis_suggestions,['projects'])
+    with st.expander("suggestions_project: "):
+        st.write(st.session_state["suggestions_project"])
+
+    ## 6. Mentorship
+    st.session_state["suggestion_mentorship"] = extract_tags_content(st.session_state.job_analysis_suggestions,['suggestion_mentorship'])
+    with st.expander("suggestion_mentorship: "):
+        st.write(st.session_state["suggestion_mentorship"])
+
+   
+
+    #save_job_dict_response(st.session_state.cover_letter, "cover_letter")
+
+async def generate_cover_letter():
+     ## Providing suggestions based on selected resume or the restume with the highest match.
+    st.session_state.cover_letter = await prepare_cover_letter( COVER_LETTER_GENERATION_PROMPT_ANTHROPIC, st.session_state["llama_response"], st.session_state["refactored_resume"], COVER_LETTER_GENERATION_MODEL, max_tokens = 2048 ,model_temp = 0.2)
+
+    # Show detailed summary inside an expander:
+    with st.expander("Cover letter: "):
+        st.write(st.session_state.cover_letter)
+
+async def insert_job_data_into_supabase_table():
+    # Creating a dataframe from the llm response
+    st.session_state["parsed_job_df"] = parse_response_to_df(st.session_state["llama_response"])
+    st.session_state["parsed_job_df"]['job_description'] = json.dumps(st.session_state["job_description"])
+    st.session_state["parsed_job_df"]['job_link'] = st.session_state.job_link
+
+    ## Generating embedding for job description:
+    st.session_state.job_emb  = await generate_embeddings(st.session_state["parsed_job_df"], EMBEDDING_MODEL, "job")  # Step 2: Generate embeddings
+    #st.dataframe(job_emb)
+    
+    # code to structure data 
+    job_prepared_data = prepare_data_job_description(st.session_state.job_emb )
+    response_insert = await insert_data_into_table(st.session_state["supabase_client"], "job_info", job_prepared_data, batch_size=100)
 
 async def main():
     # Initialize session state for resume and job link if they don't exist
@@ -453,13 +533,15 @@ async def main():
             with st.expander("View Summary"):
                 st.write(st.session_state["summary_response"])
 
+            await insert_job_data_into_supabase_table()
         
-            await generate_resume_summary()
+            #await generate_resume_summary()
 
             if select_all_state:
 
-                await generate_suggestions_cover_letter()
-
+                #await generate_suggestions_cover_letter()
+                await analyse_job_provide_suggestions()
+                await generate_cover_letter()
                 await generate_reach_out_messages()
             
             elif st.session_state["reach_out"]:
@@ -467,8 +549,7 @@ async def main():
                 await generate_reach_out_messages()
             
             else: 
-
-                await generate_suggestions_cover_letter()
+                await analyse_job_provide_suggestions()
 
         else:
             st.error("Please upload at least one resume and provide a job URL before submitting.")
