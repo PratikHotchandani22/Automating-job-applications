@@ -39,14 +39,18 @@ IDENTIFY_DETAILS_FROM_RESUME_PROMPT_old = (
 )
 
 IDENTIFY_DETAILS_FROM_RESUME_PROMPT = """ 
-You are a professional AI model tasked with extracting specific sections and their content from a resume. 
-The resume will be provided to you in free text format, and your job is to identify the following sections and extract their corresponding content. 
-You will return the extracted information as a list of sentences, formatted as strings, with each sentence representing a key detail from the resume.
+You are a professional AI model tasked with extracting specific sections and their content from a resume. The resume will be provided to you in free text format. Your job is to identify key sections and extract their corresponding content, returning the information as a list of sentences formatted as strings.
 
-Sections to identify and extract:
+Here is the resume text:
+
+<resume>
+{{RESUME_TEXT}}
+</resume>
+
+Identify and extract the following sections from the resume:
 
 1. Name: The full name of the individual.
-2. Contact Information: This includes email, phone number, LinkedIn, and GitHub details.
+2. Contact Information: Including email, phone number, LinkedIn, and GitHub details.
 3. Education: For each degree, include:
    - University/Institution name
    - Degree
@@ -59,16 +63,16 @@ Sections to identify and extract:
    - Company name
    - Location
    - Duration (start date - end date)
-   - List of bullet points summarizing responsibilities or achievements
+   - All bullet points
 5. Projects: For each project, include:
    - Project name
    - Technologies used
-   - Brief description of the project
-   - Key achievements or impact
+   - All bullet points 
 6. Achievements: Any professional awards or recognitions
 7. Technical Skills: List of technical skills including programming languages, libraries, and tools
+8. Mentorship: All the bullet points mentioned under Mentorship
 
-Format your response as a list of strings, where each element in the list is a single sentence summarizing key information from the resume. Each sentence should start with a category label in all caps, followed by a colon and a space. For example:
+Format your response as a list of strings from the resume. Each sentence should start with a category label in all caps, followed by a colon and a space. For example:
 
 NAME: John Doe
 CONTACT: Email: john.doe@email.com, Phone: (123) 456-7890, LinkedIn: linkedin.com/in/johndoe
@@ -85,7 +89,8 @@ Please ensure that:
 4. The output is a well-formed list of sentences.
 5. There are no introductory or concluding sentences; only the extracted information should be provided.
 
-Begin extracting and formatting the information from the provided resume text now."""
+Begin extracting and formatting the information from the provided resume text now. Present your output as a list of strings, with each string representing a single piece of information from the resume.
+"""
 
 IDENTIFY_DETAILS_FROM_JOB_PROMPT = """
 You are a skilled job application parser. Your task is to extract and organize specific information from a provided job description text, responding only with a JSON dictionary format containing only the requested details. 
@@ -771,59 +776,73 @@ Begin by analyzing the job description and resume, then proceed to craft both em
 """
 
 JOB_ANALYSIS_SUGGESTION_PROMPT = """
-You are an expert resume optimization consultant specializing in tailoring resumes to specific job descriptions. Your task is to refactor a given resume to align perfectly with a provided job description, enhancing its chances of passing Applicant Tracking System (ATS) screening and impressing human recruiters.
+You are an expert AI resume optimization consultant. Your task is to refactor a given resume to perfectly align with a specific job description. This process will enhance the resume's chances of passing Applicant Tracking System (ATS) screening and impressing human recruiters.
 
-Here is the job description you'll be working with:
+First, let's review the job description and the candidate's current resume:
 
 <job_description>
-{{Job_Description}}
+{{JOB_DESCRIPTION}}
 </job_description>
 
-Here is the candidate's current resume:
-
 <original_resume>
-{{Resume}}
+{{ORIGINAL_RESUME}}
 </original_resume>
 
-Please follow these steps to refactor the resume:
+Please follow these steps to optimize the resume:
 
 1. Analyze the Job Description
-Wrap your job description analysis inside <job_description_analysis> tags, examining the job description and extracting the following information:
+Examine the job description and extract key information. Wrap your analysis in <job_description_breakdown> tags, including:
 - Exact job title and company name
 - 10-15 most critical keywords and phrases
 - Required technical skills
 - Required soft skills
 - Experience requirements
 - Educational requirements
-- Any unique or specific requirements that stand out
-For each point, quote specific phrases from the job description that support your analysis. Then, rank the importance of each extracted element on a scale of 1-5, with 5 being the most important.
+- Any unique or specific requirements
+
+For each point, quote specific phrases from the job description. Rank the importance of each element on a scale of 1-5, with 5 being the most important.
 
 2. Evaluate the Current Resume
-Wrap your resume evaluation inside <resume_evaluation> tags, reviewing the provided resume and identifying:
-- Current strengths that align with the job description (list explicitly)
-- Missing keywords or skills (list explicitly)
+Review the provided resume and identify its strengths and weaknesses. Wrap your evaluation in <resume_evaluation> tags, including:
+- Current strengths that align with the job description (list separately with a numerical rating 1-5)
+- Missing keywords or skills (list separately with a numerical rating 1-5)
 - Experience descriptions that could be better aligned with the role
 - Overall formatting and structure issues
 - Areas where qualifications are present but not optimally phrased
-For each point, provide specific examples from the resume and suggest specific improvements.
+
+Provide specific examples from the resume and suggest improvements for each point.
 
 3. Perform Gap Analysis
-Wrap your gap analysis inside <gap_analysis> tags, providing a detailed analysis that identifies:
+Analyze the gaps between the job requirements and the candidate's qualifications. Wrap your analysis in <gap_analysis> tags, including:
 - Skills or experiences mentioned in the job description but missing from the resume
 - Qualifications present but not highlighted effectively
 - Areas where experience needs to be reframed to better match job requirements
-For each gap identified, provide a specific suggestion for how to address it in the refactored resume, including example phrasing where appropriate. Additionally, quantify the severity of each gap on a scale of 1-5, with 5 being the most severe.
+
+For each gap, provide a specific suggestion for addressing it in the refactored resume, including example phrasing where appropriate. Quantify the severity of each gap on a scale of 1-5, with 5 being the most severe. Then, brainstorm 2-3 potential solutions for each identified gap.
 
 4. Refactor the Resume
 Based on your analysis, refactor the resume as follows:
 
-a) Rewrite the professional summary to:
+a) Rewrite the professional summary:
+<professional_summary_analysis>
 - Clearly state alignment with the exact position
 - Include 3-4 strongest qualifications directly addressing key job requirements
 - Incorporate 2-3 primary keywords naturally
 - Maintain a confident, professional tone
+</professional_summary_analysis>
 
-b) Refactor work experience descriptions to:
+b) Refactor Mentorship description:
+<mentorship>
+- Focus on soft skills relevant to the role
+- Emphasize responsibilities and mentorship skills most relevant to the target job
+- Replace generic language with specific terminology from the job description
+- Transform passive descriptions into active statements with quantifiable results
+- Naturally integrate keywords from the job description
+- Ensure all information remains truthful and directly related to the candidate's actual work history
+</mentorship>
+
+c) Refactor work experience descriptions:
+<work_experience_analysis>
 - Focus only on experiences and projects relevant to the role
 - Emphasize responsibilities and achievements most relevant to the target job
 - Replace generic language with specific terminology from the job description
@@ -832,19 +851,30 @@ b) Refactor work experience descriptions to:
 - Follow the format: [Action Verb] + [Task/Responsibility] + [Result/Impact]
 - Ensure all information remains truthful and directly related to the candidate's actual work history
 
-c) Optimize the skills section to:
+Consider these guidelines for creating effective resume bullet points:
+1. Use powerful action verbs to start each bullet point
+2. Clearly state the task or responsibility performed
+3. Quantify or qualify the outcome or impact of the work
+4. Incorporate exact keywords and phrases from the job description
+5. Prioritize relevance to the target job
+6. Maintain consistency in formatting and verb tenses
+</work_experience_analysis>
+
+d) Optimize the skills section:
+<skills_analysis>
 - Prioritize skills directly matching job requirements
 - Add relevant skills from the job description that are possessed but not listed
 - Organize skills into categories mirroring the job description structure
 - Remove skills irrelevant to this specific position
+</skills_analysis>
 
 5. ATS Optimization
-Wrap your ATS optimization suggestions inside <ats_optimization> tags, providing specific suggestions for:
+Provide specific suggestions for ATS optimization in <ats_optimization> tags:
 - Optimal keyword density and placement
 - Any other technical considerations to maximize ATS performance
 
 6. Human Readability Check
-Wrap your human readability check inside <human_readability> tags, ensuring the refactored resume remains:
+Ensure the refactored resume remains readable and appealing to human recruiters. Wrap your check in <human_readability> tags:
 - Natural and not obviously keyword-stuffed
 - Compelling for human readers
 - Honest and authentic to the actual experience
@@ -874,13 +904,16 @@ Provide the refactored resume in the following format:
 [Education details]
 </education>
 
+<mentorship>
+[Mentorship details]
+</mentorship>
+
 [Additional Sections as Needed]
 </refactored_resume>
 
 8. List Missing Keywords or Skills
-Wrap your list of missing keywords or skills inside <missing_keywords_skills> tags, listing any keywords or skills from the job description that are not present in the original resume but should be considered for inclusion if the candidate possesses them.
+List any keywords or skills from the job description that are not present in the original resume but should be considered for inclusion if the candidate possesses them. Wrap this list in <missing_keywords_skills> tags.
 
-Remember to only include the sections that are present in the original resume and relevant to the job description. Ensure that all information is accurate and truthful to the original resume while optimizing for the target position.
-"""
+Remember to only include the sections that are present in the original resume and relevant to the job description. Ensure that all information is accurate and truthful to the original resume while optimizing for the target position."""
 
 JOB_ANALYSIS_SUGGESTION_MODEL = "claude-3-5-sonnet-20240620"

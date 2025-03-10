@@ -110,11 +110,21 @@ async def suggest_resume_improvements(client, system_prompt, structured_job_data
     '''
     print("********")
     print("Generate resume analysis and suggestions using anthropic!!")
+    
     # Generate suggestions using the LLaMA model
     #suggestions = await run_openai_chat_completion(openai_client, user_prompt, system_prompt, model_name, model_temp)
     suggestions = await run_anthropic_chat_completion(client, user_prompt, system_prompt, model_name, max_tokens, model_temp)
-    return suggestions['content']
-
+    # Modified code with error handling
+    if 'content' in suggestions:
+        return suggestions['content']
+    elif hasattr(suggestions, 'content'):
+        return suggestions.content
+    else:
+        # Print the structure to help debug
+        print(f"Debug - suggestions structure: {suggestions}")
+        # Return a fallback or empty value
+        return "Error retrieving suggestions. Check API response structure."
+    
 async def prepare_cover_letter(system_prompt, llama_response, best_resume_text, model_name, max_tokens, model_temp):
 
 

@@ -379,11 +379,10 @@ async def generate_resume_summary():
 async def analyse_job_provide_suggestions():
     
     ## get suggestions from LLM on what to improve in resume
-    st.session_state["job_analysis_suggestions"] = await suggest_resume_improvements(st.session_state.anthropic_client, JOB_ANALYSIS_SUGGESTION_PROMPT, st.session_state["llama_response"], st.session_state["master_resume"], JOB_ANALYSIS_SUGGESTION_MODEL, max_tokens = 4040, model_temp = 0.2)
+    st.session_state["job_analysis_suggestions"] = await suggest_resume_improvements(st.session_state.anthropic_client, JOB_ANALYSIS_SUGGESTION_PROMPT, st.session_state["llama_response"], st.session_state["resume"]['resume_text'].values[0], JOB_ANALYSIS_SUGGESTION_MODEL, max_tokens = 4040, model_temp = 0.2)
 
     ## complete refactored resume
     st.session_state["refactored_resume"] = extract_tags_content(st.session_state.job_analysis_suggestions,['refactored_resume'])
-
     
     ## 1. Missing keyword skills
     #st.session_state["missing_keyword_skills"] = extract_tags_content(st.session_state.job_analysis_suggestions,['missing_keyword_skills'])
@@ -416,7 +415,7 @@ async def analyse_job_provide_suggestions():
         st.write(st.session_state["suggestions_project"])
 
     ## 6. Mentorship
-    st.session_state["suggestion_mentorship"] = extract_tags_content(st.session_state.job_analysis_suggestions,['suggestion_mentorship'])
+    st.session_state["suggestion_mentorship"] = extract_tags_content(st.session_state.job_analysis_suggestions,['mentorship'])
     with st.expander("suggestion_mentorship: "):
         st.write(st.session_state["suggestion_mentorship"])
 
