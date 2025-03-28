@@ -2,7 +2,7 @@ import streamlit as st
 import asyncio
 from get_job_details_crawl4ai import extract_job_description, extract_job_details
 import json
-from prompt_llm_for_resume import  run_llama_prompt, summarize_job_description, parse_response_to_df, save_job_dict_response
+from prompt_llm_for_resume import  run_llama_prompt, summarize_job_description, parse_response_to_df, save_job_dict_response, get_ollama_response
 from supabase_backend import create_supabase_connection, chunk_data, insert_data_into_table, fetch_data_from_table
 from create_embeddings import generate_embeddings
 from find_optimal_resume import find_rag_data_match_percentage, process_resumes, get_file_paths, find_best_resume, suggest_resume_improvements, prepare_cover_letter, extract_tags_content
@@ -12,7 +12,7 @@ from configuration import IDENTIFY_JOB_DESCRIPTION_PROMPT, IDENTIFY_JOB_DESCRIPT
 from helper_functions import save_as_pdf, save_as_docx
 from prompt_openai import run_openai_chat_completion, initialize_openai_client
 import numpy as np
-from configuration import COLD_EMAILS_MESSAGES_PROMPT, COLD_EMAILS_MESSAGES_MODEL, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL
+from configuration import COLD_EMAILS_MESSAGES_PROMPT, COLD_EMAILS_MESSAGES_MODEL, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL, LLM_REASONING_MODEL, RESUME_ATS_OPTIMIZATION_REASONING_PROMPT, LLM_REASONING_MODEL_QWQ
 from emails_connection_messages import generate_connection_messages_email
 from llm_api_calls_LiteLLM import run_liteLLM_call
 import os
@@ -310,14 +310,18 @@ async def generate_suggestions_cover_letter():
         st.session_state["rag_data_prompt"] = st.session_state["best_rag_data"].to_json(orient="records")
         st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], st.session_state["rag_data_prompt"], PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
     else:
-        st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+        #st.session_state["suggestions"] = await suggest_resume_improvements(st.session_state.openai_client, SUGGESTIONS_JOB_BASED_ON_RESUME, st.session_state["llama_response"], st.session_state["best_resume_text"], "", PROVIDING_SUGGESTIONS_MODEL, model_temp = 0.2)
+        st.session_state["suggestions"] = await get_ollama_response(LLM_REASONING_MODEL_QWQ, st.session_state["best_resume_text"], st.session_state["llama_response"], RESUME_ATS_OPTIMIZATION_REASONING_PROMPT, temperature = 0)
+        #st.session_state["suggestions"] = extract_tags_content(st.session_state.suggestions,['refactored_resume'])
 
     with st.expander("Suggestions: "):
         st.write(st.session_state["suggestions"])
     save_job_dict_response(st.session_state["suggestions"], "suggestions")
 
     ## Providing suggestions based on selected resume or the restume with the highest match.
-    st.session_state.cover_letter = await prepare_cover_letter(st.session_state.openai_client, COVER_LETTER_GENERATION_PROMPT, st.session_state["llama_response"], st.session_state["best_resume_text"], COVER_LETTER_GENERATION_MODEL, model_temp = 0.2)
+    #st.session_state.cover_letter = await prepare_cover_letter(st.session_state.openai_client, COVER_LETTER_GENERATION_PROMPT, st.session_state["llama_response"], st.session_state["best_resume_text"], COVER_LETTER_GENERATION_MODEL, model_temp = 0.2)
+    st.session_state["cover_letter"] = await get_ollama_response(LLM_REASONING_MODEL_QWQ, st.session_state["best_resume_text"], st.session_state["llama_response"], COVER_LETTER_GENERATION_PROMPT, temperature = 0)
+    #st.session_state["cover_letter"] = extract_tags_content(st.session_state.cover_letter,['cover_letter'])
 
     # Show detailed summary inside an expander:
     with st.expander("Cover letter: "):
@@ -361,8 +365,11 @@ async def generate_resume_summary():
 
             # Convert the combined structure to a JSON string
     st.session_state.master_resume_job_description_combined = json.dumps(st.session_state.master_resume_job_description_combined)
-    st.session_state["resume_summary"] = await run_anthropic_chat_completion(st.session_state.anthropic_client, st.session_state.master_resume_job_description_combined, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL)
-    st.session_state["resume_summary"] = extract_tags_content(st.session_state.resume_summary['content'],['resume_summary'])
+    st.session_state["resume_summary"] = await get_ollama_response(LLM_REASONING_MODEL, st.session_state['master_resume']['resume_text'], st.session_state["llama_response"], RESUME_SUMMARY_PROMPT, temperature = 0.2)
+
+    #st.session_state["resume_summary"] = await run_anthropic_chat_completion(st.session_state.anthropic_client, st.session_state.master_resume_job_description_combined, RESUME_SUMMARY_PROMPT, RESUME_SUMMARY_MODEL)
+    #st.write("summary output is:", st.session_state["resume_summary"])
+    st.session_state["resume_summary"] = extract_tags_content(st.session_state.resume_summary,['resume_summary'])
     with st.expander("Ideal Resume Summary: "):
         st.write(st.session_state["resume_summary"])
 
@@ -461,6 +468,7 @@ async def main():
                 await generate_suggestions_cover_letter()
 
                 await generate_reach_out_messages()
+
             
             elif st.session_state["reach_out"]:
 

@@ -3,6 +3,7 @@ import pandas as pd
 from langchain_groq import ChatGroq
 import streamlit as st
 from credentials import GROQ_API
+import ollama
 
 async def run_llama_prompt(user_prompt, system_prompt, model, model_temp = 0.2):
     """
@@ -172,3 +173,29 @@ def save_job_dict_response(job_dict, string_data):
             json.dump(job_dict, json_file, indent=4)
 
         print("Job data saved to 'suggestions_data.json'")
+
+async def get_ollama_response(model_name, resume, job_description, prompt_template, temperature):
+    # Format the prompt with user inputs
+    # Format the prompt with user inputs
+
+    st.write("DeepSeek is thinking!!!")
+    print("DeepSeek is thinking!!!")
+    
+    formatted_prompt = prompt_template.format(
+        ORIGINAL_RESUME=resume,
+        JOB_DESCRIPTION=job_description
+    )
+        
+    # Call the DeepSeek model using Ollama
+    response = ollama.chat(
+        model=model_name,
+        messages=[
+            {"role": "user", "content": formatted_prompt}
+        ],
+        options={
+            "temperature": temperature
+        }
+    )
+    
+    # Return the model's response
+    return response["message"]["content"]

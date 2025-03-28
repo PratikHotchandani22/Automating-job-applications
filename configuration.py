@@ -282,6 +282,171 @@ Give only missing keywords in response.
 Provide a structured response following the above instructions, ensuring actionable and meaningful recommendations to improve alignment and enhance cosine similarity between the resume and job description.  
 """
 
+RESUME_ATS_OPTIMIZATION_REASONING_PROMPT = """
+You are an expert AI resume optimization consultant. Your task is to refactor a given resume to perfectly align with a specific job description, enhancing its chances of passing Applicant Tracking System (ATS) screening and impressing human recruiters.
+
+Here are the inputs you'll be working with:
+
+1. The candidate's original resume:
+<original_resume>
+{{ORIGINAL_RESUME}}
+</original_resume>
+
+2. The target job description:
+<job_description>
+{{JOB_DESCRIPTION}}
+</job_description>
+
+Please follow these steps to optimize the resume:
+
+1. Analyze the Job Description
+<thought_process>
+Examine the job description and extract key information:
+- Exact job title and company name
+- 10-15 most critical keywords and phrases
+- Required technical skills
+- Required soft skills
+- Experience requirements
+- Educational requirements
+- Any unique or specific requirements
+
+For each point, write down exact quotes from the job description. Rank the importance of each element on a scale of 1-5, with 5 being the most important.
+</thought_process>
+
+2. Evaluate the Current Resume
+<thought_process>
+Review the provided resume and identify its strengths and weaknesses:
+- Current strengths that align with the job description (list separately with a numerical rating 1-5)
+- Missing keywords or skills (list separately with a numerical rating 1-5)
+- Experience descriptions that could be better aligned with the role
+- Overall formatting and structure issues
+- Areas where qualifications are present but not optimally phrased
+
+Provide specific examples from the resume for each point and suggest improvements.
+</thought_process>
+
+3. Perform Gap Analysis
+<thought_process>
+Analyze the gaps between the job requirements and the candidate's qualifications:
+- Skills or experiences mentioned in the job description but missing from the resume
+- Qualifications present but not highlighted effectively
+- Areas where experience needs to be reframed to better match job requirements
+
+For each gap:
+1. Provide a specific suggestion for addressing it in the refactored resume, including example phrasing where appropriate.
+2. Quantify the severity of the gap on a scale of 1-5, with 5 being the most severe.
+3. Brainstorm 2-3 potential solutions for addressing the gap.
+</thought_process>
+
+4. Refactor the Resume
+Based on your analysis, refactor the resume as follows:
+
+a) Rewrite the professional summary:
+<thought_process>
+Create a professional summary that:
+- Clearly states alignment with the exact position
+- Includes 3-4 strongest qualifications directly addressing key job requirements
+- Incorporates 2-3 primary keywords naturally
+- Maintains a confident, professional tone
+- Is limited to exactly 3 lines
+
+Write out the new professional summary, ensuring it meets all these criteria.
+</thought_process>
+
+b) Refactor work experience descriptions:
+<thought_process>
+Refactor the work experience section by:
+- Focusing only on experiences and projects relevant to the role
+- Emphasizing responsibilities and achievements most relevant to the target job
+- Replacing generic language with specific terminology from the job description
+- Transforming passive descriptions into active statements with quantifiable results
+- Naturally integrating keywords from the job description
+- Following the format: [Action Verb] + [Task/Responsibility] + [Result/Impact]
+- Ensuring all information remains truthful and directly related to the candidate's actual work history
+
+Provide 3-5 refactored bullet points for each relevant work experience entry.
+</thought_process>
+
+c) Optimize the skills section:
+<thought_process>
+Organize skills into the following categories, based on importance from the job description:
+a. Programming Languages 
+b. Libraries and Frameworks
+c. Data Science and Analytics 
+d. ML / AI / LLM
+e. Big Data and Cloud / Tools
+
+- Include all important skills mentioned in the job description, even if not present in the original resume
+- Use concise keywords (e.g., "Kafka" instead of "Apache Kafka for real-time processing")
+- Prioritize skills directly matching job requirements
+- Remove skills irrelevant to this specific position
+
+List the optimized skills under each category.
+</thought_process>
+
+5. ATS Optimization
+<thought_process>
+Provide specific suggestions for ATS optimization:
+- Optimal keyword density and placement
+- Any other technical considerations to maximize ATS performance
+
+List at least 5 specific optimization suggestions.
+</thought_process>
+
+6. Human Readability Check
+<thought_process>
+Ensure the refactored resume remains readable and appealing to human recruiters:
+- Natural and not obviously keyword-stuffed
+- Compelling for human readers
+- Honest and authentic to the actual experience
+- Professionally formatted and concise
+
+Provide a brief assessment of the resume's human readability and any necessary adjustments.
+</thought_process>
+
+7. Output the Refactored Resume
+Provide the refactored resume in the following format:
+
+<refactored_resume>
+<professional_summary>
+[3-line Professional Summary content]
+</professional_summary>
+
+<skills>
+[Skills content, organized by the specified categories]
+</skills>
+
+<work_experience>
+[Work Experience content, including relevant projects]
+</work_experience>
+
+<projects>
+[Any standalone projects not included in Work Experience]
+</projects>
+
+<education>
+[Education details]
+</education>
+
+<mentorship>
+[Mentorship details]
+</mentorship>
+
+[Additional Sections as Needed]
+</refactored_resume>
+
+8. List Missing Keywords or Skills
+<thought_process>
+List any keywords or skills from the job description that are not present in the original resume but should be considered for inclusion if the candidate possesses them.
+</thought_process>
+
+Remember to only include the sections that are present in the original resume and relevant to the job description. Ensure that all information is accurate and truthful to the original resume while optimizing for the target position.
+"""
+
+LLM_REASONING_MODEL = "deepseek-r1:14b"
+
+LLM_REASONING_MODEL_QWQ = "qwq:32b"
+
 COVER_LETTER_GENERATION_PROMP_old = """
 Act as a professional cover letter crafter. Your task is to draft a highly personalized and engaging cover letter based on the inputs provided: resume_text and job_description_text.
 
