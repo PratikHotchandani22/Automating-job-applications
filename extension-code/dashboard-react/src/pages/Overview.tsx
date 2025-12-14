@@ -17,7 +17,6 @@ const rangeToDays: Record<Range, number> = {
 const OverviewPage = () => {
   const navigate = useNavigate();
   const runs = useDashboardStore((state) => state.runs);
-  const selectRun = useDashboardStore((state) => state.selectRun);
   const refreshRuns = useDashboardStore((state) => state.refreshRuns);
   const [range, setRange] = useState<Range>("7d");
 
@@ -171,7 +170,6 @@ const OverviewPage = () => {
                   key={run.runId}
                   className="clickable"
                   onClick={() => {
-                    selectRun(run.runId);
                     const target = `/run/${run.runId}`;
                     navigate(target);
                     if (typeof window !== "undefined") {
@@ -204,7 +202,6 @@ const OverviewPage = () => {
                         className="ghost small"
                         onClick={(e) => {
                           e.stopPropagation();
-                          selectRun(run.runId);
                           const target = `/run/${run.runId}`;
                           navigate(target);
                           if (typeof window !== "undefined") {

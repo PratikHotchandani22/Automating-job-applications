@@ -38,6 +38,137 @@
   cursor: pointer;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.multi-select {
+  position: relative;
+}
+
+.multi-select .select {
+  width: 100%;
+  text-align: left;
+}
+
+.multi-select-menu {
+  position: absolute;
+  z-index: 10;
+  width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  background: #0b1220;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  margin-top: 6px;
+}
+
+.multi-select-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.window-group {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+
+.window-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.hint.warn {
+  color: #fca5a5;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #93c5fd;
+  cursor: pointer;
+  padding: 0 2px;
+  text-decoration: underline;
+  font-size: 12px;
+}
+
+.tab-row {
+  align-items: center;
+  gap: 8px;
+}
+
+.tab-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.checkbox-label.tiny span {
+  font-size: 12px;
+}
+
+.tab-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tab-table-head {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tab-row.structured {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-row.structured:last-child {
+  border-bottom: none;
+}
+
+.tab-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tab-title {
+  display: inline-block;
+}
+
+.tab-cell.status {
+  gap: 6px;
+}
+
+.tab-cell.actions {
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.active-runs {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .status-text {
   color: var(--muted);
   font-size: 12px;

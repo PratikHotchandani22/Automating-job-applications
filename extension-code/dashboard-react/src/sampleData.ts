@@ -7,6 +7,9 @@ export const sampleRuns: RunRecord[] = [
   {
     runId: "RUN-3012",
     clientRunId: "run_client_3012",
+    queueId: "legacy-RUN-3012",
+    queuePosition: 1,
+    queueSize: 1,
     title: "Lead Data Scientist",
     company: "NVIDIA",
     platform: "LinkedIn",
@@ -22,6 +25,9 @@ export const sampleRuns: RunRecord[] = [
   },
   {
     runId: "RUN-3013",
+    queueId: "legacy-RUN-3013",
+    queuePosition: 1,
+    queueSize: 1,
     title: "Senior Machine Learning Engineer",
     company: "Franklin Fitch",
     platform: "Workday",
@@ -37,6 +43,9 @@ export const sampleRuns: RunRecord[] = [
   },
   {
     runId: "RUN-3014",
+    queueId: "legacy-RUN-3014",
+    queuePosition: 1,
+    queueSize: 1,
     title: "Principal Analyst, Clinical Ops",
     company: "Vertex Pharmaceuticals",
     platform: "Greenhouse",
@@ -53,6 +62,9 @@ export const sampleRuns: RunRecord[] = [
   },
   {
     runId: "RUN-3015",
+    queueId: "legacy-RUN-3015",
+    queuePosition: 1,
+    queueSize: 1,
     title: "Staff AI Engineer",
     company: "General Motors",
     platform: "Other",
@@ -67,6 +79,9 @@ export const sampleRuns: RunRecord[] = [
   },
   {
     runId: "RUN-3016",
+    queueId: "legacy-RUN-3016",
+    queuePosition: 1,
+    queueSize: 1,
     title: "Forward Deployed AI Engineer",
     company: "Palantir",
     platform: "LinkedIn",

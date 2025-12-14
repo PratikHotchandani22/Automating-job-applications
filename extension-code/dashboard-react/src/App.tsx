@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import RunDetailDrawer from "./components/RunDetailDrawer";
 import StatusPill from "./components/StatusPill";
 import { useRunPolling } from "./hooks/useRunPolling";
 import OverviewPage from "./pages/Overview";
@@ -96,7 +95,7 @@ const AppShell = () => {
       <main className="content">
         <Routes>
           <Route path="/overview" element={<OverviewPage />} />
-          <Route path="/runs/:runId?" element={<RunsPage />} />
+          <Route path="/runs" element={<RunsPage />} />
           <Route path="/run/:runId" element={<RunDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/start-run" element={<StartRunPage />} />
@@ -104,9 +103,6 @@ const AppShell = () => {
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>
       </main>
-
-      {/* Hide drawer when on dedicated run detail page */}
-      {!location.pathname.startsWith("/run/") ? <RunDetailDrawer /> : null}
     </div>
   );
 };

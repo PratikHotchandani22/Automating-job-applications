@@ -34,9 +34,15 @@ const CONFIG = {
   latexTemplate: process.env.LATEX_TEMPLATE || path.join(__dirname, "templates", "resume_template.tex"),
   latexEngine: process.env.LATEX_ENGINE || "pdflatex",
   tailorModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  chatModel: process.env.OPENAI_MODEL_CHAT || process.env.OPENAI_MODEL || "gpt-4o-mini",
+  editModel: process.env.OPENAI_MODEL_EDIT || process.env.OPENAI_MODEL_CHAT || process.env.OPENAI_MODEL || "gpt-4o-mini",
   rubricModel: process.env.OPENAI_MODEL_RUBRIC || process.env.OPENAI_MODEL || "gpt-4o-mini",
   latexModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929",
   rubricTemperature: Number(process.env.RUBRIC_TEMPERATURE || 0.15),
+  chatTemperature: Number(process.env.CHAT_TEMPERATURE || 0.2),
+  chatMaxMessages: Number(process.env.CHAT_MAX_MESSAGES || 20),
+  chatMaxContextChars: Number(process.env.CHAT_MAX_CONTEXT_CHARS || 80000),
+  editPromptVersion: process.env.EDIT_PROMPT_VERSION || "latest_v1",
   stageTimeoutMs: Number(process.env.STAGE_TIMEOUT_MS || 300000),
   embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-large",
   embeddingDims:
@@ -65,6 +71,13 @@ ensureDir(CONFIG.embedCacheRoot);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+
+const RUNS_ROOT_RESOLVED = path.resolve(CONFIG.runsRoot);
+function getSafeRunDir(runId) {
+  const runDir = path.resolve(RUNS_ROOT_RESOLVED, String(runId || ""));
+  if (!runDir.startsWith(RUNS_ROOT_RESOLVED + path.sep)) return null;
+  return runDir;
+}
 
 const PROMPT_CACHE = {};
 const LATEX_TEMPLATE = fs.existsSync(CONFIG.latexTemplate)
@@ -205,6 +218,188 @@ app.get("/download/:runId/:file", (req, res) => {
     return;
   }
   res.download(filePath);
+});
+
+app.post("/runs/:runId/latex", async (req, res) => {
+  const runId = req.params.runId;
+  const runDir = getSafeRunDir(runId);
+  if (!runDir) {
+    res.status(400).json({ ok: false, message: "Invalid run ID" });
+    return;
+  }
+  if (!fs.existsSync(runDir)) {
+    res.status(404).json({ ok: false, message: "Run not found" });
+    return;
+  }
+  const latex = req.body?.latex;
+  if (typeof latex !== "string") {
+    res.status(400).json({ ok: false, message: "latex must be a string" });
+    return;
+  }
+  if (latex.length > 2_000_000) {
+    res.status(413).json({ ok: false, message: "latex too large" });
+    return;
+  }
+  try {
+    await fs.promises.writeFile(path.join(runDir, "resume.tex"), latex, "utf8");
+    const status = await readStatus(runDir);
+    if (status) {
+      await writeStatus(runDir, { ...status, files: buildFileMap(runId, runDir) });
+    }
+    res.json({ ok: true, run_id: runId, files: buildFileMap(runId, runDir) });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || "Failed to save LaTeX" });
+  }
+});
+
+app.post("/runs/:runId/compile-pdf", async (req, res) => {
+  const runId = req.params.runId;
+  const runDir = getSafeRunDir(runId);
+  if (!runDir) {
+    res.status(400).json({ ok: false, message: "Invalid run ID" });
+    return;
+  }
+  if (!fs.existsSync(runDir)) {
+    res.status(404).json({ ok: false, message: "Run not found" });
+    return;
+  }
+
+  const latex = req.body?.latex;
+  if (latex !== undefined && typeof latex !== "string") {
+    res.status(400).json({ ok: false, message: "latex must be a string" });
+    return;
+  }
+  if (typeof latex === "string" && latex.length > 2_000_000) {
+    res.status(413).json({ ok: false, message: "latex too large" });
+    return;
+  }
+
+  try {
+    if (typeof latex === "string") {
+      await fs.promises.writeFile(path.join(runDir, "resume.tex"), latex, "utf8");
+    }
+
+    const compileResult = await compileLatex(runDir, CONFIG.latexEngine);
+    if (compileResult?.log) {
+      await fs.promises.writeFile(path.join(runDir, "latex_compile.log"), compileResult.log, "utf8");
+    }
+
+    const status = await readStatus(runDir);
+    if (status) {
+      await writeStatus(runDir, { ...status, files: buildFileMap(runId, runDir) });
+    }
+
+    const pdfBuffer = await fs.promises.readFile(compileResult.pdfPath);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="resume.pdf"');
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).send(pdfBuffer);
+  } catch (error) {
+    const message = error?.message || "Compile failed";
+    res.status(400).json({ ok: false, message });
+  }
+});
+
+app.post("/runs/:runId/chat", async (req, res) => {
+  const runId = req.params.runId;
+  const runDir = getSafeRunDir(runId);
+  if (!runDir) {
+    res.status(400).json({ ok: false, message: "Invalid run ID" });
+    return;
+  }
+  if (!fs.existsSync(runDir)) {
+    res.status(404).json({ ok: false, message: "Run not found" });
+    return;
+  }
+
+  const body = req.body || {};
+  const messages = body?.messages;
+  const focus = body?.focus || null;
+  if (!Array.isArray(messages)) {
+    res.status(400).json({ ok: false, message: "messages must be an array" });
+    return;
+  }
+  const normalizedMessages = normalizeChatMessages(messages, CONFIG.chatMaxMessages);
+  if (!normalizedMessages.length) {
+    res.status(400).json({ ok: false, message: "messages must contain at least one user message" });
+    return;
+  }
+
+  try {
+    const context = await buildRunChatContext(runId, runDir, CONFIG.chatMaxContextChars);
+    const latestUser = getLatestUserMessage(normalizedMessages);
+    const prevAssistant = getPreviousAssistantMessage(normalizedMessages.slice(0, -1));
+    const wantsSelectionEdit = Boolean(focus && latestUser && isEditIntent(latestUser, focus));
+    const wantsFullLatexEdit = Boolean(latestUser && !wantsSelectionEdit && isLatexFullEditIntent(latestUser));
+    const wantsResumeContentEdit = Boolean(
+      latestUser &&
+        !wantsSelectionEdit &&
+        !wantsFullLatexEdit &&
+        (isResumeContentEditIntent(latestUser) ||
+          (isAffirmativeMessage(latestUser) && assistantLooksLikeProposedResumeEdit(prevAssistant)))
+    );
+
+    const effectiveInstruction =
+      wantsResumeContentEdit && isAffirmativeMessage(latestUser) && prevAssistant
+        ? `Apply the proposed change described in the previous assistant message.\n\nPREVIOUS_ASSISTANT_MESSAGE:\n${prevAssistant}`
+        : latestUser;
+    const result = wantsSelectionEdit
+      ? await runRunEditExec({
+          runId,
+          runDir,
+          context,
+          focus,
+          instruction: effectiveInstruction
+        })
+      : wantsFullLatexEdit || wantsResumeContentEdit
+      ? await runRunLatexFullEdit({
+          runId,
+          runDir,
+          context,
+          instruction: effectiveInstruction
+        })
+      : await runRunChat({
+          runId,
+          runDir,
+          messages: normalizedMessages,
+          context,
+          focus
+        });
+
+    // Auto-save full-file LaTeX edits when provided.
+    // If saving fails, keep the action so the UI can offer “Apply & Save” as a fallback.
+    let action = result.action || null;
+    let assistantText = result.answer || "";
+    if (action?.type === "latex_replace_full" && typeof action.latex === "string") {
+      try {
+        const latexWithComment = insertChatEditComment(action.latex, effectiveInstruction || latestUser || "updated via chat");
+        await fs.promises.writeFile(path.join(runDir, "resume.tex"), latexWithComment, "utf8");
+        const status = await readStatus(runDir);
+        if (status) {
+          await writeStatus(runDir, { ...status, files: buildFileMap(runId, runDir) });
+        }
+        assistantText =
+          (assistantText ? `${assistantText}\n\n` : "") +
+          "Saved the updated `resume.tex` for this run. Open “LaTeX Editor” → “Reload generated” to verify, then “Compile PDF”.";
+        action = null;
+      } catch (e) {
+        assistantText =
+          (assistantText ? `${assistantText}\n\n` : "") +
+          "I generated the updated LaTeX but couldn’t save it automatically. Click “Apply & Save” in chat to persist it.";
+        // keep action as-is
+      }
+    }
+    res.json({
+      ok: true,
+      run_id: runId,
+      assistant: { role: "assistant", content: assistantText },
+      citations: result.citations || [],
+      action,
+      debug: result.debug || null
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || "Chat failed" });
+  }
 });
 
 app.get("/runs/:runId/evidence_scores", (req, res) => {
@@ -1127,6 +1322,591 @@ function parseJsonSafe(text) {
   } catch (error) {
     return null;
   }
+}
+
+function truncateText(text, maxChars) {
+  const value = (text || "").toString();
+  if (!maxChars || maxChars <= 0) return value;
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars - 80))}\n\n[TRUNCATED: ${value.length} chars total]`;
+}
+
+async function readTextIfExists(filePath, maxChars) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const text = await fs.promises.readFile(filePath, "utf8");
+    return truncateText(text, maxChars);
+  } catch (error) {
+    return null;
+  }
+}
+
+async function readJsonIfExists(filePath, maxChars) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const text = await fs.promises.readFile(filePath, "utf8");
+    const parsed = parseJsonSafe(text);
+    if (parsed === null) return null;
+    const serialized = JSON.stringify(parsed, null, 2);
+    return truncateText(serialized, maxChars);
+  } catch (error) {
+    return null;
+  }
+}
+
+function normalizeChatMessages(rawMessages, maxMessages) {
+  const cleaned = [];
+  for (const msg of rawMessages || []) {
+    if (!msg || typeof msg !== "object") continue;
+    const role = (msg.role || "").toString();
+    const content = (msg.content || "").toString();
+    if (role !== "user" && role !== "assistant") continue;
+    if (!content.trim()) continue;
+    cleaned.push({ role, content });
+  }
+  const sliced = cleaned.slice(-Math.max(1, Number(maxMessages) || 20));
+  // Require at least one user message to anchor the turn.
+  if (!sliced.some((m) => m.role === "user")) return [];
+  return sliced;
+}
+
+function getLatestUserMessage(messages) {
+  for (let i = (messages || []).length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user" && typeof messages[i]?.content === "string") {
+      return messages[i].content;
+    }
+  }
+  return null;
+}
+
+function isEditIntent(userText, focus) {
+  const text = (userText || "").toString().toLowerCase();
+  // Only treat as edit intent when we have a concrete selection focus.
+  if (!focus || typeof focus !== "object") return false;
+  if (focus.type !== "latex_selection") return false;
+  return (
+    /\b(rewrite|rephrase|edit|fix|improve|shorten|expand|tighten|remove|delete|drop|replace)\b/.test(text) ||
+    /\b(save|apply|update)\b/.test(text)
+  );
+}
+
+function isLatexFullEditIntent(userText) {
+  const text = (userText || "").toString().toLowerCase();
+  // If the user is asking to modify LaTeX but didn't provide a selection focus, treat it as a full-doc edit.
+  const mentionsLatex =
+    /\b(latex|la-tex|resume\.tex|\.tex)\b/.test(text) ||
+    text.includes("\\begin{document}") ||
+    text.includes("\\resume") ||
+    text.includes("tex file");
+  const isEditVerb = /\b(rewrite|rephrase|edit|fix|improve|shorten|expand|tighten|remove|delete|drop|replace|update)\b/.test(
+    text
+  );
+  const wantsPersistence = /\b(save|apply|persist|overwrite)\b/.test(text);
+  return mentionsLatex && (isEditVerb || wantsPersistence);
+}
+
+function isResumeContentEditIntent(userText) {
+  const text = (userText || "").toString().toLowerCase();
+  const mentionsSection = /\b(summary|skills|work experience|experience|education|projects|certifications|publications)\b/.test(
+    text
+  );
+  const isEditVerb = /\b(change|update|add|insert|remove|delete|drop|rewrite|rephrase|edit|fix|improve)\b/.test(text);
+  const wantsPersistence = /\b(save|apply|commit|persist|do this change|make this change)\b/.test(text);
+  return (mentionsSection && isEditVerb) || wantsPersistence;
+}
+
+function isAffirmativeMessage(userText) {
+  const text = (userText || "").toString().trim().toLowerCase();
+  return (
+    /^(ok(ay)?|yes|yep|yeah|sure|do it|go ahead|sounds good|please do|let'?s do it|proceed)\b/.test(text) ||
+    /\b(do this change|make this change|apply it)\b/.test(text)
+  );
+}
+
+function getPreviousAssistantMessage(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]?.role === "assistant" && typeof list[i]?.content === "string" && list[i].content.trim()) {
+      return list[i].content;
+    }
+  }
+  return null;
+}
+
+function assistantLooksLikeProposedResumeEdit(text) {
+  const t = (text || "").toString().toLowerCase();
+  return (
+    t.includes("revised summary") ||
+    t.includes("here is the revised summary") ||
+    t.includes("the summary has been updated") ||
+    t.includes("update the latex") ||
+    t.includes("update the la\\,tex") ||
+    t.includes("modify the latex")
+  );
+}
+
+function truncateOneLine(text, maxLen = 140) {
+  const value = (text || "").toString().replace(/\s+/g, " ").trim();
+  if (value.length <= maxLen) return value;
+  return `${value.slice(0, Math.max(0, maxLen - 1))}…`;
+}
+
+function insertChatEditComment(latexText, note) {
+  const latex = (latexText || "").toString();
+  const stamp = new Date().toISOString();
+  const comment = `% [CHAT_EDIT ${stamp}] ${truncateOneLine(note || "updated via chat", 160)}\n`;
+
+  // Try to place the comment near SUMMARY edits (common case).
+  const sectionIdx = latex.indexOf("\\section{SUMMARY}");
+  if (sectionIdx >= 0) {
+    const afterSectionLine = latex.indexOf("\n", sectionIdx);
+    if (afterSectionLine >= 0) {
+      return `${latex.slice(0, afterSectionLine + 1)}${comment}${latex.slice(afterSectionLine + 1)}`;
+    }
+  }
+
+  // Fallback: add comment near top of document (after \begin{document}).
+  const beginIdx = latex.indexOf("\\begin{document}");
+  if (beginIdx >= 0) {
+    const afterBeginLine = latex.indexOf("\n", beginIdx);
+    if (afterBeginLine >= 0) {
+      return `${latex.slice(0, afterBeginLine + 1)}${comment}${latex.slice(afterBeginLine + 1)}`;
+    }
+  }
+
+  // Last resort: prepend.
+  return `${comment}${latex}`;
+}
+
+async function buildRunChatContext(runId, runDir, maxTotalChars) {
+  // Keep this stable: later we can swap in retrieval/citations without changing the API.
+  const perDoc = {
+    baseline_resume: 22000,
+    job_description: 22000,
+    jd_rubric: 18000,
+    selection_plan: 14000,
+    selection_debug: 14000,
+    evidence_scores: 14000,
+    tailored: 18000,
+    final_resume: 18000,
+    resume_latex: 26000,
+    meta: 10000
+  };
+  const docs = [];
+  const pushDoc = (doc) => {
+    if (!doc?.content) return;
+    docs.push(doc);
+  };
+
+  pushDoc({
+    id: "baseline_resume",
+    title: "Master resume (baseline_resume.json)",
+    content: await readJsonIfExists(path.join(runDir, "baseline_resume.json"), perDoc.baseline_resume)
+  });
+  pushDoc({
+    id: "job_description",
+    title: "Job description (job_extracted.txt)",
+    content: await readTextIfExists(path.join(runDir, "job_extracted.txt"), perDoc.job_description)
+  });
+  pushDoc({
+    id: "jd_rubric",
+    title: "JD rubric (jd_rubric.json)",
+    content: await readJsonIfExists(path.join(runDir, "jd_rubric.json"), perDoc.jd_rubric)
+  });
+  pushDoc({
+    id: "selection_plan",
+    title: "Selection plan (selection_plan.json)",
+    content: await readJsonIfExists(path.join(runDir, "selection_plan.json"), perDoc.selection_plan)
+  });
+  pushDoc({
+    id: "selection_debug",
+    title: "Selection debug (selection_debug.json)",
+    content: await readJsonIfExists(path.join(runDir, "selection_debug.json"), perDoc.selection_debug)
+  });
+  pushDoc({
+    id: "evidence_scores",
+    title: "Evidence scores (evidence_scores.json)",
+    content: await readJsonIfExists(path.join(runDir, "evidence_scores.json"), perDoc.evidence_scores)
+  });
+  pushDoc({
+    id: "tailored",
+    title: "Tailored output (tailored.json)",
+    content: await readJsonIfExists(path.join(runDir, "tailored.json"), perDoc.tailored)
+  });
+  pushDoc({
+    id: "final_resume",
+    title: "Final resume JSON (final_resume.json)",
+    content: await readJsonIfExists(path.join(runDir, "final_resume.json"), perDoc.final_resume)
+  });
+  pushDoc({
+    id: "resume_latex",
+    title: "Generated LaTeX (resume.tex)",
+    content: await readTextIfExists(path.join(runDir, "resume.tex"), perDoc.resume_latex)
+  });
+  pushDoc({
+    id: "meta",
+    title: "Run metadata (meta.json)",
+    content: await readJsonIfExists(path.join(runDir, "meta.json"), perDoc.meta)
+  });
+
+  // Enforce a max total size (approx) to avoid runaway prompts.
+  let budget = Number(maxTotalChars) || 80000;
+  const clipped = [];
+  for (const doc of docs) {
+    if (budget <= 0) break;
+    const content = (doc.content || "").toString();
+    if (!content) continue;
+    if (content.length <= budget) {
+      clipped.push(doc);
+      budget -= content.length;
+      continue;
+    }
+    clipped.push({ ...doc, content: truncateText(content, budget) });
+    budget = 0;
+  }
+
+  return {
+    run_id: runId,
+    docs: clipped.map((d) => ({ id: d.id, title: d.title, content: d.content }))
+  };
+}
+
+function buildRunChatSystemPrompt() {
+  return [
+    "You are ResumeRunChat, a helpful assistant for understanding and improving a tailored resume run.",
+    "You will be given a set of run documents (master resume, job description, rubric/selection/evidence artifacts, final outputs).",
+    "",
+    "Rules:",
+    "- Be faithful to the provided documents; if something isn't in them, say you don't know.",
+    "- When explaining 'why', ground your answer in the selection/rubric/evidence artifacts if present.",
+    "- If the user asks to rewrite/restructure, propose alternatives but do not invent achievements not supported by the baseline resume.",
+    "- You CAN propose concrete edits (including removals) to the resume. If asked to change LaTeX, describe what to change and how.",
+    "- Do not claim you are unable to help with editing; instead explain the safest edit to apply.",
+    "",
+    "Output JSON ONLY with this schema:",
+    `{ "answer": string, "citations": [{ "doc_id": string, "quote": string, "reason": string }] }`,
+    "- citations is optional; include it when you can point to exact supporting text."
+  ].join("\n");
+}
+
+function parseRunChatModelResponse(text) {
+  const parsed = parseJsonSafe(text);
+  if (parsed && typeof parsed === "object") {
+    const answer = typeof parsed.answer === "string" ? parsed.answer : "";
+    const citations = Array.isArray(parsed.citations) ? parsed.citations : [];
+    const action = parsed.action && typeof parsed.action === "object" ? parsed.action : null;
+    return { answer, citations, action };
+  }
+  return { answer: (text || "").toString(), citations: [], action: null };
+}
+
+async function runRunChat({ runId, runDir, messages, context, focus }) {
+  if (CONFIG.mockMode) {
+    return {
+      answer:
+        "Mock mode: I can help explain why changes were made and suggest rewrites. Ask about a specific bullet/section and I’ll ground it in the run artifacts.",
+      citations: [],
+      debug: { mock: true, docs: context?.docs?.map((d) => d.id) || [] }
+    };
+  }
+  if (!openai) {
+    throw new StageError("OpenAI client is unavailable (check OPENAI_API_KEY / MOCK_MODE)", "chat");
+  }
+
+  const system = buildRunChatSystemPrompt();
+  const contextMsg = {
+    role: "system",
+    content: `RUN_CONTEXT_JSON:\n${JSON.stringify(
+      {
+        run_id: runId,
+        focus: focus || null,
+        documents: (context?.docs || []).map((d) => ({ id: d.id, title: d.title, content: d.content }))
+      },
+      null,
+      2
+    )}`
+  };
+
+  const modelStarted = Date.now();
+  const response = await openai.chat.completions.create({
+    model: CONFIG.chatModel,
+    temperature: CONFIG.chatTemperature,
+    messages: [{ role: "system", content: system }, contextMsg, ...messages]
+  });
+  const chatMs = Date.now() - modelStarted;
+  const text = response?.choices?.[0]?.message?.content || "";
+  const parsed = parseRunChatModelResponse(text);
+  return {
+    ...parsed,
+    debug: { chat_ms: chatMs, model: CONFIG.chatModel, docs: context?.docs?.map((d) => d.id) || [] }
+  };
+}
+
+function isTruncatedFocusSnippet(snippet) {
+  const text = (snippet || "").toString();
+  return text.includes("[TRUNCATED]");
+}
+
+function normalizePatchOps(action) {
+  if (!action || typeof action !== "object") return null;
+  if (action.type === "latex_patch_v2" && Array.isArray(action.ops)) {
+    return action.ops;
+  }
+  // Backward compatibility: accept v1 single-op shape.
+  if (action.type === "latex_patch_v1" && typeof action.op === "string") {
+    return [
+      {
+        op: action.op,
+        start: action.start,
+        end: action.end,
+        replacement: action.replacement
+      }
+    ];
+  }
+  return null;
+}
+
+function validateLatexPatchAction(action, expectedStart, expectedEnd) {
+  const ops = normalizePatchOps(action);
+  if (!ops) return { ok: false, reason: "missing/invalid action" };
+  if (!Number.isFinite(expectedStart) || !Number.isFinite(expectedEnd) || expectedEnd <= expectedStart) {
+    return { ok: false, reason: "expected selection invalid" };
+  }
+  if (ops.length < 1 || ops.length > 12) return { ok: false, reason: "ops length invalid" };
+
+  for (const [idx, raw] of ops.entries()) {
+    const op = (raw?.op || "").toString();
+    const start = Number(raw?.start);
+    const end = Number(raw?.end);
+    const replacement = raw?.replacement;
+
+    const isInsert = op === "insert_before" || op === "insert_after";
+    const isDelete = op === "delete_range" || op === "delete_selection";
+    const isReplace = op === "replace_range" || op === "replace_selection";
+    if (!isInsert && !isDelete && !isReplace) return { ok: false, reason: `op[${idx}] invalid` };
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return { ok: false, reason: `op[${idx}] start/end invalid` };
+
+    if (isInsert) {
+      if (start !== end) return { ok: false, reason: `op[${idx}] insert must have start=end` };
+      if (op === "insert_before" && start !== expectedStart)
+        return { ok: false, reason: `op[${idx}] insert_before must be at selection start` };
+      if (op === "insert_after" && start !== expectedEnd)
+        return { ok: false, reason: `op[${idx}] insert_after must be at selection end` };
+      if (typeof replacement !== "string") return { ok: false, reason: `op[${idx}] replacement required for insert` };
+      continue;
+    }
+
+    // delete/replace must stay within selection
+    if (end <= start) return { ok: false, reason: `op[${idx}] range invalid` };
+    if (start < expectedStart || end > expectedEnd) {
+      return { ok: false, reason: `op[${idx}] must be within selection` };
+    }
+    if (isReplace && typeof replacement !== "string") {
+      return { ok: false, reason: `op[${idx}] replacement required for replace` };
+    }
+  }
+
+  return { ok: true };
+}
+
+async function runRunEditExec({ runId, runDir, context, focus, instruction }) {
+  if (CONFIG.mockMode) {
+    return {
+      answer: "Mock mode: I would apply a minimal patch to the selected LaTeX region.",
+      citations: [],
+      action: null,
+      debug: { mock: true, docs: context?.docs?.map((d) => d.id) || [] }
+    };
+  }
+  if (!openai) {
+    throw new StageError("OpenAI client is unavailable (check OPENAI_API_KEY / MOCK_MODE)", "chat_edit");
+  }
+
+  const start = Number(focus?.selection?.start);
+  const end = Number(focus?.selection?.end);
+  const snippet = (focus?.snippet || "").toString();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    throw new StageError("Invalid focus selection", "chat_edit");
+  }
+  if (!snippet.trim()) {
+    throw new StageError("Missing focus snippet", "chat_edit");
+  }
+  if (isTruncatedFocusSnippet(snippet)) {
+    return {
+      answer:
+        "That selection is too large to safely edit automatically. Please select a smaller LaTeX region (a single bullet/paragraph) and try again.",
+      citations: [],
+      action: null,
+      debug: { model: CONFIG.editModel, too_large: true }
+    };
+  }
+  if (snippet.includes("LOCK_") || snippet.includes("===LOCK")) {
+    return {
+      answer:
+        "That selection appears to include locked LaTeX markers/content. Please select a region outside the locked blocks and try again.",
+      citations: [],
+      action: null,
+      debug: { model: CONFIG.editModel, locked: true }
+    };
+  }
+
+  const editPrompt = getPrompt("edit", CONFIG.editPromptVersion);
+  const system = editPrompt.content.trim();
+  const payload = {
+    run_id: runId,
+    instruction: instruction || "",
+    focus: {
+      type: focus.type,
+      artifact: focus.artifact,
+      selection: { start, end },
+      snippet
+    },
+    context_docs: (context?.docs || []).map((d) => ({ id: d.id, title: d.title, content: d.content }))
+  };
+
+  const modelStarted = Date.now();
+  const response = await openai.chat.completions.create({
+    model: CONFIG.editModel,
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: `INPUT_JSON:\n${JSON.stringify(payload, null, 2)}` }
+    ]
+  });
+  const ms = Date.now() - modelStarted;
+  const text = response?.choices?.[0]?.message?.content || "";
+  const parsed = parseRunChatModelResponse(text);
+  const action = parsed.action;
+  const validation = validateLatexPatchAction(action, start, end);
+  if (!validation.ok) {
+    return {
+      answer:
+        "I couldn't produce a safe, structured patch for that request. Try rephrasing or selecting a smaller region.",
+      citations: parsed.citations || [],
+      action: null,
+      debug: { edit_ms: ms, model: CONFIG.editModel, validation_error: validation.reason, raw: truncateText(text, 2000) }
+    };
+  }
+
+  return {
+    answer: parsed.answer || "Prepared an edit you can apply.",
+    citations: parsed.citations || [],
+    action,
+    debug: { edit_ms: ms, model: CONFIG.editModel, prompt: editPrompt.path }
+  };
+}
+
+async function runRunLatexFullEdit({ runId, runDir, context, instruction }) {
+  if (CONFIG.mockMode) {
+    return {
+      answer: "Mock mode: I would prepare a full updated resume.tex you can apply & save.",
+      citations: [],
+      action: null,
+      debug: { mock: true, docs: context?.docs?.map((d) => d.id) || [] }
+    };
+  }
+  if (!openai) {
+    throw new StageError("OpenAI client is unavailable (check OPENAI_API_KEY / MOCK_MODE)", "chat_edit_full");
+  }
+
+  const texPath = path.join(runDir, "resume.tex");
+  if (!fs.existsSync(texPath)) {
+    return {
+      answer:
+        "I couldn’t find resume.tex for this run yet. Finish the run (generate LaTeX), then either edit it in “LaTeX Editor” or select a snippet and ask for a patch.",
+      citations: [],
+      action: null,
+      debug: { model: CONFIG.editModel, missing_resume_tex: true }
+    };
+  }
+
+  const currentLatex = await fs.promises.readFile(texPath, "utf8");
+  if (currentLatex.length > 180_000) {
+    return {
+      answer:
+        "Your resume.tex is too large to safely edit as a whole via chat. Please select a smaller LaTeX region (a single bullet/paragraph) in “LaTeX Editor” and use “Ask about selection” instead.",
+      citations: [],
+      action: null,
+      debug: { model: CONFIG.editModel, too_large_full_edit: true, chars: currentLatex.length }
+    };
+  }
+
+  const system = [
+    "You are ResumeLatexEditor, an assistant that edits a LaTeX resume file for a single run.",
+    "",
+    "You will be given INPUT_JSON containing:",
+    "- instruction: what the user wants changed",
+    "- current_latex: the full current contents of resume.tex",
+    "- context_docs: supporting run artifacts (baseline/job/rubric/selection/evidence)",
+    "",
+    "Rules:",
+    "- Return JSON ONLY.",
+    "- Produce a full updated LaTeX document in action.latex (not a snippet, not a diff).",
+    "- Do NOT wrap LaTeX in code fences.",
+    "- Preserve the overall structure and required commands; keep it compiling.",
+    "- Be faithful to baseline achievements: do not invent facts not supported by context_docs.",
+    "- If you cannot safely produce a full updated file, set action to null and explain what to do instead.",
+    "",
+    "Output JSON schema:",
+    `{ "answer": string, "action": { "type": "latex_replace_full", "latex": string } | null, "citations"?: [{ "doc_id": string, "quote": string, "reason": string }] }`
+  ].join("\n");
+
+  const payload = {
+    run_id: runId,
+    instruction: (instruction || "").toString(),
+    current_latex: currentLatex,
+    context_docs: (context?.docs || []).map((d) => ({ id: d.id, title: d.title, content: d.content }))
+  };
+
+  const modelStarted = Date.now();
+  const response = await openai.chat.completions.create({
+    model: CONFIG.editModel,
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: `INPUT_JSON:\n${JSON.stringify(payload, null, 2)}` }
+    ]
+  });
+  const ms = Date.now() - modelStarted;
+  const text = response?.choices?.[0]?.message?.content || "";
+  const parsed = parseRunChatModelResponse(text);
+
+  const action = parsed.action;
+  const latex = action && action.type === "latex_replace_full" ? action.latex : null;
+  const latexStr = typeof latex === "string" ? latex : null;
+  const looksLikeDoc =
+    typeof latexStr === "string" &&
+    latexStr.length >= 200 &&
+    latexStr.includes("\\begin{document}") &&
+    latexStr.includes("\\end{document}");
+  if (!looksLikeDoc) {
+    return {
+      answer:
+        parsed.answer ||
+        "I couldn't safely produce a full updated resume.tex. Please select a smaller region and request an edit patch.",
+      citations: parsed.citations || [],
+      action: null,
+      debug: { edit_ms: ms, model: CONFIG.editModel, validation_error: "missing/invalid latex_replace_full", raw: truncateText(text, 2000) }
+    };
+  }
+  if (latexStr.length > 2_000_000) {
+    return {
+      answer:
+        "The edited LaTeX output is too large to save. Please request a smaller, more targeted change (or select a region and patch).",
+      citations: parsed.citations || [],
+      action: null,
+      debug: { edit_ms: ms, model: CONFIG.editModel, validation_error: "latex too large", chars: latexStr.length }
+    };
+  }
+
+  return {
+    answer: parsed.answer || "Prepared a full updated resume.tex you can apply & save.",
+    citations: parsed.citations || [],
+    action: { type: "latex_replace_full", latex: latexStr },
+    debug: { edit_ms: ms, model: CONFIG.editModel, mode: "latex_replace_full" }
+  };
 }
 
 function buildRubricPayload(jobPayload = {}, jobText = "", promptVersion = "latest_v1") {

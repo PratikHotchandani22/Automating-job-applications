@@ -1,5 +1,5 @@
 import { sampleRuns } from "../sampleData";
-import type { BackendStatus, Capture, RunRecord, RunResult, RunStage, StartRunUIState, Tab } from "../types";
+import type { BackendStatus, Capture, ChatMessage, RunChatResponse, RunRecord, RunResult, RunStage, StartRunUIState, Tab } from "../types";
 
 export const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || "http://localhost:3001";
 
@@ -49,6 +49,10 @@ const mapResult = (value?: string | null): RunResult => {
 
 export const normalizeRun = (raw: any): RunRecord => {
   const runId = (raw.runId || raw.run_id || raw.clientRunId || raw.id || `run_${Date.now()}`).toString();
+  const queueId = raw.queueId || raw.queue_id || null;
+  const queuePosition = Number.isFinite(raw.queuePosition) ? Number(raw.queuePosition) : raw.queue_position;
+  const queueSize = Number.isFinite(raw.queueSize) ? Number(raw.queueSize) : raw.queue_size;
+  const queueLabel = raw.queueLabel || raw.queue_label || null;
   const coverageRaw = raw.coverage ?? raw.coverage_percent ?? raw.coverage_ratio;
   let coverage: number | null = null;
   if (typeof coverageRaw === "number") {
@@ -63,6 +67,11 @@ export const normalizeRun = (raw: any): RunRecord => {
   return {
     runId,
     clientRunId: raw.clientRunId,
+    queueId: queueId || `Q-${runId.toString().slice(0, 6)}`, // legacy runs become single-item queues
+    queuePosition: Number.isFinite(queuePosition) ? Number(queuePosition) : 1,
+    queueSize: Number.isFinite(queueSize) ? Number(queueSize) : 1,
+    queueLabel,
+    tab: raw.tab || undefined,
     captureId: raw.captureId,
     title: raw.job?.title || raw.title || raw.tab?.title || "",
     company: raw.job?.company || raw.company || "",
@@ -173,6 +182,22 @@ export const retryRunFromCapture = async (run: RunRecord): Promise<string | null
   throw new Error("Retry unavailable without capture reference");
 };
 
+export const chatRun = async (runId: string, messages: ChatMessage[], focus?: any): Promise<RunChatResponse> => {
+  const res = await fetch(`${BACKEND_BASE_URL}/runs/${encodeURIComponent(runId)}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, focus: focus || null })
+  });
+  const data = (await res.json().catch(() => null)) as RunChatResponse | null;
+  if (!res.ok) {
+    throw new Error(data?.message || `Chat failed (HTTP ${res.status})`);
+  }
+  if (!data) {
+    throw new Error("Chat failed: empty response");
+  }
+  return data;
+};
+
 export const getTabs = async (scope: "currentWindow" | "allWindows" = "currentWindow"): Promise<Tab[]> => {
   if (!hasChromeRuntime) return [];
   const response: any = await sendRuntimeMessage({ action: "GET_TABS", scope });
@@ -221,6 +246,33 @@ export const analyzeCapture = async (captureId: string): Promise<{ runId?: strin
     throw new Error(response?.error || "Analyze failed");
   }
   return { runId: response?.runId || response?.backendRunId || null };
+};
+
+export const startQueue = async (tabIds: number[]): Promise<{ queueId?: string; results?: any[] }> => {
+  if (!hasChromeRuntime) {
+    throw new Error("Runtime messaging unavailable");
+  }
+  const response: any = await sendRuntimeMessage({ action: "START_QUEUE", tabIds });
+  if (response?.ok === false) {
+    throw new Error(response?.error || "Queue failed");
+  }
+  return { queueId: response?.queueId, results: response?.results || [] };
+};
+
+export const stopQueue = async (queueId: string): Promise<void> => {
+  if (!hasChromeRuntime) throw new Error("Runtime messaging unavailable");
+  const response: any = await sendRuntimeMessage({ action: "STOP_QUEUE", queueId });
+  if (response?.ok === false) {
+    throw new Error(response?.error || "Stop queue failed");
+  }
+};
+
+export const stopRun = async (runId: string): Promise<void> => {
+  if (!hasChromeRuntime) throw new Error("Runtime messaging unavailable");
+  const response: any = await sendRuntimeMessage({ action: "STOP_RUN", runId });
+  if (response?.ok === false) {
+    throw new Error(response?.error || "Stop run failed");
+  }
 };
 
 export const setUIState = async (uiState: Partial<StartRunUIState>): Promise<void> => {

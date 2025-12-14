@@ -6,6 +6,8 @@ interface Props {
   onSelect: (runId: string) => void;
   onDownload: (run: RunRecord) => void;
   backendOnline: boolean;
+  showHeader?: boolean;
+  onStop?: (run: RunRecord) => void;
 }
 
 const statusClass = (run: RunRecord) => {
@@ -19,22 +21,32 @@ const coverageLabel = (value?: number | null) => {
   return `${value}%`;
 };
 
-const RunsTable = ({ runs, onSelect, onDownload, backendOnline }: Props) => {
+const displayStatusLabel = (run: RunRecord) => {
+  if (run.queueSize && run.queueSize > 1 && run.queuePosition && run.queuePosition > 1 && run.result === "pending") {
+    return "PENDING";
+  }
+  return run.status;
+};
+
+const RunsTable = ({ runs, onSelect, onDownload, backendOnline, showHeader = true, onStop }: Props) => {
   return (
     <div className="table-wrapper">
       <table className="runs-table">
-        <thead>
-          <tr>
-            <th>Job Title</th>
-            <th>Company</th>
-            <th>Platform</th>
-            <th>Status</th>
-            <th>Runtime</th>
-            <th>Coverage</th>
-            <th>Date/Time</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
+        {showHeader ? (
+          <thead>
+            <tr>
+              <th>Job Title</th>
+              <th>Company</th>
+              <th>Platform</th>
+              <th>Status</th>
+              <th>Queue</th>
+              <th>Runtime</th>
+              <th>Coverage</th>
+              <th>Date/Time</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+        ) : null}
         <tbody>
           {runs.map((run) => (
             <tr key={run.runId} onClick={() => onSelect(run.runId)} className="clickable">
@@ -44,7 +56,18 @@ const RunsTable = ({ runs, onSelect, onDownload, backendOnline }: Props) => {
               <td>{run.company || "—"}</td>
               <td>{run.platform || "Other"}</td>
               <td>
-                <span className={`status-pill tiny ${statusClass(run)}`}>{run.status}</span>
+                <span className={`status-pill tiny ${statusClass(run)}`}>{displayStatusLabel(run)}</span>
+              </td>
+              <td>
+                {run.queueId ? (
+                  <span className="badge subtle">
+                    {run.queueSize && run.queueSize > 1
+                      ? `Queue ${run.queuePosition || 1}/${run.queueSize}`
+                      : "Queue 1/1"}
+                  </span>
+                ) : (
+                  "—"
+                )}
               </td>
               <td>{formatDuration(run.runtimeSec)}</td>
               <td>
@@ -71,6 +94,17 @@ const RunsTable = ({ runs, onSelect, onDownload, backendOnline }: Props) => {
                   >
                     Download
                   </button>
+                  {onStop && run.result === "pending" ? (
+                    <button
+                      className="ghost small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStop(run);
+                      }}
+                    >
+                      Stop
+                    </button>
+                  ) : null}
                   <button className="ghost icon small" onClick={(e) => e.stopPropagation()} title="More actions coming soon">
                     ⋯
                   </button>

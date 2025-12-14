@@ -31,6 +31,16 @@ export interface StageSnapshot {
 export interface RunRecord {
   runId: string;
   clientRunId?: string;
+  queueId?: string | null;
+  queuePosition?: number | null;
+  queueSize?: number | null;
+  queueLabel?: string | null;
+  tab?: {
+    tabId?: number | null;
+    windowId?: number | null;
+    url?: string | null;
+    title?: string | null;
+  };
   captureId?: string;
   title?: string;
   company?: string;
@@ -69,6 +79,9 @@ export interface Tab {
   title?: string;
   url?: string;
   active?: boolean;
+  windowId?: number;
+  index?: number;
+  isDashboard?: boolean;
 }
 
 export interface Capture {
@@ -100,5 +113,42 @@ export interface StartRunUIState {
   selectedCaptureId: string | null;
   selectedRunId: string | null;
   selectedTabId: number | null;
+  selectedTabIds?: number[] | null;
+  activeQueueId?: string | null;
   detailsTab: "overview" | "explain";
+}
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatMessage {
+  role: ChatRole;
+  content: string;
+}
+
+export interface ChatCitation {
+  doc_id: string;
+  quote: string;
+  reason: string;
+}
+
+export interface RunChatResponse {
+  ok: boolean;
+  run_id?: string;
+  assistant?: ChatMessage;
+  citations?: ChatCitation[];
+  action?: any;
+  debug?: any;
+  message?: string;
+}
+
+export interface RunChatSession {
+  sessionId: string;
+  runId: string;
+  createdAt: string;
+  lastActiveAt: string;
+  messages: ChatMessage[];
+  // One-time focus attached to next model call / patch apply.
+  focusOnce?: any | null;
+  // Patch returned by exec prompt, pending user apply.
+  pendingAction?: any | null;
 }

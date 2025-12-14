@@ -7,6 +7,7 @@ const DEFAULT_UI_STATE = {
   selectedCaptureId: null,
   selectedRunId: null,
   selectedTabId: null,
+  selectedTabIds: [],
   detailsTab: "overview"
 };
 
@@ -101,6 +102,12 @@ const queryTabs = (query) =>
     });
   });
 
+const isDashboardUrl = (url) => {
+  if (!url) return false;
+  // Exclude any extension page to avoid injecting content scripts.
+  return url.startsWith("chrome-extension://");
+};
+
 const getTab = (tabId) =>
   new Promise((resolve, reject) => {
     chrome.tabs.get(tabId, (tab) => {
@@ -111,6 +118,17 @@ const getTab = (tabId) =>
       resolve(tab);
     });
   });
+
+const mapTabForUi = (tab) => ({
+  id: tab.id,
+  title: tab.title,
+  url: tab.url,
+  favIconUrl: tab.favIconUrl || "",
+  active: tab.active,
+  windowId: tab.windowId,
+  index: tab.index,
+  isDashboard: isDashboardUrl(tab.url)
+});
 
 async function ensureContentScripts(tabId) {
   try {
@@ -140,6 +158,15 @@ const hashString = async (value) => {
 const truncate = (value, limit) => {
   if (!value) return "";
   return value.length > limit ? value.slice(0, limit) : value;
+};
+
+const makeShortQueueId = () => {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let out = "Q-";
+  for (let i = 0; i < 4; i += 1) {
+    out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+  }
+  return out;
 };
 
 const getDefaultedState = (state) => ({
@@ -382,7 +409,7 @@ const pollRunStatus = async ({ backendRunId, clientRunId }) => {
   }
 };
 
-const handleAnalyzeCapture = async (captureId) => {
+const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdOverride = null) => {
   const { captures } = await readState();
   const capture = captures.find((c) => c.captureId === captureId);
   if (!capture) {
@@ -396,10 +423,15 @@ const handleAnalyzeCapture = async (captureId) => {
     throw new Error("Backend offline — analysis disabled.");
   }
 
-  const clientRunId = `run_${Date.now().toString(16)}`;
+  const clientRunId = clientRunIdOverride || `run_${Date.now().toString(16)}`;
+  const queueMeta = queueContext || { queueId: makeShortQueueId(), queuePosition: 1, queueSize: 1, queueLabel: null };
   const baseRun = {
     runId: clientRunId,
     clientRunId,
+    queueId: queueMeta.queueId || clientRunId,
+    queuePosition: Number.isFinite(queueMeta.queuePosition) ? queueMeta.queuePosition : 1,
+    queueSize: Number.isFinite(queueMeta.queueSize) ? queueMeta.queueSize : 1,
+    queueLabel: queueMeta.queueLabel || null,
     captureId,
     startedAt: new Date().toISOString(),
     status: "EXTRACTING",
@@ -415,6 +447,9 @@ const handleAnalyzeCapture = async (captureId) => {
 
   let backendRunId = clientRunId;
   try {
+    if (stopRunIds.has(clientRunId) || stopQueueIds.has(queueMeta.queueId)) {
+      throw new Error("Run stopped by user");
+    }
     const freshExtraction = await runExtractionOnTab(capture.tab.tabId, { includeDebug: false });
 
     const payload = {
@@ -450,6 +485,10 @@ const handleAnalyzeCapture = async (captureId) => {
       runId: backendRunId,
       clientRunId,
       backendRunId,
+      queueId: queueMeta.queueId || clientRunId,
+      queuePosition: Number.isFinite(queueMeta.queuePosition) ? queueMeta.queuePosition : 1,
+      queueSize: Number.isFinite(queueMeta.queueSize) ? queueMeta.queueSize : 1,
+      queueLabel: queueMeta.queueLabel || null,
       status: backendStage,
       stage: backendStage,
       result: data.status || "pending",
@@ -461,6 +500,10 @@ const handleAnalyzeCapture = async (captureId) => {
       await upsertRun({
         runId: backendRunId,
         clientRunId,
+        queueId: queueMeta.queueId || clientRunId,
+        queuePosition: Number.isFinite(queueMeta.queuePosition) ? queueMeta.queuePosition : 1,
+        queueSize: Number.isFinite(queueMeta.queueSize) ? queueMeta.queueSize : 1,
+        queueLabel: queueMeta.queueLabel || null,
         backendRunId,
         status: "DONE",
         stage: "DONE",
@@ -473,10 +516,18 @@ const handleAnalyzeCapture = async (captureId) => {
     await pollRunStatus({ backendRunId, clientRunId });
     return { runId: backendRunId };
   } catch (error) {
+    // honor stop for individual run or queue
+    if (stopRunIds.has(clientRunId) || stopRunIds.has(backendRunId) || stopQueueIds.has(queueMeta.queueId)) {
+      error = new Error("Run stopped by user");
+    }
     await upsertRun({
       ...baseRun,
       runId: backendRunId,
       clientRunId,
+      queueId: queueMeta.queueId || clientRunId,
+      queuePosition: Number.isFinite(queueMeta.queuePosition) ? queueMeta.queuePosition : 1,
+      queueSize: Number.isFinite(queueMeta.queueSize) ? queueMeta.queueSize : 1,
+      queueLabel: queueMeta.queueLabel || null,
       backendRunId,
       status: "ERROR",
       stage: "ERROR",
@@ -488,17 +539,166 @@ const handleAnalyzeCapture = async (captureId) => {
   }
 };
 
+const handleStartQueue = async (tabIds = []) => {
+  const uniqueIds = Array.from(new Set((tabIds || []).filter((id) => Number.isFinite(Number(id)))));
+  if (!uniqueIds.length) {
+    throw new Error("No tabs selected for queue");
+  }
+
+  const queueId = makeShortQueueId();
+  const tabsMeta = (
+    await Promise.all(
+      uniqueIds.map(async (tabId) => {
+        try {
+          const tab = await getTab(Number(tabId));
+          return mapTabForUi(tab);
+        } catch (error) {
+          await logDebug("queue:getTab_failed", { tabId, error: error?.message });
+          return null;
+        }
+      })
+    )
+  )
+    .filter(Boolean)
+    .filter((tab) => !tab.isDashboard);
+
+  if (!tabsMeta.length) {
+    throw new Error("No valid tabs for queue (dashboard tabs are excluded)");
+  }
+
+  const ordered = [...tabsMeta].sort((a, b) => {
+    if (a.windowId !== b.windowId) return (a.windowId || 0) - (b.windowId || 0);
+    return (a.index || 0) - (b.index || 0);
+  });
+
+  const queueSize = ordered.length;
+  const results = [];
+
+  // Upfront extraction and pending run creation
+  const prepared = [];
+  for (let i = 0; i < ordered.length; i += 1) {
+    const tab = ordered[i];
+    const position = i + 1;
+    try {
+      const { capture } = await extractAndStoreCapture(tab.id);
+      const clientRunId = `${queueId}_${position}`;
+      await upsertRun({
+        runId: clientRunId,
+        clientRunId,
+        queueId,
+        queuePosition: position,
+        queueSize,
+        queueLabel: null,
+        captureId: capture.captureId,
+        startedAt: new Date().toISOString(),
+        status: "EXTRACTING",
+        stage: "EXTRACTING",
+        result: "pending",
+        artifacts: {},
+        tab: capture.tab,
+        platform: capture.platform,
+        error: null,
+        message: "Queued"
+      });
+      prepared.push({ tab, position, capture, clientRunId });
+      results.push({ ok: true, tabId: tab.id, captureId: capture.captureId, runId: clientRunId, position });
+    } catch (error) {
+      const clientRunId = `${queueId}_${position}_err`;
+      await upsertRun({
+        runId: clientRunId,
+        clientRunId,
+        queueId,
+        queuePosition: position,
+        queueSize,
+        queueLabel: null,
+        startedAt: new Date().toISOString(),
+        status: "ERROR",
+        stage: "ERROR",
+        result: "error",
+        message: error?.message || "Queue step failed",
+        error: error?.message || "Queue step failed",
+        tab: { tabId: tab.id, windowId: tab.windowId, url: tab.url, title: tab.title }
+      });
+      results.push({ ok: false, tabId: tab.id, error: error?.message || "Queue step failed", position });
+    }
+  }
+
+  // Sequential analyze; continue even if a step fails unless user stops queue
+  for (let idx = 0; idx < prepared.length; idx += 1) {
+    const item = prepared[idx];
+    const { capture, position, clientRunId } = item;
+    if (stopQueueIds.has(queueId)) {
+      await upsertRun({
+        runId: clientRunId,
+        clientRunId,
+        queueId,
+        queuePosition: position,
+        queueSize,
+        queueLabel: null,
+        status: "ERROR",
+        stage: "ERROR",
+        result: "error",
+        message: "Queue stopped by user",
+        error: "Queue stopped by user"
+      });
+      results.push({
+        ok: false,
+        tabId: capture.tab?.tabId,
+        error: "Queue stopped by user",
+        position
+      });
+      continue;
+    }
+    try {
+      await handleAnalyzeCapture(
+        capture.captureId,
+        {
+          queueId,
+          queuePosition: position,
+          queueSize,
+          queueLabel: null
+        },
+        clientRunId
+      );
+    } catch (error) {
+      results.push({ ok: false, tabId: capture.tab?.tabId, error: error?.message || "Analyze failed", position });
+      // current run already updated to ERROR inside handleAnalyzeCapture; continue to next
+    }
+  }
+
+  await persistUiState({ selectedRunId: results.find((r) => r.runId)?.runId || null, activeQueueId: queueId });
+  return { queueId, queueSize, results };
+};
+
+const stopQueueIds = new Set();
+const stopRunIds = new Set();
+
+const stopPendingRuns = async ({ queueId = null, runId = null, message = "Stopped by user" }) => {
+  const state = await readState();
+  const runs = state.runs || [];
+  const next = runs.map((r) => {
+    const matchQueue = queueId && (r.queueId === queueId || r.runId === queueId || r.clientRunId === queueId);
+    const matchRun = runId && (r.runId === runId || r.clientRunId === runId);
+    if ((matchQueue || matchRun) && r.result === "pending") {
+      return {
+        ...r,
+        status: "ERROR",
+        stage: "ERROR",
+        result: "error",
+        message,
+        error: message
+      };
+    }
+    return r;
+  });
+  await storageSet({ runs: next });
+};
+
 const handleGetTabs = async (scope) => {
   const query = scope === "allWindows" ? {} : { currentWindow: true };
   const tabs = await queryTabs(query);
-  return tabs.map((tab) => ({
-    id: tab.id,
-    title: tab.title,
-    url: tab.url,
-    favIconUrl: tab.favIconUrl || "",
-    active: tab.active,
-    windowId: tab.windowId
-  }));
+  const mapped = tabs.map((tab) => mapTabForUi(tab));
+  return mapped.filter((tab) => !tab.isDashboard);
 };
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -582,6 +782,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((err) => fail(err));
       return true;
     }
+    case "START_QUEUE": {
+      handleStartQueue(message.tabIds || [])
+        .then((output) => respond({ ok: true, ...output }))
+        .catch((err) => fail(err));
+      return true;
+    }
+    case "STOP_QUEUE": {
+      if (!message.queueId) {
+        fail(new Error("queueId required"));
+        return true;
+      }
+      stopQueueIds.add(message.queueId);
+      stopPendingRuns({ queueId: message.queueId, message: "Queue stopped by user" }).catch(() => undefined);
+      respond({ ok: true });
+      return true;
+    }
+    case "STOP_RUN": {
+      if (!message.runId) {
+        fail(new Error("runId required"));
+        return true;
+      }
+      stopRunIds.add(message.runId);
+      stopPendingRuns({ runId: message.runId, message: "Run stopped by user" }).catch(() => undefined);
+      respond({ ok: true });
+      return true;
+    }
+    case "STOP_QUEUE": {
+      try {
+        if (!message.queueId) throw new Error("queueId required");
+        stopQueueIds.add(message.queueId);
+        respond({ ok: true });
+      } catch (err) {
+        fail(err);
+      }
+      return true;
+    }
     case "SET_UI_STATE": {
       persistUiState(message.ui_state || {})
         .then((next) => respond({ ok: true, ui_state: next }))
@@ -616,7 +852,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       (async () => {
         try {
           if (!message.captureId) throw new Error("captureId required");
-          const output = await handleAnalyzeCapture(message.captureId);
+          const output = await handleAnalyzeCapture(message.captureId, message.queue || null, message.clientRunId || null);
           respond({ ok: true, ...output });
         } catch (error) {
           fail(error);
