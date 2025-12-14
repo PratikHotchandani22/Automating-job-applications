@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resume Intelligence Dashboard</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="page">
+    <div id="offlineBanner" class="banner hidden">Backend offline — extraction available; analysis disabled.</div>
+    <header class="top-bar">
+      <div class="top-row">
+        <div class="brand">
+          <div class="logo-dot"></div>
+          <div>
+            <div class="brand-title">Resume Intelligence</div>
+            <div class="brand-subtitle">Always-on dashboard</div>
+          </div>
+        </div>
+        <div id="healthChip" class="chip muted">Checking backend…</div>
+      </div>
+      <div class="controls">
+        <div class="control">
+          <label for="tabSelect">Tab</label>
+          <select id="tabSelect"></select>
+        </div>
+        <div class="control toggle-row">
+          <label for="allWindowsToggle">All windows</label>
+          <input type="checkbox" id="allWindowsToggle">
+        </div>
+        <div class="control small">
+          <button id="refreshTabsBtn" class="ghost">Refresh tabs</button>
+        </div>
+        <div class="control actions">
+          <button id="extractPanelBtn" class="primary">Extract</button>
+          <button id="analyzePanelBtn" class="primary" title="Select a capture first." disabled>Analyze</button>
+        </div>
+      </div>
+      <div id="statusText" class="status-text"></div>
+    </header>
+
+    <main class="grid">
+      <section class="panel" id="capturesSection">
+        <div class="panel-head">
+          <div>
+            <h2>Captures</h2>
+            <p class="hint">Tab-aware captures with confidence + warnings</p>
+          </div>
+          <button id="refreshCapturesBtn" class="ghost small">Reload</button>
+        </div>
+        <div id="capturesList" class="list"></div>
+      </section>
+      <section class="panel" id="runsSection">
+        <div class="panel-head">
+          <div>
+            <h2>Runs</h2>
+            <p class="hint">Pipeline status timeline</p>
+          </div>
+          <button id="refreshRunsBtn" class="ghost small">Reload</button>
+        </div>
+        <div id="runsList" class="list"></div>
+      </section>
+    </main>
+
+    <section class="panel" id="detailsSection">
+      <div class="panel-head">
+        <h2>Details</h2>
+      </div>
+      <div id="detailsContent" class="details">Select a capture or run to view details.</div>
+    </section>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

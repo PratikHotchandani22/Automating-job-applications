@@ -1,0 +1,57 @@
+Resume Intelligence Pipeline progress (local-only)
+- Chrome extension now runs end-to-end extraction: service worker injects readability + content scripts on-demand; extractor blends JSON-LD parsing, Readability fallback, and scored top-block scraping to capture title/company/location/requirements with meta platform detection and confidence scoring, while preserving debuggable snippets.
+- Popup UX upgraded with Extract/Analyze CTAs, live status tracker (Extracting → Tailoring → Generating LaTeX → Compiling PDF → Done/Error), confidence chip + warning, editable platform/tags/notes, and preview of captured job text; downloads for PDF/JSON/LaTeX are enabled post-run.
+- History + save flows: users can save captures as JSON/Markdown with sanitized filenames, optional debug redaction, and automatic history persisted in chrome.storage with quick re-download actions; filenames auto-stamp platform/company/title for traceability.
+- Backend pipeline solidified: Express server exposes /health, /analyze, /status/:runId, /download endpoints, persists run metadata under runs/<run_id>/, streams stage updates/logging, enforces per-stage timeouts, and produces file maps for the popup to poll.
+- Prompt system upgraded: prompts live under backend/prompts/<stage>/<version>.md with env-selectable PROMPT_VERSION; prompt_used_*.txt + meta.json log versions/hashes per run; schema-aware prompt builders feed single-turn messages to LLMs.
+- Tailoring stage now enforces the new JSON contract (tailored.json) with validation/repair, stable role/project IDs in the master resume, raw job text hashing, legacy-to-latest schema normalization, and a render-ready final_resume payload (full resume) for downstream rendering. Latest schema (v2) adds explainability fields (changes, requirements, mappings), extracted preview, and baseline references.
+- LaTeX stage now loads the locked template from backend/templates/resume_template.tex, injects immutable header/education blocks, runs safety checks for dangerous TeX, and renders using only the final_resume payload (plus deterministic mock-mode output honoring the lock markers).
+- Phase 2 side-panel dashboard shipped: persistent Chrome side panel + dashboard tab reuse shared UI/state; tab-aware captures (title/url/favicon) persist in chrome.storage with hash-only previews (no full text), cross-tab Extract/Analyze controls, run timeline with stage polling, download buttons, backend health banner, and in-panel error messages.
+- Service worker refactor: tab querying, side-panel open fallback, sanitized capture/run storage (raw text hashed + preview only), adaptive status polling, explicit analyze-on-click, download delegation, and debug log buffer (GET_DEBUG_LOGS) for troubleshooting.
+- Explainability UI (Phase 3): new Explain tab in the side panel renders “What we extracted/detected/changed/mapped” directly from run artifacts (tailored.json, baseline, final). Includes before/after bullet diffs with keyword highlights, requirement mapping chips with filtering, keyword/must-have copy helpers, on-demand full job text fetch (artifact only), and exportable explanation JSON.
+- Backend explainability artifacts: each run now persists baseline_resume.json, final_resume.json, job_extracted.txt, and exposes them via /download; tailored.json upgraded to latest_v2 prompt with explainability contract and stabilized IDs.
+
+Phase 4 (v2025.3) upgrades:
+- Tailor prompt v3 added (grounded, requirement→evidence→rewrite with explainability); full job payload + hash/preview sent; no extra JD storage in extension.
+- Schema v3 support with validator/normalization, legacy→v3 upgrade path, guardrail arrays enforced empty, and meta.json records prompt/schema hashes.
+- UI Explain tab adapted for v3 fields (jd_rubric, mapping, keyword insertions, updated bullets) with v2 fallback.
+- Final resume sanitization hardening to avoid schema repair loops; stage timeout default raised to 5 minutes.
+
+Phase 5 (Evidence Scorer v1)
+- Locked deterministic scoring rules at backend/scoring/evidence_rules_v1.json (verbs, cues, fluff penalties, tool lexicon, weights, thresholds) with SHA tracking.
+- Added evidence scoring stage before tailoring: scores every master-resume bullet, writes runs/<run_id>/evidence_scores.json, updates meta.json with rules version/hash, exposes /runs/:runId/evidence_scores, and surfaces file links in status.
+- Evidence scorer module returns evidence_score/tier/features/reasons; includes resume-wide summary stats and tool lexicon derivation from resume skills/projects.
+- New tests for verb/metric/fluff detection; npm test runs both schema + scorer suites.
+- Dev script npm run score:resume produces top/bottom ranking report and artifacts for sanity review.
+
+Phase 5.1 (Evidence Score Caching)
+- Introduced deterministic cache keyed by master_resume_hash + evidence_rules_hash; canonical JSON hashing strips ephemeral fields for stable SHA.
+- Evidence scoring now hits cache when unchanged: validates cached JSON, copies to run artifacts, logs HIT/MISS, and records cache status/timings in meta.json.
+- Cache stored at backend/cache/evidence_scores/<resume_hash>/<rules_hash>/; optional override via EVIDENCE_CACHE_DIR; manifest tracks provenance.
+- CLI utilities: npm run cache:evidence:status to list entries and npm run cache:evidence:clear to wipe cache; tests cover hashing stability, hit/miss, invalidation, and corruption fallback.
+
+Phase 6 (JD Rubric Extraction v1)
+- Dedicated rubric stage added before tailoring: single-turn OpenAI call with locked prompt backend/prompts/rubric/latest_v1.md; writes runs/<run_id>/jd_rubric.json and prompt_used_rubric.txt, hashes prompt/schema/job text into meta.json, and exposes download links via status.
+- Strict schema validation/repair + normalization: enforces 12-20 requirements and 10-20 keywords, must/nice split with weights 1-5, category whitelist, evidence word limits, dedupe/trim, sequential R1..Rn, constraints and notes defaults.
+- Configurable via RUBRIC_PROMPT_VERSION and OPENAI_MODEL_RUBRIC/OPENAI_MODEL; mock/test paths supported; empty JD now fails rubric stage explicitly.
+- New rubric tests cover strict-key validation, normalization (counts, renumbering, dedupe, snippet limits), mock pipeline artifact writing, and empty-JD failure behavior; npm test suite updated to include rubric tests.
+
+Phase 7 (Embeddings + Relevance v1, OpenAI-only)
+- Standardized embeddings on OpenAI `text-embedding-3-large` (dims 3072) with `embed_text_v1` preprocessing; env overrides: OPENAI_EMBEDDING_MODEL/OPENAI_EMBEDDING_DIMS/EMBED_PREPROCESS_VERSION/EMBED_CACHE_DIR.
+- Resume bullet embeddings cached under backend/cache/embeddings/resume_bullets/<master_resume_hash>/<embed_key_hash>/ with manifest; cache HIT/MISS + timings recorded in meta.json and included in status/downloads.
+- JD requirement embeddings computed per run (jd_requirement_embeddings.json) with hashes and preprocess version logged; corruption fallback handled via validation.
+- Cosine similarity matrix generated per run (relevance_matrix.json + relevance_summary.json) capturing top-k per requirement/bullet with thresholds {min_score:0.25, top_k_per_requirement:12, top_k_per_bullet:8}; artifacts exposed via /status and /download.
+- Mock mode produces deterministic seeded vectors for offline/tests; meta.json now tracks embedding model/dims/preprocess, cache paths, JD/rubric hashes, and compute timings; new test suite (embeddings.test.js) covers preprocessing, cosine correctness, cache hit/miss, and artifact wiring.
+
+Phase 8 (Deterministic Selection + Budgeting + Coverage v1)
+- Added selection planner stage after relevance: pure code selector loads rubric/evidence/relevance/baseline + cached resume embeddings, ranks requirements by must/weight/scarcity, enforces per-section budgets and per-role caps, applies evidence/relevance scoring with risk and redundancy penalties, and prioritizes must-have coverage before fill.
+- Embedding cache reused for redundancy blocking (hard block >=0.92; penalties above 0.85); section budgets + role caps configurable via backend/selection/selection_config_v1.json with targets for experience/projects/awards and per-requirement caps.
+- Selection outputs persisted as runs/<run_id>/selection_plan.json (plan) and selection_debug.json (dev stats) with coverage counts, reasons, matched requirements, rewrite intents, budget usage, and drop reasons; exposed in /status and /download; meta.json tracks config hash/version, timing, and coverage stats.
+- Tests: new selection.test.js covers requirement ordering, redundancy penalties, budget/per-role enforcement, coverage prioritization, and integration of selection artifacts; npm test includes selection suite.
+
+Phase 9 (Tailor v4 selection-constrained + enforcement)
+- New Tailor prompt `backend/prompts/tailor/latest_v4_selection.md` with selection-plan “law,” ≤25-word bullet guidance, truthfulness guardrails, and expanded explainability (selection_plan_ref, included/dropped bullets, rewrite_summary).
+- Prompt builder now passes strict schema, job payload, jd_rubric.json, selection_plan.json, baseline/master resumes, and hashes; TAILOR_PROMPT_VERSION defaults to latest_v4_selection.
+- Post-LLM enforcement rebuilds final_resume strictly from selection_plan, strips unselected bullets, clamps skills to master resume, enforces word caps, repairs mappings/evidence, records enforcement stats in meta.json, and hashes the plan.
+- Validator extended to v4 schema + bullet-length checks; normalization backfills explainability shape; word clamping softened to preserve full sentences/clauses where possible.
+- Tests: added tailor_selection_enforcement.test.js; npm test suite updated to include the new enforcement coverage.
