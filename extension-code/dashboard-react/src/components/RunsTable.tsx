@@ -1,13 +1,16 @@
 import type { RunRecord } from "../types";
-import { formatDateTime, formatDuration } from "../utils/runFilters";
+import { formatDateTime } from "../utils/runFilters";
 
 interface Props {
   runs: RunRecord[];
   onSelect: (runId: string) => void;
   onDownload: (run: RunRecord) => void;
   backendOnline: boolean;
-  showHeader?: boolean;
-  onStop?: (run: RunRecord) => void;
+  onToggleResponse: (run: RunRecord) => void;
+  onDelete: (run: RunRecord) => void;
+  onRerun?: (run: RunRecord) => void;
+  onStop?: (run: RunRecord) => void; // cancel in-progress run
+  density?: "comfortable" | "compact";
 }
 
 const statusClass = (run: RunRecord) => {
@@ -16,37 +19,38 @@ const statusClass = (run: RunRecord) => {
   return "pending";
 };
 
-const coverageLabel = (value?: number | null) => {
-  if (!value && value !== 0) return "—";
-  return `${value}%`;
+const statusLabel = (run: RunRecord) => {
+  if (run.result === "success") return "Completed";
+  if (run.result === "error") return "Needs attention";
+  return "In progress";
 };
 
-const displayStatusLabel = (run: RunRecord) => {
-  if (run.queueSize && run.queueSize > 1 && run.queuePosition && run.queuePosition > 1 && run.result === "pending") {
-    return "PENDING";
-  }
-  return run.status;
-};
-
-const RunsTable = ({ runs, onSelect, onDownload, backendOnline, showHeader = true, onStop }: Props) => {
+const RunsTable = ({
+  runs,
+  onSelect,
+  onDownload,
+  backendOnline,
+  onToggleResponse,
+  onDelete,
+  onRerun,
+  onStop,
+  density = "comfortable"
+}: Props) => {
   return (
     <div className="table-wrapper">
-      <table className="runs-table">
-        {showHeader ? (
-          <thead>
-            <tr>
-              <th>Job Title</th>
-              <th>Company</th>
-              <th>Platform</th>
-              <th>Status</th>
-              <th>Queue</th>
-              <th>Runtime</th>
-              <th>Coverage</th>
-              <th>Date/Time</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-        ) : null}
+      <table className={`runs-table ${density === "compact" ? "compact" : ""}`}>
+        <thead>
+          <tr>
+            <th>Job Title</th>
+            <th>Company</th>
+            <th>Source</th>
+            <th>Match</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Response</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
         <tbody>
           {runs.map((run) => (
             <tr key={run.runId} onClick={() => onSelect(run.runId)} className="clickable">
@@ -56,34 +60,67 @@ const RunsTable = ({ runs, onSelect, onDownload, backendOnline, showHeader = tru
               <td>{run.company || "—"}</td>
               <td>{run.platform || "Other"}</td>
               <td>
-                <span className={`status-pill tiny ${statusClass(run)}`}>{displayStatusLabel(run)}</span>
-              </td>
-              <td>
-                {run.queueId ? (
-                  <span className="badge subtle">
-                    {run.queueSize && run.queueSize > 1
-                      ? `Queue ${run.queuePosition || 1}/${run.queueSize}`
-                      : "Queue 1/1"}
-                  </span>
+                {typeof run.coverage === "number" ? (
+                  <div className="coverage-cell">
+                    <div className="coverage-bar">
+                      <span style={{ width: `${Math.min(100, Math.max(0, run.coverage || 0))}%` }} />
+                    </div>
+                    <span className="coverage-label">{`${run.coverage}%`}</span>
+                  </div>
                 ) : (
                   "—"
                 )}
               </td>
-              <td>{formatDuration(run.runtimeSec)}</td>
-              <td>
-                <div className="coverage-cell">
-                  <div className="coverage-bar">
-                    <span style={{ width: `${Math.min(100, Math.max(0, run.coverage || 0))}%` }} />
-                  </div>
-                  <span className="coverage-label">{coverageLabel(run.coverage)}</span>
-                </div>
-              </td>
               <td>{formatDateTime(run.startedAt || run.updatedAt)}</td>
               <td>
+                <span className={`status-pill tiny ${statusClass(run)}`}>{statusLabel(run)}</span>
+              </td>
+              <td>{run.responseReceivedAt ? "Marked" : "—"}</td>
+              <td>
                 <div className="actions-inline">
-                  <button className="ghost small" onClick={(e) => (e.stopPropagation(), onSelect(run.runId))}>
-                    View
+                  {run.tab?.url ? (
+                    <a
+                      className="ghost small"
+                      href={run.tab.url || ""}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      View job posting
+                    </a>
+                  ) : null}
+                  <button
+                    className="ghost small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect(run.runId);
+                    }}
+                  >
+                    View details
                   </button>
+                  <button
+                    className="ghost small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleResponse(run);
+                    }}
+                    title="Mark whether you received a response"
+                  >
+                    {run.responseReceivedAt ? "Unmark response" : "Mark response"}
+                  </button>
+                  {onRerun && run.captureId ? (
+                    <button
+                      className="ghost small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRerun(run);
+                      }}
+                      disabled={!backendOnline}
+                      title={!backendOnline ? "Backend required" : "Re-run analysis from the captured job posting"}
+                    >
+                      Re-run
+                    </button>
+                  ) : null}
                   <button
                     className="ghost small"
                     disabled={!run.artifacts?.pdf || !backendOnline}
@@ -92,7 +129,7 @@ const RunsTable = ({ runs, onSelect, onDownload, backendOnline, showHeader = tru
                       onDownload(run);
                     }}
                   >
-                    Download
+                    Download PDF
                   </button>
                   {onStop && run.result === "pending" ? (
                     <button
@@ -102,11 +139,18 @@ const RunsTable = ({ runs, onSelect, onDownload, backendOnline, showHeader = tru
                         onStop(run);
                       }}
                     >
-                      Stop
+                      Cancel
                     </button>
                   ) : null}
-                  <button className="ghost icon small" onClick={(e) => e.stopPropagation()} title="More actions coming soon">
-                    ⋯
+                  <button
+                    className="ghost small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(run);
+                    }}
+                    title="Remove this run from history"
+                  >
+                    Delete
                   </button>
                 </div>
               </td>

@@ -202,7 +202,84 @@ app.get("/status/:runId", async (req, res) => {
     res.status(404).json({ status: "error", message: "Run not found" });
     return;
   }
-  res.json(status);
+  const insights = await buildRunInsights(runDir);
+  // Always compute a fresh files map from disk so older runs still have
+  // correct artifact URLs even if status.json didn't include them.
+  const computedFiles = buildFileMap(runId, runDir);
+  const files = { ...(status.files || {}), ...computedFiles };
+  res.json({ ...status, files, ...insights });
+});
+
+app.get("/runs", async (req, res) => {
+  try {
+    const limit = Number.isFinite(Number(req.query?.limit)) ? Math.max(1, Math.min(2000, Number(req.query.limit))) : 500;
+    const root = CONFIG.runsRoot;
+    if (!fs.existsSync(root)) {
+      res.json({ ok: true, runs: [] });
+      return;
+    }
+
+    const entries = await fs.promises.readdir(root, { withFileTypes: true });
+    const runIds = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+
+    const withMeta = await Promise.all(
+      runIds.map(async (runId) => {
+        const runDir = path.join(root, runId);
+        try {
+          const stat = await fs.promises.stat(path.join(runDir, "status.json")).catch(() => fs.promises.stat(runDir));
+          return { runId, mtimeMs: stat.mtimeMs };
+        } catch {
+          return { runId, mtimeMs: 0 };
+        }
+      })
+    );
+
+    withMeta.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    const runs = [];
+    const readJsonIfExists = async (filePath) => {
+      try {
+        const raw = await fs.promises.readFile(filePath, "utf8");
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    };
+
+    for (const item of withMeta.slice(0, limit)) {
+      const runId = item.runId;
+      const runDir = path.join(root, runId);
+      const status = await readStatus(runDir);
+      if (!status) continue;
+      const insights = await buildRunInsights(runDir);
+      const computedFiles = buildFileMap(runId, runDir);
+      const files = { ...(status.files || {}), ...computedFiles };
+      const job = await readJsonIfExists(path.join(runDir, "job.json"));
+      const rubric = await readJsonIfExists(path.join(runDir, "jd_rubric.json"));
+      const meta = await readJsonIfExists(path.join(runDir, "meta.json"));
+      const updatedAt = item.mtimeMs ? new Date(item.mtimeMs).toISOString() : null;
+      const startedAt = meta?.created_at || null;
+      const rubricTitle = (rubric?.job_meta?.job_title || "").toString().trim();
+      const rubricCompany = (rubric?.job_meta?.company || "").toString().trim();
+      const rubricPlatform = (rubric?.job_meta?.source_platform || "").toString().trim();
+      runs.push({
+        ...status,
+        files,
+        ...insights,
+        startedAt,
+        updatedAt,
+        job: {
+          title: rubricTitle || job?.job?.title || "",
+          company: rubricCompany || job?.job?.company || "",
+          platform: rubricPlatform || job?.meta?.platform || ""
+        }
+      });
+    }
+
+    res.json({ ok: true, runs });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || "Failed to list runs" });
+  }
 });
 
 app.get("/download/:runId/:file", (req, res) => {
@@ -418,9 +495,13 @@ app.get("/runs/:runId/evidence_scores", (req, res) => {
 });
 
 if (process.env.NODE_ENV !== "test") {
-  app.listen(CONFIG.port, () => {
-    console.log(`[resume-intel] Listening on http://localhost:${CONFIG.port} (mock=${CONFIG.mockMode})`);
-  });
+  // Only listen when this file is executed directly (not when imported by scripts/tools).
+  const isMain = Boolean(process.argv?.[1]) && path.resolve(process.argv[1]) === __filename;
+  if (isMain) {
+    app.listen(CONFIG.port, () => {
+      console.log(`[resume-intel] Listening on http://localhost:${CONFIG.port} (mock=${CONFIG.mockMode})`);
+    });
+  }
 }
 
 async function kickOffPipeline({ runId, runDir, jobPayload, resumeId, options }) {
@@ -4363,6 +4444,96 @@ async function readStatus(runDir) {
   } catch (error) {
     return null;
   }
+}
+
+async function buildRunInsights(runDir) {
+  const MUST_WEIGHT = 0.7;
+  const NICE_WEIGHT = 0.3;
+
+  const readJsonIfExists = async (filePath) => {
+    try {
+      const raw = await fs.promises.readFile(filePath, "utf8");
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  // If precomputed insights exist, prefer them (fast + stable).
+  const precomputed = await readJsonIfExists(path.join(runDir, "insights.json"));
+  const base = precomputed && typeof precomputed === "object" ? precomputed : {};
+
+  const selectionPlan = await readJsonIfExists(path.join(runDir, "selection_plan.json"));
+  const jdRubric = await readJsonIfExists(path.join(runDir, "jd_rubric.json"));
+
+  const out = {};
+
+  // Insights: job title/company for UI (best-effort).
+  const jobTitle = (jdRubric?.job_meta?.job_title || "").toString().trim();
+  const jobCompany = (jdRubric?.job_meta?.company || "").toString().trim();
+  const jobSource = (jdRubric?.job_meta?.source_platform || "").toString().trim();
+  if (jobTitle) out.job_title = jobTitle;
+  if (jobCompany) out.company = jobCompany;
+  if (jobSource) out.source_platform = jobSource;
+
+  // Insights: top keywords employers request.
+  const topKeywords = Array.isArray(jdRubric?.top_keywords)
+    ? jdRubric.top_keywords.filter(Boolean)
+    : Array.isArray(jdRubric?.keywords)
+      ? jdRubric.keywords
+          .map((k) => (typeof k === "string" ? k : k?.term))
+          .filter(Boolean)
+      : [];
+  if (topKeywords.length) {
+    out.top_keywords = topKeywords.slice(0, 20);
+  }
+
+  // Insights: match strength (coverage percent) + uncovered requirements (human readable).
+  const cov = selectionPlan?.coverage || null;
+  const mustTotal = Number(cov?.must_total || 0);
+  const niceTotal = Number(cov?.nice_total || 0);
+  const mustCovered = Number(cov?.must_covered || 0);
+  const niceCovered = Number(cov?.nice_covered || 0);
+
+  const mustPct = mustTotal > 0 ? mustCovered / mustTotal : null;
+  const nicePct = niceTotal > 0 ? niceCovered / niceTotal : null;
+
+  const weightedPct =
+    (mustPct !== null || nicePct !== null)
+      ? Math.round(
+          100 *
+            ((mustPct ?? 0) * MUST_WEIGHT +
+              (nicePct ?? 0) * NICE_WEIGHT)
+        )
+      : null;
+
+  if (typeof weightedPct === "number" && Number.isFinite(weightedPct)) {
+    out.coverage_percent = Math.max(0, Math.min(100, weightedPct));
+  }
+
+  const rubricReqs = Array.isArray(jdRubric?.requirements) ? jdRubric.requirements : [];
+  const reqTextById = new Map(
+    rubricReqs
+      .map((r) => ({
+        id: r?.req_id,
+        text: (r?.requirement || r?.text || "").toString().trim()
+      }))
+      .filter((x) => x.id && x.text)
+      .map((x) => [x.id, x.text])
+  );
+
+  const uncoveredIds = Array.isArray(cov?.uncovered_requirements)
+    ? cov.uncovered_requirements.map((r) => r?.req_id).filter(Boolean)
+    : [];
+  const uncoveredText = uncoveredIds
+    .map((id) => reqTextById.get(id))
+    .filter(Boolean);
+
+  if (uncoveredText.length) {
+    out.uncovered_requirements = uncoveredText.slice(0, 60);
+  }
+
+  return { ...base, ...out };
 }
 
 function ensureDir(dir) {

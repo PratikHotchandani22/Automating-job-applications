@@ -8,7 +8,7 @@ interface Props {
 
 const KpiCard = ({ title, value, hint, variant = "secondary", trend }: Props) => {
   return (
-    <div className={`kpi-card ${variant}`}>
+    <div className={`kpi-card ${variant === "primary" ? "primary" : ""}`}>
       <div className="kpi-top">
         <div className="kpi-title">{title}</div>
         {trend ? <div className="kpi-trend">{trend}</div> : null}

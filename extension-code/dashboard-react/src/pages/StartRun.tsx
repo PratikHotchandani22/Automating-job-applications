@@ -1,15 +1,19 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   analyzeCapture,
+  consumeStartRunPrefill,
   extractFromTab,
-  fetchBackendHealth,
   fetchExtensionState,
+  fetchUserBootstrap,
   getTabs,
   setUIState,
   startQueue
 } from "../api/bridge";
-import type { BackendStatus, Capture, Tab } from "../types";
+import { useNavigate } from "react-router-dom";
+import type { Capture, StartRunUIState, Tab } from "../types";
 import StatusPill from "../components/StatusPill";
+import { useDashboardStore } from "../store/dashboardStore";
+import useBootstrapCheck from "../hooks/useBootstrapCheck";
 import "./StartRun.css";
 
 
@@ -28,77 +32,115 @@ const formatUrl = (url?: string): string => {
 
 
 const StartRunPage = () => {
+  const navigate = useNavigate();
+  const {
+    requiresBootstrap,
+    loading: bootstrapLoading,
+    error: bootstrapError,
+    refresh: refreshBootstrap
+  } = useBootstrapCheck();
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
-  const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [statusText, setStatusText] = useState<string>("");
   const [tabScope, setTabScope] = useState<"currentWindow" | "allWindows">("currentWindow");
   const [selectedTabIds, setSelectedTabIds] = useState<number[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [forcedTabIds, setForcedTabIds] = useState<number[]>([]);
+  
+  // Use global backend status from store to avoid flickering between local and global states
+  const backendStatus = useDashboardStore((state) => state.backendStatus);
+  const refreshBackendStatus = useDashboardStore((state) => state.refreshRuns);
 
   const validSelectedTabs = useMemo(
     () => selectedTabIds.filter((id) => tabs.some((t) => t.id === id)),
     [selectedTabIds, tabs]
   );
-  const runningSelectedCount = useMemo(
-    () =>
-      runs.filter(
+  const runningSelectedCount = useMemo(() => {
+    return validSelectedTabs.filter((id) => {
+      const tab = tabs.find((t) => t.id === id);
+      if (!tab) return false;
+      const runningRun = runs.find(
         (r) =>
           (r.result === "pending" || r.status === "RUNNING" || r.status === "ANALYZING" || r.status === "EXTRACTING") &&
-          r.tab?.tabId &&
-          validSelectedTabs.includes(r.tab.tabId)
-      ).length,
-    [runs, validSelectedTabs]
-  );
-  const analyzedSelectedCount = useMemo(
-    () => runs.filter((r) => r.result === "success" && r.tab?.tabId && validSelectedTabs.includes(r.tab.tabId)).length,
-    [runs, validSelectedTabs]
-  );
+          r.tab?.tabId === tab.id &&
+          r.tab?.url === tab.url
+      );
+      return !!runningRun;
+    }).length;
+  }, [runs, validSelectedTabs, tabs]);
+  const analyzedSelectedCount = useMemo(() => {
+    return validSelectedTabs.filter((id) => {
+      const tab = tabs.find((t) => t.id === id);
+      if (!tab) return false;
+      const analyzedRun = runs.find(
+        (r) => r.result === "success" && r.tab?.tabId === tab.id && r.tab?.url === tab.url
+      );
+      return !!analyzedRun;
+    }).length;
+  }, [runs, validSelectedTabs, tabs]);
   const analyzedByTabId = useMemo(() => {
     const map = new Map<number, any>();
     runs.forEach((r) => {
-      if (r.result === "success" && r.tab?.tabId) {
-        map.set(r.tab.tabId, r);
+      if (r.result === "success" && r.tab?.tabId && r.tab?.url) {
+        // Store the run with a key that combines tabId and URL
+        // This ensures that navigating to a different page in the same tab won't show as "Analyzed"
+        const key = `${r.tab.tabId}_${r.tab.url}`;
+        map.set(key as any, r);
       }
     });
     return map;
   }, [runs]);
+  
+  // Helper function to check if a tab has been analyzed
+  const getAnalyzedRun = (tab: Tab) => {
+    const key = `${tab.id}_${tab.url}`;
+    return analyzedByTabId.get(key as any);
+  };
 
   const loadState = useCallback(async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StartRun.tsx:32',message:'loadState called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     try {
       const state = await fetchExtensionState();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StartRun.tsx:35',message:'fetchExtensionState result',data:{capturesCount:(state as any).captures?.length || 0,captures:(state as any).captures},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       setCaptures((state as any).captures || []);
       setRuns((state as any).runs || []);
+
+      const ui = ((state as any).ui_state || null) as StartRunUIState | null;
+      if (ui?.tabScope) {
+        setTabScope(ui.tabScope);
+      }
+      if (Array.isArray(ui?.selectedTabIds) && ui?.selectedTabIds?.length) {
+        setSelectedTabIds(ui.selectedTabIds.filter((n) => Number.isFinite(Number(n))).map((n) => Number(n)));
+      } else if (ui?.selectedTabId && Number.isFinite(Number(ui.selectedTabId))) {
+        setSelectedTabIds([Number(ui.selectedTabId)]);
+      }
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StartRun.tsx:37',message:'loadState error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       setStatusText(error.message || "Unable to load state");
     }
   }, []);
 
+  // Use the store's refreshRuns which also updates backend health status
   const checkBackendHealth = useCallback(async () => {
-    try {
-      const health = await fetchBackendHealth();
-      setBackendStatus(health);
-    } catch (e) {
-      setBackendStatus("offline");
-    }
-  }, []);
+    await refreshBackendStatus();
+  }, [refreshBackendStatus]);
 
   const refreshTabs = useCallback(async () => {
     try {
       const tabsData = await getTabs(tabScope);
-      const filtered = tabsData.filter((t) => !t.isDashboard && !(t.url || "").startsWith("chrome-extension://"));
+      const filtered = tabsData.filter((t) => {
+        // Exclude dashboard tabs
+        if (t.isDashboard) return false;
+        
+        // Exclude chrome extension URLs
+        const url = (t.url || "").toLowerCase();
+        if (url.startsWith("chrome-extension://") || url.startsWith("chrome://")) return false;
+        
+        // Exclude extension-like titles
+        const title = (t.title || "").toLowerCase();
+        if (title.includes("extensions") || title.includes("chrome web store")) return false;
+        
+        return true;
+      });
       setTabs(filtered);
       if (filtered.length > 0 && selectedTabIds.length === 0) {
         const activeTab = filtered.find((t) => t.active) || filtered[0];
@@ -121,12 +163,37 @@ const StartRunPage = () => {
   }, [tabScope, selectedTabIds]);
 
   const handleAnalyze = useCallback(async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StartRun.tsx:84',message:'handleAnalyze called',data:{capturesLength:captures.length,backendStatus,captures:captures.map(c=>({captureId:c.captureId,title:c.job?.title,tabId:c.tab?.tabId}))},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     if (validSelectedTabs.length === 0) {
       setStatusText("Select at least one tab.");
       return;
+    }
+
+    console.debug("[StartRun] Analyze click", {
+      requiresBootstrap,
+      bootstrapLoading,
+      backendStatus,
+      selectedTabs: validSelectedTabs
+    });
+
+    // Backend source of truth: ensure a master resume exists before kicking off analysis.
+    if (requiresBootstrap) {
+      try {
+        const bootstrap = await fetchUserBootstrap();
+        const hasResume =
+          bootstrap?.has_master_resume ||
+          bootstrap?.default_master_resume_id ||
+          (Array.isArray(bootstrap?.master_resumes) && bootstrap.master_resumes.length > 0);
+        if (!hasResume) {
+          setStatusText("No master resume found in your account. Upload one in Settings, then recheck.");
+          console.warn("[StartRun] Master resume missing at analyze time", bootstrap);
+          return;
+        }
+        console.debug("[StartRun] Master resume verified");
+      } catch (error: any) {
+        setStatusText(error?.message || "Unable to verify master resume. Please retry.");
+        console.error("[StartRun] Master resume check failed", error);
+        return;
+      }
     }
 
     if (runningSelectedCount) {
@@ -134,9 +201,12 @@ const StartRunPage = () => {
       return;
     }
 
-    const runnableTabIds = validSelectedTabs.filter(
-      (id) => !analyzedByTabId.get(id) || forcedTabIds.includes(id)
-    );
+    const runnableTabIds = validSelectedTabs.filter((id) => {
+      const tab = tabs.find((t) => t.id === id);
+      if (!tab) return false;
+      const analyzedRun = getAnalyzedRun(tab);
+      return !analyzedRun || forcedTabIds.includes(id);
+    });
     if (runnableTabIds.length === 0) {
       setStatusText("Nothing to run. Toggle force or pick a new tab.");
       return;
@@ -144,17 +214,17 @@ const StartRunPage = () => {
 
     if (runnableTabIds.length > 1) {
       if (backendStatus !== "online") {
-        setStatusText("Backend required for queue.");
+        setStatusText("Backend required for batch analysis.");
         return;
       }
       setAnalyzing(true);
-      setStatusText("Starting queue across selected tabs…");
+      setStatusText("Starting batch analysis across selected tabs…");
       try {
         const response = await startQueue(runnableTabIds);
         const successCount = response.results?.filter((r: any) => r?.ok).length || 0;
         const failCount = (response.results?.length || 0) - successCount;
         setStatusText(
-          `Queue started (${successCount} queued${failCount ? `, ${failCount} failed to start` : ""}).`
+          `Batch started (${successCount} started${failCount ? `, ${failCount} failed to start` : ""}).`
         );
         await loadState();
       } catch (error: any) {
@@ -192,7 +262,7 @@ const StartRunPage = () => {
     } finally {
       setAnalyzing(false);
     }
-  }, [captures, backendStatus, loadState, tabs, tabScope, selectedTabIds]);
+  }, [captures, backendStatus, loadState, tabs, tabScope, selectedTabIds, requiresBootstrap]);
 
 
   const handleScopeToggle = useCallback(
@@ -206,10 +276,27 @@ const StartRunPage = () => {
   );
 
   useEffect(() => {
-    loadState();
-    refreshTabs();
-    checkBackendHealth();
-    setStatusText("Ready.");
+    (async () => {
+      await loadState();
+      await refreshTabs();
+      await checkBackendHealth();
+      // If the extension action opened the dashboard, it may have provided a one-time prefill.
+      // We consume it here so the dashboard feels immediately “ready”.
+      try {
+        const prefill = await consumeStartRunPrefill();
+        if (prefill?.tabId && Number.isFinite(Number(prefill.tabId))) {
+          const id = Number(prefill.tabId);
+          setSelectedTabIds([id]);
+          await setUIState({ tabScope: "currentWindow", selectedTabId: id, selectedTabIds: [id] });
+          setStatusText("Prefilled from your active job tab. Review and click Analyze.");
+          setDropdownOpen(false);
+        } else {
+          setStatusText("Ready.");
+        }
+      } catch {
+        setStatusText("Ready.");
+      }
+    })();
 
     // Listen for storage changes
     if (typeof chrome !== "undefined" && chrome.storage) {
@@ -223,6 +310,27 @@ const StartRunPage = () => {
     }
   }, [loadState, refreshTabs, checkBackendHealth]);
 
+
+  if (requiresBootstrap && bootstrapError) {
+    return (
+      <div className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Unable to load your account</h2>
+            <p className="hint">{bootstrapError}</p>
+          </div>
+        </div>
+        <div className="actions-inline" style={{ padding: "0 12px 12px" }}>
+          <button className="ghost" onClick={() => refreshBootstrap()}>
+            Retry
+          </button>
+          <button className="ghost" onClick={() => navigate("/settings")}>
+            Open settings
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleToggleTab = (tabId: number) => {
     setSelectedTabIds((prev) => {
@@ -262,17 +370,20 @@ const StartRunPage = () => {
 
   return (
     <div className="page-grid">
-      {backendStatus === "offline" ? (
-        <div className="banner warn">
-          Backend offline — extraction available; analysis disabled.
+      {requiresBootstrap && bootstrapLoading ? (
+        <div className="banner">
+          Preparing your workspace… verifying account and resume.
+          <button className="ghost small" onClick={() => refreshBootstrap()} style={{ marginLeft: 8 }}>
+            Recheck
+          </button>
         </div>
       ) : null}
 
       <div className="panel">
         <div className="panel-head">
           <div>
-            <h2>Start New Run</h2>
-            <p className="hint">Extract job postings and start analysis runs</p>
+            <h2>Analyze a job</h2>
+            <p className="hint">Select a job tab and generate tailored materials</p>
           </div>
           <div className="actions-inline">
             <StatusPill status={backendStatus} onRetry={checkBackendHealth} />
@@ -282,9 +393,34 @@ const StartRunPage = () => {
           </div>
         </div>
 
+        <div className="start-run-hero">
+          <div className="start-run-hero-left">
+            <div className="start-run-hero-title">From job tab → tailored resume</div>
+            <div className="start-run-hero-subtitle">
+              Select the job tab you’re viewing. We’ll extract the description, tailor your resume, then you can edit and download.
+            </div>
+          </div>
+          <div className="start-run-hero-right">
+            <div className="start-run-hero-metrics">
+              <div className="metric">
+                <div className="metric-label">Selected</div>
+                <div className="metric-value">{queueSize}</div>
+              </div>
+              <div className="metric">
+                <div className="metric-label">Running</div>
+                <div className="metric-value">{runningSelectedCount}</div>
+              </div>
+              <div className="metric">
+                <div className="metric-label">Done</div>
+                <div className="metric-value">{analyzedSelectedCount}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="start-run-controls">
           <div className="control-group">
-            <label htmlFor="tabSelect">Tabs (queue order)</label>
+            <label htmlFor="tabSelect">Job tabs (order)</label>
             <div className="multi-select">
               <button className="select" type="button" onClick={() => setDropdownOpen((o) => !o)}>
                 {tabs.length === 0
@@ -315,7 +451,7 @@ const StartRunPage = () => {
                         {groupedByWindow[winId]
                           .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
                           .map((tab) => {
-                            const analyzedRun = analyzedByTabId.get(tab.id);
+                            const analyzedRun = getAnalyzedRun(tab);
                             const isForced = forcedTabIds.includes(tab.id);
                             return (
                               <div key={tab.id} className="tab-row structured">
@@ -373,7 +509,7 @@ const StartRunPage = () => {
                 </div>
               ) : null}
             </div>
-            {queueSize > 1 ? <p className="hint">Queue will run in tab order across windows.</p> : null}
+            {queueSize > 1 ? <p className="hint">We’ll analyze the selected tabs in this order.</p> : null}
             {runningSelectedCount ? (
               <p className="hint warn">
                 {runningSelectedCount} selected tab{runningSelectedCount > 1 ? "s" : ""} already running.
@@ -433,7 +569,7 @@ const StartRunPage = () => {
         {/* Active runs/queues */}
         {runs.some((r) => r.result === "pending" || (r.status && !["DONE", "ERROR"].includes(r.status))) ? (
           <div className="active-runs">
-            <h4>Active runs</h4>
+            <h4>In progress</h4>
             {Object.values(
               runs
                 .filter((r) => r.result === "pending" || (r.status && !["DONE", "ERROR"].includes(r.status)))
@@ -452,9 +588,9 @@ const StartRunPage = () => {
                   <div key={group.queueId} className="queue-card">
                     <div className="queue-card-head">
                       <div>
-                        <div className="queue-title">{group.queueId}</div>
+                        <div className="queue-title">Batch analysis</div>
                         <div className="hint">
-                          {sorted.length} item{sorted.length > 1 ? "s" : ""} · ordered by queue
+                          {sorted.length} item{sorted.length > 1 ? "s" : ""} · in selected order
                         </div>
                       </div>
                     </div>
@@ -469,7 +605,7 @@ const StartRunPage = () => {
                           </div>
                           <div className="tab-cell status">
                             <span className="status-pill tiny">
-                              {run.queuePosition === 1 ? "RUNNING" : "PENDING"}
+                              In progress
                             </span>
                           </div>
                           <div className="tab-cell actions">

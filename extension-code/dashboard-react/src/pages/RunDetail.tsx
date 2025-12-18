@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import RunExplainView from "../components/RunExplainView";
-import RunPipelineView from "../components/RunPipelineView";
 import RunLatexEditorView, { type LatexChatFocus } from "../components/RunLatexEditorView";
 import RunChatView from "../components/RunChatView";
 import { useDashboardStore } from "../store/dashboardStore";
-import { formatDuration } from "../utils/runFilters";
 import type { RunStage, RunRecord } from "../types";
 
 const artifactLabels: Record<string, string> = {
@@ -52,7 +50,7 @@ const hasReachedStage = (currentStage: RunStage, targetStage: RunStage): boolean
   return currentIdx >= targetIdx;
 };
 
-type TabId = "summary" | "chat" | "explain" | "latex" | "downloads" | "debug";
+type TabId = "summary" | "chat" | "explain" | "latex" | "downloads";
 
 interface TabConfig {
   id: TabId;
@@ -76,24 +74,24 @@ const computeTabConfigs = (run: RunRecord): TabConfig[] => {
   return [
     {
       id: "summary",
-      label: "Summary",
-      icon: "📊",
-      isEnabled: true, // Always enabled - shows pipeline progress
+      label: "Overview",
+      icon: "📌",
+      isEnabled: true,
       badge: null
     },
     {
       id: "chat",
-      label: "Chat",
+      label: "Ask AI",
       icon: "💬",
       isEnabled: hasReachedRubric || isComplete || isError,
       disabledReason: !hasReachedRubric 
-        ? "Chat available after job analysis completes (RUBRIC stage)" 
+        ? "Ask AI is available after the job analysis starts"
         : undefined,
       badge: null
     },
     {
       id: "explain",
-      label: "Explain",
+      label: "Insights",
       icon: "🔍",
       isEnabled: isComplete, // Only for completed runs
       disabledReason: isRunning 
@@ -105,38 +103,27 @@ const computeTabConfigs = (run: RunRecord): TabConfig[] => {
     },
     {
       id: "latex",
-      label: "LaTeX Editor",
-      icon: "📝",
+      label: "Resume editor",
+      icon: "✍️",
       isEnabled: hasLatex,
       disabledReason: !hasLatex
         ? isRunning
-          ? "LaTeX editor available after generation stage"
-          : "No LaTeX artifact found for this run"
+          ? "Editor is available after generation completes"
+          : "Editor is not available for this run"
         : undefined,
       badge: null
     },
     {
       id: "downloads",
-      label: "Downloads",
+      label: "Files",
       icon: "📥",
       isEnabled: hasArtifacts,
       disabledReason: !hasArtifacts
         ? isRunning
-          ? "Downloads available as artifacts are generated"
-          : "No artifacts available for this run"
+          ? "Files will appear as they are generated"
+          : "No files available for this run"
         : undefined,
       badge: hasArtifacts ? artifactCount : null
-    },
-    {
-      id: "debug",
-      label: "Debug",
-      icon: "🔧",
-      // BUG-025: Only show debug for errors or when there's debug info
-      isEnabled: isError || Boolean(run.error) || Boolean(run.message),
-      disabledReason: isComplete && !run.error && !run.message
-        ? "No debug information for successful runs"
-        : undefined,
-      badge: isError ? "!" : null
     }
   ];
 };
@@ -181,11 +168,11 @@ const getStatusDisplay = (run: RunRecord): { icon: string; label: string; classN
 const RunDetailPage = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
-  const { runs, download, retryRun, backendStatus, ensureActiveChatSession, setChatFocusOnce, refreshRunStatus } = useDashboardStore();
+  const { runs, download, retryRun, backendStatus, ensureActiveChatSession, setChatFocusOnce, refreshRunStatus, setResponseReceived } =
+    useDashboardStore();
   const run = useMemo(() => runs.find((r) => r.runId === runId) || null, [runs, runId]);
   const [activeTab, setActiveTab] = useState<TabId>("summary");
   const [chatDraftSeed, setChatDraftSeed] = useState<string | null>(null);
-  const [copiedRunId, setCopiedRunId] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
   // BUG-002: Compute tab configs based on run state
@@ -217,7 +204,7 @@ const RunDetailPage = () => {
         return;
       }
       // Cmd/Ctrl + number to switch tabs
-      if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "6") {
+      if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "5") {
         e.preventDefault();
         const tabIndex = parseInt(e.key) - 1;
         const targetTab = tabConfigs[tabIndex];
@@ -229,26 +216,6 @@ const RunDetailPage = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [navigate, tabConfigs]);
-
-  // BUG-014: Copy run ID to clipboard
-  const handleCopyRunId = useCallback(async () => {
-    if (!run) return;
-    try {
-      await navigator.clipboard.writeText(run.runId);
-      setCopiedRunId(true);
-      setTimeout(() => setCopiedRunId(false), 2000);
-    } catch {
-      // Fallback for older browsers
-      const textArea = document.createElement("textarea");
-      textArea.value = run.runId;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-      setCopiedRunId(true);
-      setTimeout(() => setCopiedRunId(false), 2000);
-    }
-  }, [run]);
 
   // BUG-024: Retry mechanism
   const handleRetry = useCallback(async () => {
@@ -279,17 +246,17 @@ const RunDetailPage = () => {
         <div className="panel">
           {/* BUG-013: Breadcrumb */}
           <div className="breadcrumb">
-            <button className="breadcrumb-link" onClick={() => navigate("/runs")}>Runs</button>
+        <button className="breadcrumb-link" onClick={() => navigate("/runs")}>Applications</button>
             <span className="breadcrumb-separator">/</span>
             <span className="breadcrumb-current">Not Found</span>
           </div>
           <div className="empty-state-container">
             <div className="empty-state-icon">🔍</div>
-            <h3>Run not found</h3>
-            <p className="hint">This run may have been removed or belongs to older history.</p>
+            <h3>Application not found</h3>
+            <p className="hint">This item may have been removed from your history.</p>
             <div className="actions-inline" style={{ marginTop: 16 }}>
               <button className="primary" onClick={() => navigate("/runs")}>
-                ← Back to Runs
+                ← Back to Applications
               </button>
             </div>
           </div>
@@ -303,12 +270,20 @@ const RunDetailPage = () => {
   const hasPdf = Boolean(run.artifacts?.pdf);
   const statusDisplay = getStatusDisplay(run);
   const isRunning = run.result === "pending";
+  const primaryCta =
+    run.result === "error"
+      ? { label: retrying ? "Retrying…" : "Retry analysis", onClick: handleRetry, disabled: backendStatus !== "online" || retrying }
+      : hasPdf
+        ? { label: "Download PDF", onClick: () => download(run.runId, "pdf"), disabled: backendStatus !== "online" }
+        : isRunning
+          ? { label: "PDF pending…", onClick: () => undefined, disabled: true }
+          : { label: "No PDF generated", onClick: () => undefined, disabled: true };
 
   return (
     <div className="run-detail-page">
       {/* BUG-013: Breadcrumb Navigation */}
       <div className="breadcrumb">
-        <button className="breadcrumb-link" onClick={() => navigate("/runs")}>Runs</button>
+        <button className="breadcrumb-link" onClick={() => navigate("/runs")}>Applications</button>
         <span className="breadcrumb-separator">/</span>
         <span className="breadcrumb-current">{run.title || "Untitled"} @ {run.company || "Unknown"}</span>
       </div>
@@ -316,32 +291,19 @@ const RunDetailPage = () => {
       <div className="panel">
         <div className="run-detail-head">
           <div>
-            {/* BUG-014: Copyable Run ID */}
-            <div className="run-id-row">
-              <div className="pill subtle run-id-pill" onClick={handleCopyRunId} title="Click to copy Run ID">
-                <span>Run ID: {run.runId.slice(0, 8)}...</span>
-                <span className="copy-icon">{copiedRunId ? "✓" : "📋"}</span>
-              </div>
-              {copiedRunId && <span className="copy-toast">Copied!</span>}
-            </div>
             <h2>{run.title || "Untitled role"}</h2>
             <div className="hint">{run.company || "Unknown company"}</div>
             {/* BUG-021: Relative timestamps with full date on hover */}
             <div className="meta" title={run.startedAt ? new Date(run.startedAt).toLocaleString() : undefined}>
-              {run.platform || "Unknown"} · {formatRelativeTime(run.startedAt || run.updatedAt)} · {formatDuration(run.runtimeSec)}
+              {run.platform || "Unknown"} · {formatRelativeTime(run.startedAt || run.updatedAt)}
+              {typeof coverage === "number" ? ` · Match: ${coverage}%` : ""}
             </div>
-            {run.queueId ? (
-              <div className="meta">
-                Queue {run.queuePosition || 1}/{run.queueSize || 1} · {run.queueId}
-              </div>
-            ) : null}
             {/* BUG-019: Enhanced status display */}
             <div className="run-status-row">
               <span className={`status-indicator ${statusDisplay.className}`}>
                 <span className="status-icon">{statusDisplay.icon}</span>
                 <span className="status-label">{statusDisplay.label}</span>
               </span>
-              <span className="stage-badge">Stage: {run.status}</span>
               {isRunning && (
                 <button className="ghost small refresh-btn" onClick={handleRefreshStatus} title="Refresh status">
                   🔄
@@ -353,32 +315,44 @@ const RunDetailPage = () => {
             <button className="ghost" onClick={() => navigate("/runs")}>
               ← Back
             </button>
-            {/* BUG-007: Tooltip for disabled PDF button */}
+            {run.tab?.url ? (
+              <a className="ghost" href={run.tab.url || ""} target="_blank" rel="noreferrer">
+                View job posting
+              </a>
+            ) : null}
+            <button
+              className="ghost"
+              onClick={() => setResponseReceived(run.runId, !run.responseReceivedAt).catch(() => undefined)}
+              title="Mark whether you received a response"
+            >
+              {run.responseReceivedAt ? "Unmark response" : "Mark response"}
+            </button>
+            {/* Workspace primary CTA */}
             <div className="tooltip-wrapper">
-              <button
-                className="primary"
-                onClick={() => download(run.runId, "pdf")}
-                disabled={!hasPdf || backendStatus !== "online"}
-              >
-                {hasPdf ? "Download PDF" : "PDF Pending..."}
+              <button className="primary" onClick={primaryCta.onClick} disabled={primaryCta.disabled}>
+                {primaryCta.label}
               </button>
-              {!hasPdf && (
+              {(!hasPdf || run.result === "error") && (
                 <span className="tooltip">
-                  {isRunning 
-                    ? "PDF will be available after compilation completes" 
-                    : "No PDF was generated for this run"}
+                  {run.result === "error"
+                    ? "Retry the run from its capture."
+                    : isRunning
+                      ? "PDF will be available after compilation completes."
+                      : "No PDF was generated for this run."}
                 </span>
               )}
             </div>
-            {run.result === "error" && (
-              <button 
-                className="ghost" 
-                onClick={handleRetry} 
-                disabled={backendStatus !== "online" || retrying}
-              >
-                {retrying ? "Retrying..." : "Retry Run"}
+            {/* Secondary CTAs */}
+            {hasDownloads ? (
+              <button className="ghost" onClick={() => setActiveTab("downloads")}>
+                Downloads
               </button>
-            )}
+            ) : null}
+            {run.artifacts?.tex ? (
+              <button className="ghost" onClick={() => setActiveTab("latex")}>
+                Open editor
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -411,13 +385,12 @@ const RunDetailPage = () => {
 
         {activeTab === "summary" && (
           <div className="drawer-content">
-            <RunPipelineView run={run} />
             {/* BUG-008: Coverage with loading state */}
             <div className="panel">
               <div className="panel-head">
                 <div>
-                  <h4>Coverage</h4>
-                  <p className="hint">Matches against job requirements</p>
+                  <h4>Match strength</h4>
+                  <p className="hint">How closely your resume matches this job’s requirements</p>
                 </div>
                 {coverage !== null && coverage !== undefined ? (
                   <div className="pill coverage-pill">{coverage}%</div>
@@ -440,7 +413,7 @@ const RunDetailPage = () => {
               </div>
               {run.uncovered && run.uncovered.length > 0 && (
                 <div className="warning-box">
-                  <strong>Uncovered requirements ({run.uncovered.length})</strong>
+                  <strong>Missing from your resume ({run.uncovered.length})</strong>
                   <ul>
                     {run.uncovered.map((item) => (
                       <li key={item}>{item}</li>
@@ -450,7 +423,7 @@ const RunDetailPage = () => {
               )}
               {run.keywords && run.keywords.length > 0 && (
                 <>
-                  <div className="section-label">Keywords ({run.keywords.length})</div>
+                  <div className="section-label">What employers want ({run.keywords.length})</div>
                   <div className="chip-row">
                     {run.keywords.slice(0, 16).map((kw) => (
                       <span className="pill subtle" key={kw}>
@@ -468,7 +441,7 @@ const RunDetailPage = () => {
         )}
 
         {activeTab === "chat" && (
-          <div className="drawer-content">
+          <div className="drawer-content drawer-content-chat">
             <RunChatView run={run} draftSeed={chatDraftSeed} />
           </div>
         )}
@@ -482,23 +455,9 @@ const RunDetailPage = () => {
                 <h3>Explanation Not Available</h3>
                 <p className="hint">
                   {run.result === "pending" 
-                    ? "The detailed explanation will be available once the run completes successfully."
-                    : "Explanation is not available for failed runs. Check the Debug tab for error details."}
+                    ? "Insights will be available once your analysis finishes successfully."
+                    : "Insights are not available for failed runs. You can retry the analysis from the top right."}
                 </p>
-                {/* BUG-015: Show required stages */}
-                {run.result === "pending" && (
-                  <div className="required-stages">
-                    <span className="meta">Required stages: </span>
-                    {["RUBRIC", "EVIDENCE", "SELECTION", "DONE"].map((stage) => (
-                      <span 
-                        key={stage} 
-                        className={`stage-chip ${hasReachedStage(run.status, stage as RunStage) ? "complete" : "pending"}`}
-                      >
-                        {stage}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
             ) : (
               <RunExplainView run={run} />
@@ -515,23 +474,9 @@ const RunDetailPage = () => {
                 <h3>LaTeX Not Generated Yet</h3>
                 <p className="hint">
                   {isRunning 
-                    ? "The LaTeX editor will be available after the GENERATING_LATEX stage completes."
+                    ? "The resume editor will be available after generation completes."
                     : "No LaTeX was generated for this run."}
                 </p>
-                {/* BUG-015: Show required stages */}
-                {isRunning && (
-                  <div className="required-stages">
-                    <span className="meta">Required stages: </span>
-                    {["ANALYZING", "GENERATING_LATEX"].map((stage) => (
-                      <span 
-                        key={stage} 
-                        className={`stage-chip ${hasReachedStage(run.status, stage as RunStage) ? "complete" : "pending"}`}
-                      >
-                        {stage}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
             ) : (
               <RunLatexEditorView
@@ -585,69 +530,11 @@ const RunDetailPage = () => {
           </div>
         )}
 
-        {activeTab === "debug" && (
-          <div className="drawer-content">
-            <div className="panel">
-              <div className="panel-head">
-                <h4>Debug Information</h4>
-                {run.result === "error" && (
-                  <button 
-                    className="primary ghost" 
-                    onClick={handleRetry} 
-                    disabled={backendStatus !== "online" || retrying}
-                  >
-                    {retrying ? "Retrying..." : "Retry Run"}
-                  </button>
-                )}
-              </div>
-              {/* BUG-025: Better debug content */}
-              {run.result === "error" || run.error ? (
-                <>
-                  <div className="debug-section">
-                    <strong>Status:</strong> {run.status} ({run.result})
-                  </div>
-                  {run.error && (
-                    <div className="warning-box" style={{ marginTop: 10 }}>
-                      <strong>Error:</strong>
-                      <pre className="error-message">{run.error}</pre>
-                    </div>
-                  )}
-                  {run.message && (
-                    <div className="debug-section" style={{ marginTop: 10 }}>
-                      <strong>Message:</strong>
-                      <p className="hint">{run.message}</p>
-                    </div>
-                  )}
-                  {run.debugNotes && (
-                    <div className="debug-section" style={{ marginTop: 10 }}>
-                      <strong>Debug Notes:</strong>
-                      <pre className="debug-notes">{run.debugNotes}</pre>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="empty-state-container small">
-                  <p className="hint">
-                    {run.result === "success" 
-                      ? "✓ Run completed successfully. No debug information needed."
-                      : "Debug information will appear here if any issues occur."}
-                  </p>
-                </div>
-              )}
-              <details className="debug-details" style={{ marginTop: 16 }}>
-                <summary className="meta">Raw run data</summary>
-                <pre className="codeblock" style={{ marginTop: 8, maxHeight: 300 }}>
-                  {JSON.stringify(run, null, 2)}
-                </pre>
-              </details>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* BUG-017: Keyboard shortcuts hint */}
       <div className="keyboard-hints">
-        <span className="hint">Keyboard: Esc = Back · ⌘1-6 = Switch tabs</span>
+        <span className="hint">Keyboard: Esc = Back · ⌘1-5 = Switch tabs</span>
       </div>
     </div>
   );

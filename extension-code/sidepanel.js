@@ -8,7 +8,7 @@ const DEFAULT_UI = {
   detailsTab: "overview"
 };
 
-const BACKEND_BASE_URL = "http://localhost:3001";
+const BACKEND_BASE_URL = "https://resume-intelligence-nine.vercel.app";
 
 const elements = {
   tabSelect: document.getElementById("tabSelect"),

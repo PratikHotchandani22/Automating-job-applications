@@ -42,11 +42,14 @@ const matchesDateRange = (run: RunRecord, range: Filters["dateRange"]) => {
 
 const sortRuns = (runs: RunRecord[], sort: Filters["sort"]) => {
   const list = [...runs];
-  if (sort === "coverage") {
-    return list.sort((a, b) => (b.coverage || 0) - (a.coverage || 0));
+  if (sort === "match") {
+    return list.sort((a, b) => (b.coverage ?? -1) - (a.coverage ?? -1));
   }
-  if (sort === "runtime") {
-    return list.sort((a, b) => (a.runtimeSec || 0) - (b.runtimeSec || 0));
+  if (sort === "title") {
+    return list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  }
+  if (sort === "company") {
+    return list.sort((a, b) => (a.company || "").localeCompare(b.company || ""));
   }
   return list.sort(
     (a, b) =>

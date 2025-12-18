@@ -38,7 +38,7 @@ let pipelineState = {
   failureStage: null
 };
 
-const BACKEND_BASE_URL = "http://localhost:3001";
+const BACKEND_BASE_URL = "https://resume-intelligence-nine.vercel.app";
 
 const PIPELINE_STEPS = [
   { key: "EXTRACTING", label: "Extracting job" },
@@ -423,7 +423,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pollRunStatus = async (runId) => {
   const start = Date.now();
   while (Date.now() - start < 180000) {
-    const res = await fetch(`${BACKEND_BASE_URL}/status/${runId}`);
+    const res = await fetch(`${BACKEND_BASE_URL}/api/status/${runId}`);
     if (!res.ok) {
       throw new Error(`Status check failed (${res.status})`);
     }
@@ -471,7 +471,7 @@ const handleAnalyze = async () => {
         debug: debugToggle.checked
       }
     };
-    const response = await fetch(`${BACKEND_BASE_URL}/analyze`, {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/analyze`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

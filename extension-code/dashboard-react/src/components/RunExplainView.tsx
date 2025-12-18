@@ -152,14 +152,29 @@ const RunExplainView = ({ run }: RunExplainViewProps) => {
     );
 
     const coveredMap = new Map();
-    selectionPlan?.selected_bullets?.forEach((bullet: any) => {
-      bullet.matched_requirements?.forEach((reqId: string) => {
-        if (!coveredMap.has(reqId)) {
-          coveredMap.set(reqId, []);
-        }
-        coveredMap.get(reqId).push(bullet);
+    // selection_plan v2+ stores selected bullets under selected.work_experience/projects
+    const addSelected = (bullet: any) => {
+      const matches = bullet?.matches || bullet?.matched_requirements || [];
+      const reqIds = Array.isArray(matches)
+        ? matches
+            .map((m: any) => (typeof m === "string" ? m : m?.req_id))
+            .filter(Boolean)
+        : [];
+      reqIds.forEach((reqId: string) => {
+        if (!coveredMap.has(reqId)) coveredMap.set(reqId, []);
+        coveredMap.get(reqId).push({
+          bullet_id: bullet?.bullet_id,
+          baseline: bullet?.original_text || bullet?.baseline || bullet?.text || "",
+        });
       });
-    });
+    };
+
+    const selectedWork = selectionPlan?.selected?.work_experience || [];
+    selectedWork.forEach((role: any) => (role?.bullets || []).forEach(addSelected));
+    const selectedProjects = selectionPlan?.selected?.projects || [];
+    selectedProjects.forEach((proj: any) => (proj?.bullets || []).forEach(addSelected));
+    // Legacy (older runs)
+    (selectionPlan?.selected_bullets || []).forEach(addSelected);
 
     return rubric.requirements.map((req: any) => ({
       ...req,
@@ -183,67 +198,128 @@ const RunExplainView = ({ run }: RunExplainViewProps) => {
 
   // Parse bullet changes
   const bulletChanges = useMemo(() => {
+    const selectionPlan = explainData.selection_plan;
+    const tailored = explainData.tailored;
     const baseline = explainData.baseline_resume;
     const final = explainData.final_resume;
-    const selectionPlan = explainData.selection_plan;
 
-    if (!baseline || !final || !selectionPlan) return { included: [], excluded: [] };
+    if (!selectionPlan) return { included: [], excluded: [], modifiedCount: 0 };
 
-    const selectedIds = new Set(
-      selectionPlan.selected_bullets?.map((b: any) => b.bullet_id) || []
-    );
+    // Build a bullet_id -> after_text lookup from tailored.changes (preferred source).
+    const afterTextByBulletId = new Map<string, string>();
+    const addFromChangeEntries = (entries: any) => {
+      (entries || []).forEach((entry: any) => {
+        (entry?.updated_bullets || []).forEach((b: any) => {
+          if (b?.bullet_id) afterTextByBulletId.set(String(b.bullet_id), String(b.after_text || ""));
+        });
+      });
+    };
+    addFromChangeEntries(tailored?.changes?.experience);
+    addFromChangeEntries(tailored?.changes?.projects);
+
+    // selection_plan v2+ lists selected bullets by role/project.
+    const selectedWork = selectionPlan?.selected?.work_experience || [];
+    const selectedProjects = selectionPlan?.selected?.projects || [];
+    const hasNewSelectionShape = Array.isArray(selectedWork) || Array.isArray(selectedProjects);
+
+    if (hasNewSelectionShape && (selectedWork.length || selectedProjects.length)) {
+      const included: any[] = [];
+      const pushBullet = (context: any, bullet: any) => {
+        const bulletId = String(bullet?.bullet_id || "");
+        if (!bulletId) return;
+        const base = String(bullet?.original_text || "");
+        const after = (afterTextByBulletId.get(bulletId) || "").trim();
+        const finalText = (after || base).trim();
+        const baselineText = base.trim();
+        const matches = Array.isArray(bullet?.matches) ? bullet.matches : [];
+        const maxRel = matches.length
+          ? Math.max(...matches.map((m: any) => (typeof m?.rel === "number" ? m.rel : 0)))
+          : undefined;
+
+        included.push({
+          ...bullet,
+          bullet_id: bulletId,
+          baseline: baselineText,
+          final: finalText,
+          changed: baselineText !== finalText,
+          roleTitle: context?.title || "",
+          company: context?.company || "",
+          matched_requirements: matches.map((m: any) => m?.req_id).filter(Boolean),
+          relevance_score: maxRel,
+          evidence_tier: bullet?.evidence?.tier,
+        });
+      };
+
+      (selectedWork || []).forEach((role: any) => (role?.bullets || []).forEach((b: any) => pushBullet(role, b)));
+      (selectedProjects || []).forEach((proj: any) => (proj?.bullets || []).forEach((b: any) => pushBullet(proj, b)));
+
+      const excluded: any[] = [];
+      const redundancyDrops = selectionPlan?.selection_notes?.dropped_due_to_redundancy || [];
+      redundancyDrops.forEach((id: any) =>
+        excluded.push({ id: String(id), text: String(id), reason: "redundant" })
+      );
+      const budgetDrops = selectionPlan?.selection_notes?.dropped_due_to_budget || [];
+      budgetDrops.forEach((id: any) =>
+        excluded.push({ id: String(id), text: String(id), reason: "budget_exceeded" })
+      );
+
+      const modifiedCount = included.filter((b) => b.changed).length;
+      return { included, excluded, modifiedCount };
+    }
+
+    // Legacy fallback: attempt to diff baseline vs final artifacts using older selection_plan shape.
+    if (!baseline || !final) return { included: [], excluded: [], modifiedCount: 0 };
+
+    const selectedIds = new Set(selectionPlan.selected_bullets?.map((b: any) => b.bullet_id) || []);
 
     const baselineBullets = new Map();
-    baseline.experience?.forEach((exp: any) => {
-      exp.bullets?.forEach((bullet: string, idx: number) => {
-        const bulletId = `exp_${exp.role_id}_bullet_${idx + 1}`;
+    (baseline.work_experience || baseline.experience || []).forEach((exp: any) => {
+      (exp.bullets || []).forEach((bullet: string, idx: number) => {
+        const roleId = exp.role_id || exp.id || "role";
+        const bulletId = `exp_${roleId}_bullet_${idx + 1}`;
         baselineBullets.set(bulletId, {
           id: bulletId,
           text: bullet,
-          roleId: exp.role_id,
-          roleTitle: exp.role,
-          company: exp.company,
+          roleId,
+          roleTitle: exp.role || exp.title || "",
+          company: exp.company || "",
         });
       });
     });
 
     const finalBullets = new Map();
-    final.experience?.forEach((exp: any) => {
-      exp.bullets?.forEach((bullet: string, idx: number) => {
-        const bulletId = `exp_${exp.role_id}_bullet_${idx + 1}`;
+    (final.work_experience || final.experience || []).forEach((exp: any) => {
+      (exp.bullets || []).forEach((bullet: string, idx: number) => {
+        const roleId = exp.role_id || exp.id || "role";
+        const bulletId = `exp_${roleId}_bullet_${idx + 1}`;
         finalBullets.set(bulletId, bullet);
       });
     });
 
-    const included = selectionPlan.selected_bullets
-      ?.map((sel: any) => {
-        const baselineBullet = baselineBullets.get(sel.bullet_id);
-        const finalText = finalBullets.get(sel.bullet_id);
-        return {
-          ...sel,
-          baseline: baselineBullet?.text || "",
-          final: finalText || "",
-          changed: baselineBullet?.text !== finalText,
-          roleTitle: baselineBullet?.roleTitle || "",
-          company: baselineBullet?.company || "",
-        };
-      })
-      .filter((b: any) => b.baseline);
+    const included =
+      selectionPlan.selected_bullets
+        ?.map((sel: any) => {
+          const baselineBullet = baselineBullets.get(sel.bullet_id);
+          const finalText = finalBullets.get(sel.bullet_id);
+          return {
+            ...sel,
+            baseline: baselineBullet?.text || "",
+            final: finalText || "",
+            changed: (baselineBullet?.text || "") !== (finalText || ""),
+            roleTitle: baselineBullet?.roleTitle || "",
+            company: baselineBullet?.company || "",
+          };
+        })
+        .filter((b: any) => b.baseline) || [];
 
     const excluded = Array.from(baselineBullets.values())
       .filter((b) => !selectedIds.has(b.id))
-      .map((b) => {
-        const dropReason = selectionPlan.dropped_bullets?.find(
-          (d: any) => d.bullet_id === b.id
-        );
-        return {
-          ...b,
-          reason: dropReason?.reason || "not_selected",
-        };
-      });
+      .map((b) => ({ ...b, reason: "not_selected" }));
 
-    return { included: included || [], excluded };
+    const modifiedCount = included.filter((b: any) => b.changed).length;
+    return { included, excluded, modifiedCount };
   }, [
+    explainData.tailored,
     explainData.baseline_resume,
     explainData.final_resume,
     explainData.selection_plan,
@@ -365,7 +441,7 @@ const RunExplainView = ({ run }: RunExplainViewProps) => {
           className={`explain-tab ${activeTab === "changes" ? "active" : ""}`}
           onClick={() => setActiveTab("changes")}
         >
-          Changes ({bulletChanges.included.length})
+          Changes ({bulletChanges.modifiedCount || 0})
         </button>
         <button
           className={`explain-tab ${activeTab === "selection" ? "active" : ""}`}
@@ -588,7 +664,9 @@ const RunExplainView = ({ run }: RunExplainViewProps) => {
         {activeTab === "changes" && (
           <div className="tab-pane">
             <div className="explain-section">
-              <h3>Included Bullets ({bulletChanges.included.length})</h3>
+              <h3>
+                Included Bullets ({bulletChanges.included.length}) · Modified ({bulletChanges.modifiedCount || 0})
+              </h3>
               <p className="section-hint">
                 These bullets were selected and potentially modified to match the job
                 requirements.

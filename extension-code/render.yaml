@@ -1,0 +1,49 @@
+# Render Blueprint - Deploy with one click
+# https://render.com/docs/blueprint-spec
+
+services:
+  # Backend API
+  - type: web
+    name: resume-intel-api
+    env: node
+    plan: free # Use 'starter' ($7/mo) for always-on
+    rootDir: extension-code/backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      # These should be set in Render dashboard (secrets)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: POSTHOG_API_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        value: https://resume-intel-dashboard.vercel.app
+
+# Static site for dashboard (optional - better to use Vercel)
+# - type: static
+#   name: resume-intel-dashboard
+#   rootDir: extension-code/dashboard-react
+#   buildCommand: npm install && npm run build
+#   staticPublishPath: dist
+#   headers:
+#     - path: /*
+#       name: X-Frame-Options
+#       value: DENY
+#   envVars:
+#     - key: VITE_API_URL
+#       value: https://resume-intel-api.onrender.com

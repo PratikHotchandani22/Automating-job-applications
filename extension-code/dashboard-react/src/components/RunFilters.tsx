@@ -43,9 +43,10 @@ const RunFilters = ({ filters, onChange }: Props) => {
         <option value="other">Other</option>
       </select>
       <select className="select" value={filters.sort} onChange={(e) => onChange({ sort: e.target.value as Filters["sort"] })}>
-        <option value="newest">Sort: Newest</option>
-        <option value="coverage">Best coverage</option>
-        <option value="runtime">Fastest runtime</option>
+        <option value="newest">Sort: Most recent</option>
+        <option value="match">Sort: Best match</option>
+        <option value="title">Sort: Job title</option>
+        <option value="company">Sort: Company</option>
       </select>
     </div>
   );

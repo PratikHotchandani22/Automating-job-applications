@@ -49,6 +49,7 @@ export interface RunRecord {
   result: RunResult;
   coverage?: number | null;
   runtimeSec?: number | null;
+  responseReceivedAt?: string | null;
   startedAt?: string | null;
   updatedAt?: string | null;
   createdAt?: string | null;
@@ -64,7 +65,7 @@ export interface RunRecord {
 export type DateRangeFilter = "today" | "7d" | "30d" | "all";
 export type StatusFilter = "all" | "done" | "running" | "error";
 export type PlatformFilter = "all" | "linkedin" | "greenhouse" | "workday" | "other";
-export type RunSort = "newest" | "coverage" | "runtime";
+export type RunSort = "newest" | "match" | "title" | "company";
 
 export interface Filters {
   search: string;

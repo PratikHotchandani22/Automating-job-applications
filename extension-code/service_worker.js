@@ -1,7 +1,8 @@
 /* global chrome */
 
-const CONTENT_FILES = ["lib/readability.js", "content_script.js"];
-const BACKEND_BASE_URL = "http://localhost:3001";
+// Keep injection minimal and reliable. (The repo does not include lib/readability.js.)
+const CONTENT_FILES = ["content_script.js"];
+const BACKEND_BASE_URL = "https://resume-intelligence-nine.vercel.app";
 const DEFAULT_UI_STATE = {
   tabScope: "currentWindow",
   selectedCaptureId: null,
@@ -102,11 +103,11 @@ const queryTabs = (query) =>
     });
   });
 
-const isDashboardUrl = (url) => {
-  if (!url) return false;
-  // Exclude any extension page to avoid injecting content scripts.
-  return url.startsWith("chrome-extension://");
-};
+const EXT_ORIGIN = chrome.runtime.getURL("").replace(/\/$/, "");
+const DASHBOARD_URL = chrome.runtime.getURL("dashboard.html");
+
+const isExtensionUrl = (url) => Boolean(url && url.startsWith(EXT_ORIGIN));
+const isDashboardUrl = (url) => Boolean(url && url.startsWith(DASHBOARD_URL));
 
 const getTab = (tabId) =>
   new Promise((resolve, reject) => {
@@ -352,7 +353,7 @@ const extractAndStoreCapture = async (tabId) => {
 
 const getBackendHealth = async () => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/health`);
+    const response = await fetch(`${BACKEND_BASE_URL}/api/health`);
     if (!response.ok) throw new Error(`Status ${response.status}`);
     const data = await response.json().catch(() => ({}));
     return { ok: true, status: data.status || "ok" };
@@ -375,7 +376,7 @@ const downloadArtifact = (url, filename) =>
 const pollRunStatus = async ({ backendRunId, clientRunId }) => {
   let delay = 750;
   while (true) {
-    const res = await fetch(`${BACKEND_BASE_URL}/status/${backendRunId}`);
+    const res = await fetch(`${BACKEND_BASE_URL}/api/status/${backendRunId}`);
     if (!res.ok) {
       throw new Error(`Status check failed (${res.status})`);
     }
@@ -385,6 +386,15 @@ const pollRunStatus = async ({ backendRunId, clientRunId }) => {
     const runId = data.run_id || backendRunId;
     const artifacts = data.files || {};
     const message = data.message || null;
+    const coverageRaw = data.coverage_percent ?? data.coverage ?? data.coverage_ratio;
+    const coverage =
+      typeof coverageRaw === "number"
+        ? coverageRaw > 1
+          ? Math.round(coverageRaw)
+          : Math.round(coverageRaw * 100)
+        : null;
+    const topKeywords = Array.isArray(data.top_keywords) ? data.top_keywords.filter(Boolean) : [];
+    const uncovered = Array.isArray(data.uncovered_requirements) ? data.uncovered_requirements.filter(Boolean) : [];
 
     await upsertRun({
       runId,
@@ -395,6 +405,9 @@ const pollRunStatus = async ({ backendRunId, clientRunId }) => {
       result,
       message,
       artifacts,
+      coverage,
+      top_keywords: topKeywords,
+      uncovered_requirements: uncovered,
       error: result === "error" ? data.message || "Pipeline error" : null
     });
 
@@ -433,6 +446,8 @@ const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdO
     queueSize: Number.isFinite(queueMeta.queueSize) ? queueMeta.queueSize : 1,
     queueLabel: queueMeta.queueLabel || null,
     captureId,
+    title: capture?.job?.title || "",
+    company: capture?.job?.company || "",
     startedAt: new Date().toISOString(),
     status: "EXTRACTING",
     stage: "EXTRACTING",
@@ -440,7 +455,8 @@ const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdO
     artifacts: {},
     tab: capture.tab,
     platform: capture.platform,
-    error: null
+    error: null,
+    responseReceivedAt: null
   };
   await upsertRun(baseRun);
   await persistUiState({ selectedRunId: clientRunId });
@@ -462,7 +478,7 @@ const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdO
       }
     };
 
-    const response = await fetch(`${BACKEND_BASE_URL}/analyze`, {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -673,6 +689,130 @@ const handleStartQueue = async (tabIds = []) => {
 const stopQueueIds = new Set();
 const stopRunIds = new Set();
 
+const shouldBackfillRun = (run) => {
+  const needsTitle = !run?.title;
+  const needsCompany = !run?.company;
+  const needsCoverage = run?.result === "success" && (run?.coverage === null || run?.coverage === undefined);
+  const needsKeywords = !Array.isArray(run?.top_keywords) && !Array.isArray(run?.keywords);
+  const needsUncovered = !Array.isArray(run?.uncovered_requirements) && !Array.isArray(run?.uncovered);
+  return needsTitle || needsCompany || needsCoverage || needsKeywords || needsUncovered;
+};
+
+const backfillRunInsights = async ({ limit = 200 } = {}) => {
+  const health = await getBackendHealth();
+  if (!health.ok) {
+    throw new Error("Backend offline — backfill unavailable.");
+  }
+
+  const state = await readState();
+  const runs = state.runs || [];
+  const captures = state.captures || [];
+  const captureById = new Map(captures.map((c) => [c.captureId, c]));
+
+  const targets = runs.filter(shouldBackfillRun).slice(0, limit);
+  if (!targets.length) {
+    return { updated: 0, total: runs.length };
+  }
+
+  const byId = new Map(runs.map((r) => [r.runId, r]));
+  let updated = 0;
+
+  for (let i = 0; i < targets.length; i += 1) {
+    const run = targets[i];
+    const id = run?.backendRunId || run?.runId;
+    if (!id) continue;
+    try {
+      const res = await fetch(`${BACKEND_BASE_URL}/api/status/${encodeURIComponent(id)}`);
+      if (!res.ok) continue;
+      const data = await res.json();
+
+      const coverageRaw = data.coverage_percent ?? data.coverage ?? data.coverage_ratio;
+      const coverage =
+        typeof coverageRaw === "number"
+          ? coverageRaw > 1
+            ? Math.round(coverageRaw)
+            : Math.round(coverageRaw * 100)
+          : null;
+
+      const topKeywords = Array.isArray(data.top_keywords) ? data.top_keywords.filter(Boolean) : [];
+      const uncovered = Array.isArray(data.uncovered_requirements) ? data.uncovered_requirements.filter(Boolean) : [];
+
+      const cap = run.captureId ? captureById.get(run.captureId) : null;
+      const title =
+        run.title ||
+        data.job_title ||
+        data.title ||
+        cap?.job?.title ||
+        "";
+      const company =
+        run.company ||
+        data.company ||
+        cap?.job?.company ||
+        "";
+      const sourcePlatform = (data.source_platform || "").toString();
+
+      const merged = {
+        ...run,
+        title,
+        company,
+        ...(sourcePlatform ? { platform: sourcePlatform } : {}),
+        ...(typeof coverage === "number" ? { coverage } : {}),
+        ...(topKeywords.length ? { top_keywords: topKeywords } : {}),
+        ...(uncovered.length ? { uncovered_requirements: uncovered } : {})
+      };
+
+      byId.set(run.runId, merged);
+      updated += 1;
+    } catch (e) {
+      // keep going
+    }
+    await sleep(75);
+  }
+
+  const nextRuns = runs.map((r) => byId.get(r.runId) || r);
+  await storageSet({ runs: nextRuns });
+  return { updated, total: runs.length };
+};
+
+const syncBackendRuns = async ({ limit = 500 } = {}) => {
+  const health = await getBackendHealth();
+  if (!health.ok) {
+    throw new Error("Backend offline — sync unavailable.");
+  }
+  const res = await fetch(`${BACKEND_BASE_URL}/api/runs?limit=${encodeURIComponent(limit)}`);
+  if (!res.ok) {
+    throw new Error(`Sync failed (HTTP ${res.status})`);
+  }
+  const data = await res.json().catch(() => null);
+  const list = Array.isArray(data?.runs) ? data.runs : [];
+  let updated = 0;
+  for (const r of list) {
+    const runId = r.run_id || r.runId;
+    if (!runId) continue;
+    const platform = (r?.job?.platform || r?.source_platform || r?.platform || "").toString();
+    await upsertRun({
+      runId: runId.toString(),
+      backendRunId: runId.toString(),
+      title: r?.job?.title || r?.job_title || r?.title || "",
+      company: r?.job?.company || r?.company || "",
+      platform: platform || "other",
+      status: mapBackendStage(r.stage) || r.stage || "ANALYZING",
+      stage: mapBackendStage(r.stage) || r.stage || "ANALYZING",
+      result: r.status === "success" ? "success" : r.status === "error" ? "error" : "pending",
+      message: r.message || null,
+      artifacts: r.files || {},
+      startedAt: r.startedAt || null,
+      updatedAt: r.updatedAt || null,
+      coverage: typeof r.coverage_percent === "number" ? Math.round(r.coverage_percent) : r.coverage ?? null,
+      top_keywords: Array.isArray(r.top_keywords) ? r.top_keywords : [],
+      uncovered_requirements: Array.isArray(r.uncovered_requirements) ? r.uncovered_requirements : []
+    });
+    updated += 1;
+    await sleep(25);
+  }
+  return { updated, total: list.length };
+};
+
 const stopPendingRuns = async ({ queueId = null, runId = null, message = "Stopped by user" }) => {
   const state = await readState();
   const runs = state.runs || [];
@@ -698,49 +838,79 @@ const handleGetTabs = async (scope) => {
   const query = scope === "allWindows" ? {} : { currentWindow: true };
   const tabs = await queryTabs(query);
   const mapped = tabs.map((tab) => mapTabForUi(tab));
-  return mapped.filter((tab) => !tab.isDashboard);
+  // Only return non-extension pages (avoid any chrome-extension:// pages).
+  return mapped.filter((tab) => !isExtensionUrl(tab.url));
 };
 
-chrome.runtime.onInstalled.addListener(() => {
-  if (chrome.sidePanel?.setOptions) {
-    chrome.sidePanel.setOptions({ path: "sidepanel.html", enabled: true });
-    logDebug("onInstalled:setOptions", { ok: true });
-  } else {
-    logDebug("onInstalled:setOptions", { ok: false, reason: "no_sidePanel_api" });
-  }
-  if (chrome.sidePanel?.setPanelBehavior) {
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    logDebug("onInstalled:setPanelBehavior", { ok: true });
-  } else {
-    logDebug("onInstalled:setPanelBehavior", { ok: false, reason: "no_sidePanel_api" });
-  }
-});
+const storageRemove = (keys) =>
+  new Promise((resolve) => {
+    chrome.storage.local.remove(keys, () => resolve());
+  });
 
-chrome.runtime.onStartup.addListener(() => {
-  if (chrome.sidePanel?.setOptions) {
-    chrome.sidePanel.setOptions({ path: "sidepanel.html", enabled: true });
-    logDebug("onStartup:setOptions", { ok: true });
+const setStartRunPrefill = async (prefill) => {
+  // Stored as a single-use handoff to the dashboard. The dashboard should consume & clear it.
+  await storageSet({ start_run_prefill: prefill || null });
+};
+
+const openOrFocusDashboardTab = async ({ routeHash = "#/start-run" } = {}) => {
+  const url = `${DASHBOARD_URL}${routeHash || ""}`;
+  const existing = await queryTabs({ url: `${DASHBOARD_URL}*` }).catch(() => []);
+  if (existing && existing.length) {
+    // Prefer the most recently active dashboard tab.
+    const target = existing.find((t) => t.active) || existing[0];
+    await chrome.tabs.update(target.id, { active: true, url });
+    await chrome.windows.update(target.windowId, { focused: true }).catch(() => undefined);
+    return { tabId: target.id, reused: true };
   }
-  if (chrome.sidePanel?.setPanelBehavior) {
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    logDebug("onStartup:setPanelBehavior", { ok: true });
+  const created = await new Promise((resolve, reject) => {
+    chrome.tabs.create({ url }, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(tab);
+    });
+  });
+  return { tabId: created.id, reused: false };
+};
+
+const tabFirstLaunchFromActiveTab = async (tab) => {
+  const tabId = tab?.id;
+  if (!tabId) {
+    await openOrFocusDashboardTab({ routeHash: "#/start-run" });
+    return;
   }
-});
+
+  // Best-effort extraction so the dashboard can show a confident prefilled start.
+  let capture = null;
+  try {
+    const result = await extractAndStoreCapture(tabId);
+    capture = result?.capture || null;
+  } catch (error) {
+    await logDebug("actionClick:extract_failed", { tabId, error: error?.message || String(error) });
+  }
+
+  // Persist UI intent for Start Run selection.
+  await persistUiState({
+    tabScope: "currentWindow",
+    selectedTabId: tabId,
+    selectedTabIds: [tabId]
+  }).catch(() => undefined);
+
+  await setStartRunPrefill({
+    source: "action_click",
+    tabId,
+    url: tab.url || null,
+    title: tab.title || null,
+    captureId: capture?.captureId || null,
+    capturedAt: capture?.capturedAt || null
+  });
+
+  await openOrFocusDashboardTab({ routeHash: "#/start-run" });
+};
 
 chrome.action.onClicked.addListener((tab) => {
-  (async () => {
-    if (chrome.sidePanel?.open) {
-      try {
-        await chrome.sidePanel.open({ tabId: tab.id });
-        await logDebug("actionClick", { outcome: "sidepanel_open", tabId: tab.id });
-        return;
-      } catch (error) {
-        await logDebug("actionClick", { outcome: "sidepanel_open_failed", error: error?.message });
-      }
-    }
-    await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
-    await logDebug("actionClick", { outcome: "opened_dashboard_tab" });
-  })();
+  tabFirstLaunchFromActiveTab(tab).catch(() => undefined);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -750,6 +920,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const fail = (error) => sendResponse({ ok: false, error: error?.message || String(error) });
 
   switch (message.action) {
+    case "OPEN_DASHBOARD": {
+      (async () => {
+        try {
+          // Optional: allow callers to attach prefill (consumed by Start Run).
+          if (message.prefill) {
+            await setStartRunPrefill(message.prefill);
+          }
+          if (message.ui_state) {
+            await persistUiState(message.ui_state);
+          }
+          const routeHash = message.routeHash || "#/start-run";
+          const out = await openOrFocusDashboardTab({ routeHash });
+          respond({ ok: true, ...out });
+        } catch (error) {
+          fail(error);
+        }
+      })();
+      return true;
+    }
     case "start_extraction": {
       (async () => {
         try {
@@ -824,6 +1013,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((err) => fail(err));
       return true;
     }
+    case "CONSUME_START_RUN_PREFILL": {
+      (async () => {
+        try {
+          const res = await storageGet(["start_run_prefill"]);
+          const prefill = res?.start_run_prefill || null;
+          await storageRemove(["start_run_prefill"]);
+          respond({ ok: true, prefill });
+        } catch (error) {
+          fail(error);
+        }
+      })();
+      return true;
+    }
     case "EXTRACT_FROM_TAB": {
       (async () => {
         try {
@@ -846,6 +1048,61 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       removeRun(message.runId)
         .then((runs) => respond({ ok: true, runs }))
         .catch((err) => fail(err));
+      return true;
+    }
+    case "SET_RUN_USER_FIELDS": {
+      (async () => {
+        try {
+          const { runId, user } = message || {};
+          if (!runId) throw new Error("runId required");
+          if (!user || typeof user !== "object") throw new Error("user patch required");
+
+          const state = await readState();
+          const runs = state.runs || [];
+          const idx = runs.findIndex((r) => r.runId === runId || r.clientRunId === runId);
+          if (idx < 0) throw new Error("Run not found");
+
+          const existing = runs[idx] || {};
+          const nextRun = {
+            ...existing,
+            responseReceivedAt:
+              typeof user.responseReceivedAt === "string" || user.responseReceivedAt === null
+                ? user.responseReceivedAt
+                : existing.responseReceivedAt
+          };
+
+          const nextRuns = [...runs];
+          nextRuns[idx] = nextRun;
+          await storageSet({ runs: nextRuns });
+          respond({ ok: true, run: nextRun });
+        } catch (error) {
+          fail(error);
+        }
+      })();
+      return true;
+    }
+    case "BACKFILL_RUN_INSIGHTS": {
+      (async () => {
+        try {
+          const limit = Number.isFinite(Number(message?.limit)) ? Number(message.limit) : 200;
+          const result = await backfillRunInsights({ limit });
+          respond({ ok: true, ...result });
+        } catch (error) {
+          fail(error);
+        }
+      })();
+      return true;
+    }
+    case "SYNC_BACKEND_RUNS": {
+      (async () => {
+        try {
+          const limit = Number.isFinite(Number(message?.limit)) ? Number(message.limit) : 500;
+          const result = await syncBackendRuns({ limit });
+          respond({ ok: true, ...result });
+        } catch (error) {
+          fail(error);
+        }
+      })();
       return true;
     }
     case "ANALYZE_CAPTURE": {

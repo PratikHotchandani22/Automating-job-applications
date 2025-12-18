@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { ChatMessage, RunChatSession, RunRecord } from "../types";
 import { BACKEND_BASE_URL, chatRun } from "../api/bridge";
 import { useDashboardStore } from "../store/dashboardStore";
@@ -34,8 +35,13 @@ const RunChatView = ({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
+  const [unreadSinceScroll, setUnreadSinceScroll] = useState(0);
 
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const pinnedRef = useRef(true);
+  const lastMsgCountRef = useRef<number>(0);
 
   useEffect(() => {
     // Ensure there's always an active session for this run.
@@ -43,7 +49,10 @@ const RunChatView = ({
     setDraft("");
     setSending(false);
     setError(null);
-  }, [run.runId]);
+    setIsPinnedToBottom(true);
+    pinnedRef.current = true;
+    setUnreadSinceScroll(0);
+  }, [run.runId, ensureActiveChatSession, run]);
 
   const activeSession = useMemo(() => {
     if (!sessions.length) return null;
@@ -79,8 +88,25 @@ const RunChatView = ({
   useEffect(() => {
     const el = threadRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [activeSession?.messages?.length, sending]);
+    // If the user has scrolled up, don't yank them back to bottom.
+    // Only auto-scroll when pinned to bottom.
+    if (pinnedRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+
+    // Track "unread" when new messages arrive while scrolled up.
+    const nextCount = activeSession?.messages?.length || 0;
+    const prevCount = lastMsgCountRef.current || 0;
+    if (nextCount > prevCount && !pinnedRef.current) {
+      setUnreadSinceScroll((n) => n + (nextCount - prevCount));
+    }
+    lastMsgCountRef.current = nextCount;
+  }, [activeSession?.messages?.length, activeSession?.sessionId, sending]);
+
+  useEffect(() => {
+    // Focus input when session changes (non-intrusive).
+    textareaRef.current?.focus();
+  }, [activeSession?.sessionId]);
 
   const messages = activeSession?.messages || [];
   const focusOnce = activeSession?.focusOnce || null;
@@ -313,10 +339,80 @@ const RunChatView = ({
   };
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleSend().catch(() => undefined);
+    // Enter sends, Shift+Enter inserts newline (common chat UX).
+    // Skip if the user is composing IME text.
+    if ((e as any).isComposing) return;
+    if (e.key !== "Enter") return;
+    if (e.shiftKey) return;
+    e.preventDefault();
+    handleSend().catch(() => undefined);
+  };
+
+  const updatePinnedState = () => {
+    const el = threadRef.current;
+    if (!el) return;
+    const distToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const atBottom = distToBottom < 48;
+    pinnedRef.current = atBottom;
+    setIsPinnedToBottom(atBottom);
+    if (atBottom) setUnreadSinceScroll(0);
+  };
+
+  const scrollToBottom = () => {
+    const el = threadRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    pinnedRef.current = true;
+    setIsPinnedToBottom(true);
+    setUnreadSinceScroll(0);
+  };
+
+  const linkify = (text: string) => {
+    const urlRe = /(https?:\/\/[^\s)]+)|(www\.[^\s)]+)/g;
+    const nodes: ReactNode[] = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(urlRe)) {
+      const idx = match.index ?? 0;
+      if (idx > lastIndex) nodes.push(text.slice(lastIndex, idx));
+      const raw = match[0];
+      const href = raw.startsWith("http") ? raw : `https://${raw}`;
+      nodes.push(
+        <a key={`${href}-${idx}`} href={href} target="_blank" rel="noreferrer" className="run-chat-link">
+          {raw}
+        </a>
+      );
+      lastIndex = idx + raw.length;
     }
+    if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+    return nodes;
+  };
+
+  const renderMessageContent = (content: string) => {
+    // Very small markdown-lite: fenced code blocks + clickable links in text.
+    const chunks = content.split("```");
+    if (chunks.length === 1) {
+      return <span className="run-chat-text">{linkify(content)}</span>;
+    }
+    return (
+      <div className="run-chat-msg">
+        {chunks.map((chunk, i) => {
+          const isCode = i % 2 === 1;
+          if (isCode) {
+            const code = chunk.replace(/^\n/, "").replace(/\n$/, "");
+            return (
+              <pre key={`code-${i}`} className="codeblock run-chat-codeblock">
+                {code}
+              </pre>
+            );
+          }
+          return (
+            <span key={`text-${i}`} className="run-chat-text">
+              {linkify(chunk)}
+            </span>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -325,7 +421,7 @@ const RunChatView = ({
         <div className="panel-head">
           <div>
             <h4>Chat</h4>
-            <p className="hint">Ask questions about what changed and why. Press Ctrl/⌘ + Enter to send.</p>
+            <p className="hint">Ask questions about what changed and why. Enter to send · Shift+Enter for a new line.</p>
           </div>
           <div className="pill subtle">{canTalkToBackend ? "Backend online" : "Backend offline"}</div>
         </div>
@@ -474,10 +570,10 @@ const RunChatView = ({
         {error ? <div className="warning-box" style={{ marginTop: 10 }}>{error}</div> : null}
       </div>
 
-      <div className="run-chat-thread" ref={threadRef}>
+      <div className="run-chat-thread" ref={threadRef} onScroll={updatePinnedState}>
         {messages.map((m, idx) => (
           <div key={idx} className={`run-chat-row ${m.role}`}>
-            <div className={`run-chat-bubble ${m.role}`}>{m.content}</div>
+            <div className={`run-chat-bubble ${m.role}`}>{renderMessageContent(m.content)}</div>
           </div>
         ))}
         {sending ? (
@@ -487,17 +583,32 @@ const RunChatView = ({
         ) : null}
       </div>
 
+      {!isPinnedToBottom ? (
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button className="ghost small" onClick={scrollToBottom}>
+            Jump to latest{unreadSinceScroll ? ` (${unreadSinceScroll})` : ""}
+          </button>
+        </div>
+      ) : null}
+
       <div className="run-chat-input">
         <textarea
           className="run-chat-textarea"
+          ref={textareaRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={canTalkToBackend ? "Ask a question…" : "Backend offline. Start the backend to chat."}
-          disabled={!canTalkToBackend || sending}
+          placeholder={
+            !canTalkToBackend
+              ? "Backend offline. Start the backend to chat."
+              : isExpired
+                ? "Session expired. Click “Continue…” above to start a new session."
+                : "Ask a question…"
+          }
+          disabled={!canTalkToBackend}
           rows={3}
         />
-        <button className="primary" onClick={handleSend} disabled={!canTalkToBackend || sending || !draft.trim()}>
+        <button className="primary" onClick={handleSend} disabled={!canTalkToBackend || sending || isExpired || !draft.trim()}>
           {sending ? "Sending..." : "Send"}
         </button>
       </div>

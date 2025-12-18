@@ -1,12 +1,16 @@
 import { create } from "zustand";
 import {
+  backfillRunInsights as backfillRunInsightsBridge,
+  syncBackendRuns as syncBackendRunsBridge,
+  deleteRun as deleteRunBridge,
   downloadArtifact,
   fetchBackendHealth,
   fetchExtensionState,
   fetchRunStatusFromBackend,
   normalizeRun,
   openStartRunSurface,
-  retryRunFromCapture
+  retryRunFromCapture,
+  setRunUserFields as setRunUserFieldsBridge
 } from "../api/bridge";
 import { sampleRuns } from "../sampleData";
 import type { BackendStatus, ChatMessage, RunChatSession, RunRecord } from "../types";
@@ -17,6 +21,7 @@ interface DashboardState {
   loading: boolean;
   error: string | null;
   lastUpdated: string | null;
+  backfilling: boolean;
   chatSessionsByRunId: Record<string, RunChatSession[]>;
   activeChatSessionByRunId: Record<string, string | undefined>;
   hydrateChatSessions: () => Promise<void>;
@@ -24,6 +29,9 @@ interface DashboardState {
   loadInitial: () => Promise<void>;
   refreshRuns: () => Promise<void>;
   refreshRunStatus: (runId: string) => Promise<void>;
+  backfillInsights: () => Promise<void>;
+  setResponseReceived: (runId: string, received: boolean) => Promise<void>;
+  deleteRun: (runId: string) => Promise<void>;
   download: (runId: string, artifactKey: string) => Promise<void>;
   retryRun: (runId: string) => Promise<string | null>;
   startNewRun: () => Promise<void>;
@@ -199,12 +207,15 @@ const mergeRuns = (existing: RunRecord[], updates: Partial<RunRecord>[]): RunRec
   return sortRuns(Array.from(map.values()));
 };
 
+let autoBackfillTriggered = false;
+
 export const useDashboardStore = create<DashboardState>((set, get) => ({
   runs: sampleRuns,
   backendStatus: "checking",
   loading: false,
   error: null,
   lastUpdated: null,
+  backfilling: false,
   chatSessionsByRunId: {},
   activeChatSessionByRunId: {},
 
@@ -214,12 +225,24 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       // Hydrate persisted chat sessions early (best-effort).
       await get().hydrateChatSessions().catch(() => undefined);
       const [state, health] = await Promise.all([fetchExtensionState(), fetchBackendHealth()]);
+      const nextRuns = sortRuns(state.runs);
       set({
-        runs: sortRuns(state.runs),
+        runs: nextRuns,
         backendStatus: health,
         loading: false,
         lastUpdated: new Date().toISOString()
       });
+
+      // Auto-backfill once per session if we have historical runs missing match strength.
+      if (!autoBackfillTriggered && health === "online") {
+        const missing = nextRuns.some((r) => r.result === "success" && (r.coverage === null || r.coverage === undefined));
+        if (missing) {
+          autoBackfillTriggered = true;
+          get()
+            .backfillInsights()
+            .catch(() => undefined);
+        }
+      }
     } catch (error: any) {
       set({
         runs: sampleRuns,
@@ -250,8 +273,39 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       set((state) => ({ runs: mergeRuns(state.runs, [patch]) }));
       return;
     }
-    // fallback to full refresh if backend status fails
-    await get().refreshRuns();
+    // IMPORTANT: Do NOT fallback to refreshRuns here.
+    // When runs are sample/demo (or runId is invalid), this creates a refresh storm
+    // that can freeze the UI and flip backend status rapidly.
+    return;
+  },
+
+  backfillInsights: async () => {
+    if (get().backfilling) return;
+    set({ backfilling: true, error: null });
+    try {
+      // First: import backend run history (covers runs created outside extension storage).
+      await syncBackendRunsBridge(2000).catch(() => undefined);
+      // Then: compute missing insights for existing stored runs.
+      await backfillRunInsightsBridge(2000);
+      await get().refreshRuns();
+    } catch (error: any) {
+      set({ error: error?.message || "Backfill failed" });
+    } finally {
+      set({ backfilling: false });
+    }
+  },
+
+  setResponseReceived: async (runId: string, received: boolean) => {
+    const ts = received ? new Date().toISOString() : null;
+    await setRunUserFieldsBridge(runId, { responseReceivedAt: ts });
+    set((state) => ({
+      runs: state.runs.map((r) => (r.runId === runId ? { ...r, responseReceivedAt: ts } : r))
+    }));
+  },
+
+  deleteRun: async (runId: string) => {
+    await deleteRunBridge(runId);
+    set((state) => ({ runs: state.runs.filter((r) => r.runId !== runId && r.clientRunId !== runId) }));
   },
 
   download: async (runId: string, artifactKey: string) => {

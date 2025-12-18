@@ -5,7 +5,8 @@ import RunsTable from "../components/RunsTable";
 import { useDashboardStore } from "../store/dashboardStore";
 import { defaultFilters, applyFilters } from "../utils/runFilters";
 import type { Filters } from "../types";
-import { stopQueue, stopRun } from "../api/bridge";
+import type { RunRecord } from "../types";
+import { stopRun } from "../api/bridge";
 
 const RunsPage = () => {
   const navigate = useNavigate();
@@ -13,7 +14,11 @@ const RunsPage = () => {
   const refreshRuns = useDashboardStore((state) => state.refreshRuns);
   const download = useDashboardStore((state) => state.download);
   const backendStatus = useDashboardStore((state) => state.backendStatus);
+  const setResponseReceived = useDashboardStore((state) => state.setResponseReceived);
+  const deleteRun = useDashboardStore((state) => state.deleteRun);
+  const retryRun = useDashboardStore((state) => state.retryRun);
   const [filters, setFilters] = useState<Filters>(defaultFilters);
+  const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
 
   const filteredRuns = useMemo(() => applyFilters(runs, filters), [runs, filters]);
 
@@ -34,23 +39,21 @@ const RunsPage = () => {
     }
   };
 
-  const handleStopQueue = async (queueId: string) => {
-    try {
-      await stopQueue(queueId);
-      await refreshRuns();
-    } catch (e: any) {
-      console.error("Stop queue failed", e?.message || e);
-    }
-  };
-
   return (
     <div className="panel">
       <div className="panel-head">
         <div>
-          <h2>Runs history</h2>
-          <p className="hint">Search, filter, and open the run detail page</p>
+          <h2>Applications</h2>
+          <p className="hint">Search and review your analyzed job applications</p>
         </div>
         <div className="actions-inline">
+          <button
+            className="ghost small"
+            onClick={() => setDensity((d) => (d === "compact" ? "comfortable" : "compact"))}
+            title="Toggle table density"
+          >
+            Density: {density === "compact" ? "Compact" : "Comfortable"}
+          </button>
           <button className="ghost small" onClick={() => refreshRuns()}>
             Refresh
           </button>
@@ -59,64 +62,20 @@ const RunsPage = () => {
 
       <RunFilters filters={filters} onChange={(update) => setFilters((prev) => ({ ...prev, ...update }))} />
 
-      <div className="queue-groups">
-        {Object.values(
-          filteredRuns.reduce<Record<string, any>>((acc, run) => {
-            const key = run.queueId || run.runId;
-            if (!acc[key]) acc[key] = { queueId: key, queueLabel: run.queueLabel || key, runs: [] as typeof filteredRuns };
-            acc[key].runs.push(run);
-            return acc;
-          }, {})
-        )
-          .sort((a, b) => {
-            const aTs = Date.parse(a.runs[0]?.updatedAt || a.runs[0]?.startedAt || "0");
-            const bTs = Date.parse(b.runs[0]?.updatedAt || b.runs[0]?.startedAt || "0");
-            return bTs - aTs;
-          })
-          .map((group) => {
-            const size = group.runs.length;
-            const latest = group.runs[0];
-            const hasActive = group.runs.some((r: any) => r.result === "pending");
-            return (
-              <details key={group.queueId} className="queue-card" open>
-                <summary className="queue-card-head">
-                  <div>
-                    <div className="queue-title">{group.queueLabel}</div>
-                    <div className="hint">
-                      {group.queueId} · {size} run{size > 1 ? "s" : ""}
-                    </div>
-                  </div>
-                  <div className="queue-meta">
-                    <span className={`status-pill tiny ${latest?.result === "error" ? "error" : latest?.result === "success" ? "done" : "pending"}`}>
-                      {latest?.status || "UNKNOWN"}
-                    </span>
-                    {hasActive ? (
-                      <button
-                        className="ghost small"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleStopQueue(group.queueId);
-                        }}
-                      >
-                        Stop queue
-                      </button>
-                    ) : null}
-                  </div>
-                </summary>
-                <div className="queue-body">
-                  <RunsTable
-                    runs={group.runs}
-                    backendOnline={backendStatus === "online"}
-                    onSelect={handleSelect}
-                    onDownload={(run) => download(run.runId, run.artifacts?.pdf ? "pdf" : "json")}
-                    showHeader={false}
-                    onStop={(run) => handleStopRun(run.runId)}
-                  />
-                </div>
-              </details>
-            );
-          })}
-      </div>
+      <RunsTable
+        runs={filteredRuns}
+        backendOnline={backendStatus === "online"}
+        onSelect={handleSelect}
+        onDownload={(run) => download(run.runId, "pdf")}
+        onToggleResponse={(run: RunRecord) => setResponseReceived(run.runId, !run.responseReceivedAt)}
+        onDelete={(run: RunRecord) => deleteRun(run.runId)}
+        onRerun={async (run: RunRecord) => {
+          await retryRun(run.runId);
+          await refreshRuns();
+        }}
+        onStop={(run) => handleStopRun(run.runId)}
+        density={density}
+      />
     </div>
   );
 };
