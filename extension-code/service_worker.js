@@ -1,7 +1,10 @@
 /* global chrome */
 
 const CONTENT_FILES = ["lib/readability.js", "content_script.js"];
+// DEPRECATED: Old backend URL - kept for backward compatibility if needed
+// New dashboard uses Next.js at http://localhost:3000 with Convex backend
 const BACKEND_BASE_URL = "http://localhost:3001";
+const NEXTJS_DASHBOARD_URL = "http://localhost:3000";
 const DEFAULT_UI_STATE = {
   tabScope: "currentWindow",
   selectedCaptureId: null,
@@ -351,13 +354,14 @@ const extractAndStoreCapture = async (tabId) => {
 };
 
 const getBackendHealth = async () => {
+  // Check Next.js dashboard health instead of old backend
+  const NEXTJS_DASHBOARD_URL = "http://localhost:3000";
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/health`);
+    const response = await fetch(`${NEXTJS_DASHBOARD_URL}`, { method: "HEAD" });
     if (!response.ok) throw new Error(`Status ${response.status}`);
-    const data = await response.json().catch(() => ({}));
-    return { ok: true, status: data.status || "ok" };
+    return { ok: true, status: "ok", dashboard: "Next.js" };
   } catch (error) {
-    return { ok: false, error: error.message || "Backend offline" };
+    return { ok: false, error: error.message || "Next.js dashboard offline", dashboard: "Next.js" };
   }
 };
 
@@ -704,7 +708,7 @@ const handleGetTabs = async (scope) => {
 chrome.runtime.onInstalled.addListener(() => {
   if (chrome.sidePanel?.setOptions) {
     chrome.sidePanel.setOptions({ path: "sidepanel.html", enabled: true });
-    logDebug("onInstalled:setOptions", { ok: true });
+    logDebug("onInstalled:setOptions", { ok: true, path: "sidepanel.html (Next.js dashboard)" });
   } else {
     logDebug("onInstalled:setOptions", { ok: false, reason: "no_sidePanel_api" });
   }
@@ -719,7 +723,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   if (chrome.sidePanel?.setOptions) {
     chrome.sidePanel.setOptions({ path: "sidepanel.html", enabled: true });
-    logDebug("onStartup:setOptions", { ok: true });
+    logDebug("onStartup:setOptions", { ok: true, path: "sidepanel.html (Next.js dashboard)" });
   }
   if (chrome.sidePanel?.setPanelBehavior) {
     chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -732,14 +736,15 @@ chrome.action.onClicked.addListener((tab) => {
     if (chrome.sidePanel?.open) {
       try {
         await chrome.sidePanel.open({ tabId: tab.id });
-        await logDebug("actionClick", { outcome: "sidepanel_open", tabId: tab.id });
+        await logDebug("actionClick", { outcome: "sidepanel_open", tabId: tab.id, dashboard: "Next.js" });
         return;
       } catch (error) {
         await logDebug("actionClick", { outcome: "sidepanel_open_failed", error: error?.message });
       }
     }
-    await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
-    await logDebug("actionClick", { outcome: "opened_dashboard_tab" });
+    // Fallback: open Next.js dashboard in new tab
+    await chrome.tabs.create({ url: "http://localhost:3000" });
+    await logDebug("actionClick", { outcome: "opened_nextjs_dashboard_tab" });
   })();
 });
 
@@ -830,6 +835,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!message.tabId) throw new Error("tabId required");
           const result = await extractAndStoreCapture(message.tabId);
           respond({ ok: true, capture: result.capture });
+        } catch (error) {
+          fail(error);
+        }
+      })();
+      return true;
+    }
+    case "EXTRACT_JOB_FROM_TAB": {
+      (async () => {
+        try {
+          if (!message.tabId) throw new Error("tabId required");
+          const extraction = await runExtractionOnTab(message.tabId, { includeDebug: false });
+          respond({ ok: true, data: extraction });
         } catch (error) {
           fail(error);
         }

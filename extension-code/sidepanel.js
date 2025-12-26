@@ -8,6 +8,8 @@ const DEFAULT_UI = {
   detailsTab: "overview"
 };
 
+// DEPRECATED: This file is no longer used - the new sidepanel.html loads the Next.js dashboard
+// Keeping for reference only
 const BACKEND_BASE_URL = "http://localhost:3001";
 
 const elements = {

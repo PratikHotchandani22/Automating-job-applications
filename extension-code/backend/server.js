@@ -147,10 +147,18 @@ app.get("/health", (req, res) => {
 
 app.post("/analyze", async (req, res) => {
   try {
-    const { job_payload, resume_id = "default", options = {} } = req.body || {};
+    const { job_payload, resume_id = "default", master_resume_json, options = {} } = req.body || {};
     if (!job_payload || !job_payload.job) {
       res.status(400).json({ status: "error", message: "job_payload is required" });
       return;
+    }
+
+    // If master_resume_json is provided, save it to the file system
+    if (master_resume_json) {
+      const resumeFilePath = path.join(CONFIG.resumesDir, `${resume_id}.json`);
+      ensureDir(CONFIG.resumesDir);
+      await writeJson(resumeFilePath, master_resume_json);
+      console.log(`Saved master resume JSON to ${resumeFilePath}`);
     }
 
     const runId = uuidv4();
@@ -613,7 +621,7 @@ async function kickOffPipeline({ runId, runDir, jobPayload, resumeId, options })
 async function loadMasterResume(resumeId, appendLog) {
   const filePath = path.join(CONFIG.resumesDir, `${resumeId}.json`);
   if (!fs.existsSync(filePath)) {
-    throw new StageError(`Master resume not found: ${resumeId}`, "bootstrap");
+    throw new StageError(`Master resume not found: ${resumeId}. Please ensure the resume JSON file exists at ${filePath} or provide master_resume_json in the /analyze request body.`, "bootstrap");
   }
   const contents = await fs.promises.readFile(filePath, "utf8");
   const parsed = JSON.parse(contents);

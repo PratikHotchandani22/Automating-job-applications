@@ -4,72 +4,306 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Resume Intelligence Dashboard</title>
-  <link rel="stylesheet" href="sidepanel.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    #dashboard-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      color: #666;
+    }
+    .error {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      padding: 20px;
+      text-align: center;
+    }
+    .error.show {
+      display: flex;
+    }
+    .error h2 {
+      color: #d32f2f;
+      margin-bottom: 10px;
+    }
+    .error p {
+      color: #666;
+      margin-bottom: 20px;
+    }
+    .error button {
+      background: #1976d2;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .error button:hover {
+      background: #1565c0;
+    }
+  </style>
 </head>
 <body>
-  <div class="page">
-    <div id="offlineBanner" class="banner hidden">Backend offline — extraction available; analysis disabled.</div>
-    <header class="top-bar">
-      <div class="top-row">
-        <div class="brand">
-          <div class="logo-dot"></div>
-          <div>
-            <div class="brand-title">Resume Intelligence</div>
-            <div class="brand-subtitle">Always-on dashboard</div>
-          </div>
-        </div>
-        <div id="healthChip" class="chip muted">Checking backend…</div>
-      </div>
-      <div class="controls">
-        <div class="control">
-          <label for="tabSelect">Tab</label>
-          <select id="tabSelect"></select>
-        </div>
-        <div class="control toggle-row">
-          <label for="allWindowsToggle">All windows</label>
-          <input type="checkbox" id="allWindowsToggle">
-        </div>
-        <div class="control small">
-          <button id="refreshTabsBtn" class="ghost">Refresh tabs</button>
-        </div>
-        <div class="control actions">
-          <button id="extractPanelBtn" class="primary">Extract</button>
-          <button id="analyzePanelBtn" class="primary" title="Select a capture first." disabled>Analyze</button>
-        </div>
-      </div>
-      <div id="statusText" class="status-text"></div>
-    </header>
-
-    <main class="grid">
-      <section class="panel" id="capturesSection">
-        <div class="panel-head">
-          <div>
-            <h2>Captures</h2>
-            <p class="hint">Tab-aware captures with confidence + warnings</p>
-          </div>
-          <button id="refreshCapturesBtn" class="ghost small">Reload</button>
-        </div>
-        <div id="capturesList" class="list"></div>
-      </section>
-      <section class="panel" id="runsSection">
-        <div class="panel-head">
-          <div>
-            <h2>Runs</h2>
-            <p class="hint">Pipeline status timeline</p>
-          </div>
-          <button id="refreshRunsBtn" class="ghost small">Reload</button>
-        </div>
-        <div id="runsList" class="list"></div>
-      </section>
-    </main>
-
-    <section class="panel" id="detailsSection">
-      <div class="panel-head">
-        <h2>Details</h2>
-      </div>
-      <div id="detailsContent" class="details">Select a capture or run to view details.</div>
-    </section>
+  <div class="loading" id="loading">
+    Loading dashboard...
   </div>
-  <script src="sidepanel.js"></script>
+  <div class="error" id="error">
+    <h2>Unable to load dashboard</h2>
+    <p>The Next.js dashboard is not running. Please start it with:</p>
+    <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 10px 0; font-size: 12px;">cd dashboard-nextjs && npm run dev</pre>
+    <button onclick="window.location.reload()">Retry</button>
+  </div>
+  <iframe 
+    id="dashboard-frame"
+    src="http://localhost:3000"
+    allow="clipboard-read; clipboard-write"
+    onload="handleFrameLoad()"
+    onerror="handleFrameError()"
+  ></iframe>
+  <script>
+    const NEXTJS_DASHBOARD_URL = "http://localhost:3000";
+    const loadingEl = document.getElementById("loading");
+    const errorEl = document.getElementById("error");
+    const frameEl = document.getElementById("dashboard-frame");
+    
+    let loadTimeout;
+    
+    function handleFrameLoad() {
+      clearTimeout(loadTimeout);
+      loadingEl.style.display = "none";
+      errorEl.classList.remove("show");
+    }
+    
+    function handleFrameError() {
+      clearTimeout(loadTimeout);
+      loadingEl.style.display = "none";
+      errorEl.classList.add("show");
+    }
+    
+    // Show error if frame doesn't load within 5 seconds
+    loadTimeout = setTimeout(() => {
+      // Check if frame actually loaded by trying to access its content
+      try {
+        // If we can't access the frame's location, it might be a CORS issue
+        // but the frame might still be loading
+        const frameDoc = frameEl.contentDocument || frameEl.contentWindow?.document;
+        if (!frameDoc || frameDoc.readyState !== "complete") {
+          handleFrameError();
+        }
+      } catch (e) {
+        // CORS error - frame might still be loading, give it more time
+        setTimeout(() => {
+          try {
+            const frameDoc = frameEl.contentDocument || frameEl.contentWindow?.document;
+            if (!frameDoc) {
+              handleFrameError();
+            }
+          } catch (e2) {
+            // Still can't access, but frame might be working
+            // Don't show error, let user see if it loads
+          }
+        }, 2000);
+      }
+    }, 5000);
+    
+    // Listen for messages from the iframe (dashboard requesting tabs)
+    // Also proactively send tabs when iframe loads
+    frameEl.addEventListener("load", () => {
+      // Wait a bit for the iframe to be ready, then send tabs proactively
+      setTimeout(() => {
+        if (frameEl.contentWindow) {
+          // Proactively send tabs to the iframe when it loads
+          handleGetTabsAndSend();
+        }
+      }, 2000);
+    });
+    
+    async function handleGetTabsAndSend() {
+      try {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:145',message:'Proactively getting tabs for iframe',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        
+        const response = await chrome.runtime.sendMessage({ 
+          action: "GET_TABS", 
+          scope: "currentWindow" 
+        });
+        
+        if (response && response.ok && frameEl.contentWindow) {
+          const tabs = response.tabs || [];
+          // Send tabs directly without extraction for now (faster)
+          frameEl.contentWindow.postMessage({
+            type: "TABS_DATA",
+            tabs: tabs,
+            jobs: [] // Will extract on demand
+          }, NEXTJS_DASHBOARD_URL);
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:160',message:'Proactively sent tabs to iframe',data:{tabsCount:tabs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
+        }
+      } catch (error) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:165',message:'Error proactively getting tabs',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+      }
+    }
+    
+    window.addEventListener("message", async (event) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:171',message:'Message received in sidepanel',data:{origin:event.origin,type:event.data?.type,expectedOrigin:NEXTJS_DASHBOARD_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      
+      // Accept messages from the Next.js dashboard iframe
+      // The iframe is at http://localhost:3000, so messages from it will have that origin
+      const isValidOrigin = event.origin === NEXTJS_DASHBOARD_URL || 
+                            event.origin.startsWith("http://localhost:3000") ||
+                            event.origin === "null" || // Some browsers send "null" for same-origin
+                            !event.origin; // Some contexts have empty origin
+      
+      if (!isValidOrigin && event.origin !== "null" && event.origin) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:180',message:'Message rejected - wrong origin',data:{origin:event.origin,expected:NEXTJS_DASHBOARD_URL,isValid:isValidOrigin},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        return;
+      }
+      
+      // Handle requests from dashboard
+      if (event.data && event.data.type === "GET_TABS") {
+        try {
+          // Get tabs from extension service worker
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:151',message:'Dashboard requested tabs',data:{scope:event.data.scope},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
+          
+          const response = await chrome.runtime.sendMessage({ 
+            action: "GET_TABS", 
+            scope: event.data.scope || "currentWindow" 
+          });
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:159',message:'Got tabs response',data:{ok:response?.ok,tabsCount:response?.tabs?.length||0,error:response?.error},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
+          
+          if (response && response.ok) {
+            // Extract jobs from tabs
+            const tabs = response.tabs || [];
+            const jobsData = [];
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:166',message:'Starting job extraction',data:{tabsCount:tabs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            
+            for (const tab of tabs) {
+              try {
+                // Extract job from tab - we need the full extraction, not just the capture
+                // First, inject content script and extract
+                const extractResponse = await chrome.runtime.sendMessage({
+                  action: "EXTRACT_JOB_FROM_TAB",
+                  tabId: tab.id
+                });
+                
+                if (extractResponse && extractResponse.ok && extractResponse.data) {
+                  const extraction = extractResponse.data;
+                  jobsData.push({
+                    id: tab.id,
+                    url: tab.url || extraction.meta?.url,
+                    title: extraction.job?.title || tab.title,
+                    company: extraction.job?.company,
+                    location: extraction.job?.location,
+                    description: extraction.job?.description_text || "",
+                    tags: extraction.meta?.user_tags || [],
+                    notes: extraction.meta?.notes || "",
+                  });
+                } else {
+                  // Fallback: use tab info only
+                  jobsData.push({
+                    id: tab.id,
+                    url: tab.url,
+                    title: tab.title,
+                    company: "",
+                    location: "",
+                    description: "",
+                    tags: [],
+                    notes: "",
+                  });
+                }
+              } catch (e) {
+                console.error("Failed to extract from tab:", tab.id, e);
+                // Still add the tab with basic info
+                jobsData.push({
+                  id: tab.id,
+                  url: tab.url,
+                  title: tab.title,
+                  company: "",
+                  location: "",
+                  description: "",
+                  tags: [],
+                  notes: "",
+                });
+              }
+            }
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:195',message:'Sending tabs to dashboard',data:{tabsCount:response.tabs.length,jobsCount:jobsData.length,frameExists:!!frameEl.contentWindow},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            
+            // Send tabs and jobs back to dashboard iframe
+            if (frameEl && frameEl.contentWindow) {
+              try {
+                frameEl.contentWindow.postMessage({
+                  type: "TABS_DATA",
+                  tabs: response.tabs,
+                  jobs: jobsData
+                }, NEXTJS_DASHBOARD_URL);
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:205',message:'postMessage sent to iframe',data:{targetOrigin:NEXTJS_DASHBOARD_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
+              } catch (e) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:210',message:'postMessage to iframe failed',data:{error:String(e)},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
+              }
+            } else {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:214',message:'No iframe window available',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
+            }
+          }
+          } catch (error) {
+            console.error("Failed to get tabs:", error);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.html:220',message:'Error getting tabs',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            if (frameEl && frameEl.contentWindow) {
+              frameEl.contentWindow.postMessage({
+                type: "TABS_ERROR",
+                error: error.message
+              }, NEXTJS_DASHBOARD_URL);
+            }
+          }
+      }
+    });
+  </script>
 </body>
 </html>
