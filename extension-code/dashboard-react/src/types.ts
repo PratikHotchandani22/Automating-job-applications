@@ -61,6 +61,23 @@ export interface RunRecord {
   debugNotes?: string;
 }
 
+export interface ResumeMeta {
+  id: string;
+  label: string;
+  file: string;
+  isDefault: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  latexFile?: string | null;
+  latexUpdatedAt?: string | null;
+}
+
+export interface ResumeState {
+  defaultId: string | null;
+  selectedId: string | null;
+  resumes: ResumeMeta[];
+}
+
 export type DateRangeFilter = "today" | "7d" | "30d" | "all";
 export type StatusFilter = "all" | "done" | "running" | "error";
 export type PlatformFilter = "all" | "linkedin" | "greenhouse" | "workday" | "other";
@@ -116,6 +133,7 @@ export interface StartRunUIState {
   selectedTabIds?: number[] | null;
   activeQueueId?: string | null;
   detailsTab: "overview" | "explain";
+  selectedResumeId?: string | null;
 }
 
 export type ChatRole = "user" | "assistant";

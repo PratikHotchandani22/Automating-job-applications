@@ -36,6 +36,7 @@ function ensureConfigShape(config = {}) {
   if (!config.weights.edge) config.weights.edge = {};
   if (!config.weights.fill) config.weights.fill = {};
   if (!config.thresholds.redundancy) config.thresholds.redundancy = {};
+  if (!config.guards) config.guards = {};
   return config;
 }
 
@@ -287,6 +288,9 @@ function runSelectionCore({
   const thresholds = config.thresholds || {};
   const budgets = config.budgets || {};
   const weights = config.weights || {};
+  const guards = config.guards || {};
+  const guardPerRole = guards.top_per_role || 0;
+  const guardGlobal = guards.top_global || 0;
   const roleCaps = buildRoleCaps(baselineMeta, budgets.per_role_caps || {});
   const counters = { experience: 0, projects: 0, perRole: {} };
   const coverageState = {};
@@ -355,6 +359,94 @@ function runSelectionCore({
 
   const isReqCapExceeded = (reqId) =>
     (reqSelectionCounts[reqId] || 0) >= (budgets.max_bullets_per_requirement || Infinity);
+
+  // Guard selection: lock top bullets before the main loops.
+  const bestPerParent = {};
+  const bestEntriesAll = [];
+
+  Object.values(evidenceMap).forEach((bullet) => {
+    if (bullet.parent_type !== "experience" && bullet.parent_type !== "project") return;
+    let best = null;
+    (requirements || []).forEach((req) => {
+      const rel = getRelScore(relevanceLookup, bullet.bullet_id, req.req_id);
+      const minRel = req.type === "must" ? thresholds.must_min_rel : thresholds.nice_min_rel;
+      if (rel < minRel) return;
+      if (!evidenceTierAllowed(bullet.tier, req.type, thresholds.min_evidence_tier_nice)) return;
+      const riskPenalty = deriveRiskPenalty(bullet);
+      const edgeScore = scoreEdge({
+        rel,
+        evidence: bullet.evidence_score,
+        redundancyPenalty: 0,
+        riskPenalty,
+        weights: weights.edge
+      });
+      if (!best || edgeScore > best.edgeScore) {
+        best = {
+          bulletId: bullet.bullet_id,
+          parent_id: bullet.parent_id,
+          parent_type: bullet.parent_type,
+          req,
+          rel,
+          edgeScore
+        };
+      }
+    });
+    if (best) {
+      bestEntriesAll.push(best);
+      const key = best.parent_id || "_unknown_parent";
+      if (!bestPerParent[key]) bestPerParent[key] = [];
+      bestPerParent[key].push(best);
+    }
+  });
+
+  const trySelectGuardEntry = (entry) => {
+    if (!entry || selected[entry.bulletId]) return false;
+    if (isReqCapExceeded(entry.req.req_id)) return false;
+    const redundancyInfo = computeRedundancy(vectorLookup[entry.bulletId], selectedVectors, thresholds.redundancy);
+    if (redundancyInfo.blocked) {
+      redundancyDrops.add(entry.bulletId);
+      return false;
+    }
+    const bullet = evidenceMap[entry.bulletId];
+    if (!applyBudgetCheck({ bullet, counters, budgets, roleCaps })) {
+      budgetDrops.add(entry.bulletId);
+      return false;
+    }
+    selectBullet(entry.bulletId, entry.req, entry.rel, redundancyInfo);
+    return true;
+  };
+
+  if (guardPerRole > 0) {
+    Object.values(bestPerParent).forEach((entries) => {
+      const sorted = [...entries].sort((a, b) => {
+        if (b.edgeScore !== a.edgeScore) return b.edgeScore - a.edgeScore;
+        return a.bulletId.localeCompare(b.bulletId);
+      });
+      let placed = 0;
+      for (const entry of sorted) {
+        if (placed >= guardPerRole) break;
+        if (trySelectGuardEntry(entry)) {
+          placed += 1;
+        }
+      }
+    });
+  }
+
+  if (guardGlobal > 0) {
+    const sortedGlobal = bestEntriesAll
+      .filter((entry) => !selected[entry.bulletId])
+      .sort((a, b) => {
+        if (b.edgeScore !== a.edgeScore) return b.edgeScore - a.edgeScore;
+        return a.bulletId.localeCompare(b.bulletId);
+      });
+    let placed = 0;
+    for (const entry of sortedGlobal) {
+      if (placed >= guardGlobal) break;
+      if (trySelectGuardEntry(entry)) {
+        placed += 1;
+      }
+    }
+  }
 
   orderedReqs.forEach((req) => {
     const minRel = req.type === "must" ? thresholds.must_min_rel : thresholds.nice_min_rel;

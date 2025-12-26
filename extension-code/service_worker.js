@@ -8,10 +8,17 @@ const DEFAULT_UI_STATE = {
   selectedRunId: null,
   selectedTabId: null,
   selectedTabIds: [],
-  detailsTab: "overview"
+  detailsTab: "overview",
+  selectedResumeId: null
 };
 
-const STORAGE_KEYS = ["captures", "runs", "ui_state"];
+const DEFAULT_RESUME_STATE = {
+  defaultId: "default",
+  selectedId: null,
+  resumes: []
+};
+
+const STORAGE_KEYS = ["captures", "runs", "ui_state", "resume_state"];
 const DEBUG_LOG_KEY = "debug_logs";
 const DEBUG_LOG_LIMIT = 80;
 
@@ -169,11 +176,22 @@ const makeShortQueueId = () => {
   return out;
 };
 
-const getDefaultedState = (state) => ({
-  captures: state.captures || [],
-  runs: state.runs || [],
-  ui_state: { ...DEFAULT_UI_STATE, ...(state.ui_state || {}) }
-});
+const getDefaultedState = (state) => {
+  const resume_state = { ...DEFAULT_RESUME_STATE, ...(state.resume_state || {}) };
+  if (!resume_state.selectedId || !resume_state.resumes?.some((r) => r.id === resume_state.selectedId)) {
+    resume_state.selectedId = resume_state.defaultId || (resume_state.resumes && resume_state.resumes[0]?.id) || null;
+  }
+  const ui_state = { ...DEFAULT_UI_STATE, ...(state.ui_state || {}) };
+  if (!ui_state.selectedResumeId) {
+    ui_state.selectedResumeId = resume_state.selectedId || null;
+  }
+  return {
+    captures: state.captures || [],
+    runs: state.runs || [],
+    ui_state,
+    resume_state
+  };
+};
 
 const readState = async () => {
   const state = await storageGet(STORAGE_KEYS);
@@ -185,6 +203,86 @@ const persistUiState = async (partial) => {
   const next = { ...ui_state, ...partial };
   await storageSet({ ui_state: next });
   return next;
+};
+
+const normalizeResumeState = (incoming, prevSelectedId, prevDefaultId) => {
+  const resumes = Array.isArray(incoming?.resumes) ? incoming.resumes : [];
+  const defaultCandidate = incoming?.defaultId || prevDefaultId || null;
+  const defaultId = resumes.some((r) => r.id === defaultCandidate)
+    ? defaultCandidate
+    : resumes[0]?.id || defaultCandidate || null;
+  const selectedCandidate = incoming?.selectedId || prevSelectedId || defaultCandidate || defaultId;
+  const selectedId = resumes.some((r) => r.id === selectedCandidate)
+    ? selectedCandidate
+    : defaultId || resumes[0]?.id || null;
+  return {
+    defaultId: defaultId || null,
+    selectedId: selectedId || null,
+    resumes
+  };
+};
+
+const persistResumeState = async (incoming) => {
+  const state = await readState();
+  const prevSelected = state.ui_state?.selectedResumeId || state.resume_state?.selectedId || null;
+  const prevDefault = state.resume_state?.defaultId || null;
+  const normalized = normalizeResumeState(incoming, prevSelected, prevDefault);
+  await storageSet({ resume_state: normalized });
+  await persistUiState({ selectedResumeId: normalized.selectedId || null });
+  return normalized;
+};
+
+const refreshResumeStateFromBackend = async () => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/resumes`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      throw new Error(data?.message || `Resume list failed (${response.status})`);
+    }
+    return persistResumeState({ defaultId: data.defaultId || null, resumes: data.resumes || [] });
+  } catch (error) {
+    const message =
+      (error?.message || "").includes("Failed to fetch") || (error?.message || "").includes("NetworkError")
+        ? "Backend offline — resume actions disabled."
+        : error?.message || "Resume list failed";
+    throw new Error(message);
+  }
+};
+
+const callResumeApi = async (url, options = {}) => {
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      throw new Error(data?.message || `Resume request failed (${response.status})`);
+    }
+    if (data?.resumes) {
+      await persistResumeState({ defaultId: data.defaultId || null, resumes: data.resumes || [], selectedId: data.resume?.id });
+    }
+    return data;
+  } catch (error) {
+    const message =
+      (error?.message || "").includes("Failed to fetch") || (error?.message || "").includes("NetworkError")
+        ? "Backend offline — resume actions disabled."
+        : error?.message || "Resume request failed";
+    throw new Error(message);
+  }
+};
+
+const setSelectedResumeLocally = async (resumeId) => {
+  const state = await readState();
+  const resumes = state.resume_state?.resumes || [];
+  const nextSelected = resumes.some((r) => r.id === resumeId)
+    ? resumeId
+    : state.resume_state?.defaultId || resumes[0]?.id || resumeId || null;
+  const nextState = {
+    ...DEFAULT_RESUME_STATE,
+    ...state.resume_state,
+    selectedId: nextSelected
+  };
+  await storageSet({ resume_state: nextState });
+  await persistUiState({ selectedResumeId: nextSelected || null });
+  return nextState;
 };
 
 const upsertCapture = async (capture) => {
@@ -409,9 +507,9 @@ const pollRunStatus = async ({ backendRunId, clientRunId }) => {
   }
 };
 
-const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdOverride = null) => {
-  const { captures } = await readState();
-  const capture = captures.find((c) => c.captureId === captureId);
+const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdOverride = null, resumeIdOverride = null) => {
+  const state = await readState();
+  const capture = state.captures.find((c) => c.captureId === captureId);
   if (!capture) {
     throw new Error("Capture not found");
   }
@@ -424,6 +522,12 @@ const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdO
   }
 
   const clientRunId = clientRunIdOverride || `run_${Date.now().toString(16)}`;
+  const selectedResumeId =
+    resumeIdOverride ||
+    state.ui_state?.selectedResumeId ||
+    state.resume_state?.selectedId ||
+    state.resume_state?.defaultId ||
+    "default";
   const queueMeta = queueContext || { queueId: makeShortQueueId(), queuePosition: 1, queueSize: 1, queueLabel: null };
   const baseRun = {
     runId: clientRunId,
@@ -437,6 +541,7 @@ const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdO
     status: "EXTRACTING",
     stage: "EXTRACTING",
     result: "pending",
+    resumeId: selectedResumeId,
     artifacts: {},
     tab: capture.tab,
     platform: capture.platform,
@@ -454,7 +559,7 @@ const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdO
 
     const payload = {
       job_payload: freshExtraction,
-      resume_id: "default",
+      resume_id: selectedResumeId,
       options: {
         page_limit: 1,
         style: "ats_clean",
@@ -539,12 +644,19 @@ const handleAnalyzeCapture = async (captureId, queueContext = null, clientRunIdO
   }
 };
 
-const handleStartQueue = async (tabIds = []) => {
+const handleStartQueue = async (tabIds = [], resumeIdOverride = null) => {
   const uniqueIds = Array.from(new Set((tabIds || []).filter((id) => Number.isFinite(Number(id)))));
   if (!uniqueIds.length) {
     throw new Error("No tabs selected for queue");
   }
 
+  const state = await readState();
+  const resolvedResumeId =
+    resumeIdOverride ||
+    state.ui_state?.selectedResumeId ||
+    state.resume_state?.selectedId ||
+    state.resume_state?.defaultId ||
+    "default";
   const queueId = makeShortQueueId();
   const tabsMeta = (
     await Promise.all(
@@ -591,6 +703,7 @@ const handleStartQueue = async (tabIds = []) => {
         queueLabel: null,
         captureId: capture.captureId,
         startedAt: new Date().toISOString(),
+        resumeId: resolvedResumeId,
         status: "EXTRACTING",
         stage: "EXTRACTING",
         result: "pending",
@@ -658,7 +771,8 @@ const handleStartQueue = async (tabIds = []) => {
           queueSize,
           queueLabel: null
         },
-        clientRunId
+        clientRunId,
+        resolvedResumeId
       );
     } catch (error) {
       results.push({ ok: false, tabId: capture.tab?.tabId, error: error?.message || "Analyze failed", position });
@@ -776,6 +890,114 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((err) => fail(err));
       return true;
     }
+    case "LIST_RESUMES": {
+      (async () => {
+        try {
+          const resume_state = await refreshResumeStateFromBackend();
+          respond({ ok: true, resume_state });
+        } catch (error) {
+          const fallback = (await readState()).resume_state || DEFAULT_RESUME_STATE;
+          respond({ ok: false, error: error?.message || "Unable to load resumes", resume_state: fallback });
+        }
+      })();
+      return true;
+    }
+    case "UPLOAD_RESUME": {
+      (async () => {
+        try {
+          const rawResume = message.resume || message.resumeText || null;
+          let parsed = rawResume;
+          if (typeof rawResume === "string") {
+            parsed = JSON.parse(rawResume);
+          }
+          if (!parsed || typeof parsed !== "object") {
+            throw new Error("Resume JSON is required");
+          }
+          await callResumeApi(`${BACKEND_BASE_URL}/resumes`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resume: parsed, id: message.id || parsed.id, label: message.label || parsed.label })
+          });
+          const { resume_state } = await readState();
+          respond({ ok: true, resume_state });
+        } catch (error) {
+          const fallback = (await readState()).resume_state || DEFAULT_RESUME_STATE;
+          respond({ ok: false, error: error?.message || "Upload failed", resume_state: fallback });
+        }
+      })();
+      return true;
+    }
+    case "UPLOAD_RESUME_LATEX": {
+      (async () => {
+        try {
+          if (!message.id) throw new Error("id required");
+          if (typeof message.latex !== "string") throw new Error("latex text required");
+          await callResumeApi(`${BACKEND_BASE_URL}/resumes/${encodeURIComponent(message.id)}/latex`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ latex: message.latex })
+          });
+          const { resume_state } = await readState();
+          respond({ ok: true, resume_state });
+        } catch (error) {
+          const fallback = (await readState()).resume_state || DEFAULT_RESUME_STATE;
+          respond({ ok: false, error: error?.message || "Upload failed", resume_state: fallback });
+        }
+      })();
+      return true;
+    }
+    case "RENAME_RESUME": {
+      (async () => {
+        try {
+          if (!message.id) throw new Error("id required");
+          await callResumeApi(`${BACKEND_BASE_URL}/resumes/${encodeURIComponent(message.id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: message.newId || message.id, label: message.label || null })
+          });
+          const { resume_state } = await readState();
+          respond({ ok: true, resume_state });
+        } catch (error) {
+          const fallback = (await readState()).resume_state || DEFAULT_RESUME_STATE;
+          respond({ ok: false, error: error?.message || "Rename failed", resume_state: fallback });
+        }
+      })();
+      return true;
+    }
+    case "DELETE_RESUME": {
+      (async () => {
+        try {
+          if (!message.id) throw new Error("id required");
+          await callResumeApi(`${BACKEND_BASE_URL}/resumes/${encodeURIComponent(message.id)}`, { method: "DELETE" });
+          const { resume_state } = await readState();
+          respond({ ok: true, resume_state });
+        } catch (error) {
+          const fallback = (await readState()).resume_state || DEFAULT_RESUME_STATE;
+          respond({ ok: false, error: error?.message || "Delete failed", resume_state: fallback });
+        }
+      })();
+      return true;
+    }
+    case "SET_DEFAULT_RESUME": {
+      (async () => {
+        try {
+          if (!message.id) throw new Error("id required");
+          await callResumeApi(`${BACKEND_BASE_URL}/resumes/${encodeURIComponent(message.id)}/default`, { method: "POST" });
+          const { resume_state } = await readState();
+          respond({ ok: true, resume_state });
+        } catch (error) {
+          const fallback = (await readState()).resume_state || DEFAULT_RESUME_STATE;
+          respond({ ok: false, error: error?.message || "Unable to set default", resume_state: fallback });
+        }
+      })();
+      return true;
+    }
+    case "SET_SELECTED_RESUME": {
+      setSelectedResumeLocally(message.id || null)
+        .then((resume_state) => respond({ ok: true, resume_state }))
+        .catch((err) => fail(err));
+      return true;
+    }
     case "GET_TABS": {
       handleGetTabs(message.scope || "currentWindow")
         .then((tabs) => respond({ ok: true, tabs }))
@@ -783,7 +1005,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     case "START_QUEUE": {
-      handleStartQueue(message.tabIds || [])
+      handleStartQueue(message.tabIds || [], message.resumeId || null)
         .then((output) => respond({ ok: true, ...output }))
         .catch((err) => fail(err));
       return true;
@@ -852,7 +1074,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       (async () => {
         try {
           if (!message.captureId) throw new Error("captureId required");
-          const output = await handleAnalyzeCapture(message.captureId, message.queue || null, message.clientRunId || null);
+          const output = await handleAnalyzeCapture(
+            message.captureId,
+            message.queue || null,
+            message.clientRunId || null,
+            message.resumeId || null
+          );
           respond({ ok: true, ...output });
         } catch (error) {
           fail(error);

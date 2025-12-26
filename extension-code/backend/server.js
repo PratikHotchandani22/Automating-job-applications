@@ -24,6 +24,37 @@ const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const DEFAULT_VALIDATION_TAILOR_MODELS = ["gpt-5", "gpt-5.2", "gpt-5-mini", "gpt-5-nano", "gpt-4o-mini"];
+
+const parseModelList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean).map((v) => v.toString());
+  return value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+};
+
+const sanitizeModelName = (modelName) => {
+  const safe = modelName
+    ? modelName.toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+    : "";
+  return safe || "model";
+};
+
+const FIXED_TEMPERATURE_MODELS = [/^gpt-5(\.|$)/i, /^gpt-5\\.2/i, /^gpt-5-mini/i, /^gpt-5-nano/i];
+const getTemperatureForModel = (model, desired) => {
+  if (desired === undefined || desired === null) return undefined;
+  const name = (model || "").toString();
+  if (FIXED_TEMPERATURE_MODELS.some((re) => re.test(name))) return undefined;
+  return desired;
+};
+const applyTemperature = (model, desired, request) => {
+  const temp = getTemperatureForModel(model, desired);
+  if (temp !== undefined) request.temperature = temp;
+  return request;
+};
+
 const CONFIG = {
   port: Number(process.env.PORT || 3001),
   runsRoot: process.env.RUNS_ROOT || path.join(__dirname, "runs"),
@@ -34,6 +65,15 @@ const CONFIG = {
   latexTemplate: process.env.LATEX_TEMPLATE || path.join(__dirname, "templates", "resume_template.tex"),
   latexEngine: process.env.LATEX_ENGINE || "pdflatex",
   tailorModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  validationTailorModels:
+    (() => {
+      const raw =
+        process.env.TAILOR_VALIDATION_MODELS ||
+        process.env.OPENAI_MODEL_VALIDATION_LIST ||
+        DEFAULT_VALIDATION_TAILOR_MODELS.join(",");
+      if (raw === "0" || raw === "false") return [];
+      return parseModelList(raw);
+    })(),
   chatModel: process.env.OPENAI_MODEL_CHAT || process.env.OPENAI_MODEL || "gpt-4o-mini",
   editModel: process.env.OPENAI_MODEL_EDIT || process.env.OPENAI_MODEL_CHAT || process.env.OPENAI_MODEL || "gpt-4o-mini",
   rubricModel: process.env.OPENAI_MODEL_RUBRIC || process.env.OPENAI_MODEL || "gpt-4o-mini",
@@ -58,6 +98,8 @@ const CONFIG = {
 };
 
 const IS_TEST = process.env.NODE_ENV === "test";
+const RESUME_REGISTRY_FILE = "registry.json";
+const RESUME_REGISTRY_PATH = path.join(CONFIG.resumesDir, RESUME_REGISTRY_FILE);
 
 const openai = CONFIG.mockMode || IS_TEST ? null : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = CONFIG.mockMode || IS_TEST ? null : new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -71,6 +113,7 @@ ensureDir(CONFIG.embedCacheRoot);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+app.use("/resumes/files", express.static(CONFIG.resumesDir));
 
 const RUNS_ROOT_RESOLVED = path.resolve(CONFIG.runsRoot);
 function getSafeRunDir(runId) {
@@ -80,8 +123,9 @@ function getSafeRunDir(runId) {
 }
 
 const PROMPT_CACHE = {};
-const LATEX_TEMPLATE = fs.existsSync(CONFIG.latexTemplate)
-  ? fs.readFileSync(CONFIG.latexTemplate, "utf8")
+const DEFAULT_LATEX_TEMPLATE_PATH = CONFIG.latexTemplate;
+const DEFAULT_LATEX_TEMPLATE = fs.existsSync(DEFAULT_LATEX_TEMPLATE_PATH)
+  ? fs.readFileSync(DEFAULT_LATEX_TEMPLATE_PATH, "utf8")
   : "";
 const LOCK_MARKERS = {
   header: {
@@ -93,7 +137,13 @@ const LOCK_MARKERS = {
     end: "%===LOCK_EDUCATION_END==="
   }
 };
-const TEMPLATE_LOCKS = extractLockedBlocks(LATEX_TEMPLATE, LOCK_MARKERS);
+let DEFAULT_TEMPLATE_LOCKS;
+try {
+  DEFAULT_TEMPLATE_LOCKS = extractLockedBlocks(DEFAULT_LATEX_TEMPLATE, LOCK_MARKERS);
+} catch (error) {
+  console.error(`Failed to load default LaTeX template from ${DEFAULT_LATEX_TEMPLATE_PATH}:`, error?.message || error);
+  throw error;
+}
 const JD_RUBRIC_SCHEMA_V1 = {
   version: "jd_rubric_v1",
   job_meta: {
@@ -145,9 +195,240 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.get("/resumes", async (req, res) => {
+  try {
+    const state = await listResumesWithMeta();
+    res.json({ ok: true, resumes: state.resumes, defaultId: state.defaultId });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || "Failed to list resumes" });
+  }
+});
+
+app.post("/resumes", async (req, res) => {
+  try {
+    const { resume, id: idRaw, label } = normalizeResumePayload(req.body || {}, { allowEmptyResume: false });
+    const resumeId = sanitizeResumeId(idRaw || resume?.id);
+    const incomingLatex = req.body?.latex;
+    if (incomingLatex !== undefined && typeof incomingLatex !== "string") {
+      res.status(400).json({ ok: false, message: "latex must be a string" });
+      return;
+    }
+    if (typeof incomingLatex === "string") {
+      validateLatexTemplateText(incomingLatex);
+    }
+    if (!resume || typeof resume !== "object") {
+      res.status(400).json({ ok: false, message: "Resume JSON is required" });
+      return;
+    }
+    if (!resumeId) {
+      res.status(400).json({ ok: false, message: "Resume id is required" });
+      return;
+    }
+    const targetPath = getResumePath(resumeId);
+    const existed = fs.existsSync(targetPath);
+    resume.id = resumeId;
+    await writeJson(targetPath, resume);
+    if (typeof incomingLatex === "string") {
+      await fs.promises.writeFile(getResumeLatexPath(resumeId), incomingLatex, "utf8");
+    }
+
+    const registry = await readResumeRegistry();
+    const labels = { ...(registry.labels || {}) };
+    if (label) labels[resumeId] = label;
+    let defaultId = registry.defaultId;
+    if (!defaultId) {
+      defaultId = resumeId;
+    }
+    await writeResumeRegistry({ defaultId, labels });
+    const state = await listResumesWithMeta({ defaultId, labels });
+    const createdMeta = state.resumes.find((r) => r.id === resumeId) || null;
+    res.status(existed ? 200 : 201).json({ ok: true, resume: createdMeta, resumes: state.resumes, defaultId: state.defaultId });
+  } catch (error) {
+    res.status(400).json({ ok: false, message: error?.message || "Failed to save resume" });
+  }
+});
+
+app.put("/resumes/:id", async (req, res) => {
+  try {
+    const currentId = sanitizeResumeId(req.params.id);
+    if (!currentId) {
+      res.status(400).json({ ok: false, message: "Invalid resume id" });
+      return;
+    }
+    const currentPath = getResumePath(currentId);
+    if (!fs.existsSync(currentPath)) {
+      res.status(404).json({ ok: false, message: "Resume not found" });
+      return;
+    }
+
+    const incomingLatex = req.body?.latex;
+    if (incomingLatex !== undefined && typeof incomingLatex !== "string") {
+      res.status(400).json({ ok: false, message: "latex must be a string" });
+      return;
+    }
+    if (typeof incomingLatex === "string") {
+      validateLatexTemplateText(incomingLatex);
+    }
+
+    const { resume: incoming, id: nextIdRaw, label } = normalizeResumePayload(req.body || {}, { allowEmptyResume: true });
+    const nextId = sanitizeResumeId(nextIdRaw || incoming?.id || currentId);
+    if (!nextId) {
+      res.status(400).json({ ok: false, message: "New resume id is required" });
+      return;
+    }
+    const nextPath = getResumePath(nextId);
+    if (nextId !== currentId && fs.existsSync(nextPath)) {
+      res.status(400).json({ ok: false, message: "A resume with that id already exists" });
+      return;
+    }
+
+    const currentLatexPath = getResumeLatexPath(currentId);
+    const nextLatexPath = getResumeLatexPath(nextId);
+    let payload = incoming;
+    const hasResumeContent =
+      payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      Object.keys(payload).some((key) => !["id", "label", "latex"].includes(key));
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || !hasResumeContent) {
+      const existingText = await fs.promises.readFile(currentPath, "utf8");
+      payload = JSON.parse(existingText);
+    }
+    payload.id = nextId;
+    await writeJson(nextPath, payload);
+    if (nextId !== currentId) {
+      await fs.promises.unlink(currentPath);
+      if (fs.existsSync(currentLatexPath)) {
+        await fs.promises
+          .rename(currentLatexPath, nextLatexPath)
+          .catch(async () => {
+            await fs.promises.copyFile(currentLatexPath, nextLatexPath);
+            await fs.promises.unlink(currentLatexPath).catch(() => {});
+          });
+      }
+    }
+    if (typeof incomingLatex === "string") {
+      await fs.promises.writeFile(nextLatexPath, incomingLatex, "utf8");
+    }
+
+    const registry = await readResumeRegistry();
+    const labels = { ...(registry.labels || {}) };
+    const existingLabel = labels[currentId];
+    if (nextId !== currentId && existingLabel) delete labels[currentId];
+    if (label) {
+      labels[nextId] = label;
+    } else if (existingLabel) {
+      labels[nextId] = existingLabel;
+    }
+    const defaultId = registry.defaultId === currentId ? nextId : registry.defaultId;
+    await writeResumeRegistry({ defaultId, labels });
+    const state = await listResumesWithMeta({ defaultId, labels });
+    const updatedMeta = state.resumes.find((r) => r.id === nextId) || null;
+    res.json({ ok: true, resume: updatedMeta, resumes: state.resumes, defaultId: state.defaultId });
+  } catch (error) {
+    res.status(400).json({ ok: false, message: error?.message || "Failed to update resume" });
+  }
+});
+
+app.delete("/resumes/:id", async (req, res) => {
+  try {
+    const targetId = sanitizeResumeId(req.params.id);
+    if (!targetId) {
+      res.status(400).json({ ok: false, message: "Invalid resume id" });
+      return;
+    }
+
+    const state = await listResumesWithMeta();
+    const existing = state.resumes.find((r) => r.id === targetId);
+    if (!existing) {
+      res.status(404).json({ ok: false, message: "Resume not found" });
+      return;
+    }
+    if (existing.isDefault && state.resumes.length <= 1) {
+      res.status(400).json({ ok: false, message: "Cannot delete the only default resume" });
+      return;
+    }
+
+    const filePath = getResumePath(targetId);
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+    }
+    const latexPath = getResumeLatexPath(targetId);
+    if (fs.existsSync(latexPath)) {
+      await fs.promises.unlink(latexPath);
+    }
+    const registry = await readResumeRegistry();
+    const labels = { ...(registry.labels || {}) };
+    if (labels[targetId]) delete labels[targetId];
+    let defaultId = registry.defaultId;
+    if (defaultId === targetId) {
+      const fallback = state.resumes.find((r) => r.id !== targetId);
+      defaultId = fallback ? fallback.id : null;
+    }
+    await writeResumeRegistry({ defaultId, labels });
+    const nextState = await listResumesWithMeta({ defaultId, labels });
+    res.json({ ok: true, resumes: nextState.resumes, defaultId: nextState.defaultId });
+  } catch (error) {
+    res.status(400).json({ ok: false, message: error?.message || "Failed to delete resume" });
+  }
+});
+
+app.post("/resumes/:id/default", async (req, res) => {
+  try {
+    const resumeId = sanitizeResumeId(req.params.id);
+    if (!resumeId) {
+      res.status(400).json({ ok: false, message: "Invalid resume id" });
+      return;
+    }
+    const state = await listResumesWithMeta();
+    if (!state.resumes.some((r) => r.id === resumeId)) {
+      res.status(404).json({ ok: false, message: "Resume not found" });
+      return;
+    }
+    const registry = await readResumeRegistry();
+    await writeResumeRegistry({ defaultId: resumeId, labels: registry.labels || {} });
+    const nextState = await listResumesWithMeta({ defaultId: resumeId, labels: registry.labels });
+    res.json({ ok: true, resumes: nextState.resumes, defaultId: nextState.defaultId });
+  } catch (error) {
+    res.status(400).json({ ok: false, message: error?.message || "Failed to set default resume" });
+  }
+});
+
+app.post("/resumes/:id/latex", async (req, res) => {
+  try {
+    const resumeId = sanitizeResumeId(req.params.id);
+    if (!resumeId) {
+      res.status(400).json({ ok: false, message: "Invalid resume id" });
+      return;
+    }
+    const state = await listResumesWithMeta();
+    if (!state.resumes.some((r) => r.id === resumeId)) {
+      res.status(404).json({ ok: false, message: "Resume not found" });
+      return;
+    }
+    const latexText = req.body?.latex;
+    if (typeof latexText !== "string") {
+      res.status(400).json({ ok: false, message: "latex must be a string" });
+      return;
+    }
+    validateLatexTemplateText(latexText);
+    await fs.promises.writeFile(getResumeLatexPath(resumeId), latexText, "utf8");
+    const nextState = await listResumesWithMeta();
+    const updated = nextState.resumes.find((r) => r.id === resumeId) || null;
+    res.json({ ok: true, resume: updated, resumes: nextState.resumes, defaultId: nextState.defaultId });
+  } catch (error) {
+    res.status(400).json({ ok: false, message: error?.message || "Failed to save LaTeX template" });
+  }
+});
+
 app.post("/analyze", async (req, res) => {
   try {
-    const { job_payload, resume_id = "default", options = {} } = req.body || {};
+    const { job_payload, resume_id, options = {} } = req.body || {};
+    let resumeId = sanitizeResumeId(resume_id);
+    if (!resumeId) {
+      const registry = await readResumeRegistry();
+      resumeId = registry.defaultId || "default";
+    }
     if (!job_payload || !job_payload.job) {
       res.status(400).json({ status: "error", message: "job_payload is required" });
       return;
@@ -171,7 +452,7 @@ app.post("/analyze", async (req, res) => {
       runId,
       runDir,
       jobPayload: job_payload,
-      resumeId: resume_id,
+      resumeId,
       options
     }).catch((err) => {
       // Errors are written inside kickOffPipeline, but this is a safeguard.
@@ -297,6 +578,109 @@ app.post("/runs/:runId/compile-pdf", async (req, res) => {
   } catch (error) {
     const message = error?.message || "Compile failed";
     res.status(400).json({ ok: false, message });
+  }
+});
+
+app.post("/runs/:runId/generate-latex-variants", async (req, res) => {
+  const runId = req.params.runId;
+  const runDir = getSafeRunDir(runId);
+  if (!runDir) {
+    res.status(400).json({ ok: false, message: "Invalid run ID" });
+    return;
+  }
+  if (!fs.existsSync(runDir)) {
+    res.status(404).json({ ok: false, message: "Run not found" });
+    return;
+  }
+  const { models, force } = req.body || {};
+  const modelFilter =
+    Array.isArray(models) && models.length
+      ? new Set(models.map((m) => m && sanitizeModelName(m)).filter(Boolean))
+      : null;
+
+  const appendLog = (line) => {
+    const stamp = new Date().toISOString();
+    logs.push(`[${stamp}] ${line}`);
+  };
+
+  const logs = [];
+  try {
+    const metaPath = path.join(runDir, "meta.json");
+    const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, "utf8")) : {};
+    const resumeId = meta.resume_id || meta.resumeId || meta?.resume?.id || "default";
+    const latexPrompt = getPrompt("latex", CONFIG.promptsVersion);
+    const latexTemplate = await loadLatexTemplateForResume(resumeId, appendLog);
+
+    const files = fs.readdirSync(runDir);
+    const tailoredFiles = files
+      .filter((f) => f === "tailored.json" || (f.startsWith("tailored__") && f.endsWith(".json")))
+      .map((file) => {
+        const match = file.match(/^tailored__(.+)\.json$/);
+        const safeModel = match ? match[1] : sanitizeModelName(meta.tailorModel || "canonical");
+        const model =
+          (meta.tailor_variants || []).find((v) => v.safe_model === safeModel)?.model ||
+          (match ? match[1] : meta.tailorModel || "canonical");
+        return {
+          file,
+          model,
+          safeModel,
+          isCanonical: file === "tailored.json"
+        };
+      });
+
+    if (!tailoredFiles.length) {
+      res.status(400).json({ ok: false, message: "No tailored JSON artifacts found for this run" });
+      return;
+    }
+
+    const results = [];
+    for (const variant of tailoredFiles) {
+      if (modelFilter && !variant.isCanonical && !modelFilter.has(variant.safeModel)) {
+        continue;
+      }
+      const tailoredPath = path.join(runDir, variant.file);
+      const tailored = JSON.parse(fs.readFileSync(tailoredPath, "utf8"));
+      const latexFileName = variant.isCanonical ? "resume.tex" : `resume__${variant.safeModel}.tex`;
+      const pdfFileName = variant.isCanonical ? "resume.pdf" : `resume__${variant.safeModel}.pdf`;
+      const latexExists = fs.existsSync(path.join(runDir, latexFileName));
+      const pdfExists = fs.existsSync(path.join(runDir, pdfFileName));
+      if (!force && latexExists && pdfExists) {
+        appendLog(`Skipping ${variant.model} (artifacts already exist)`);
+        results.push({ model: variant.model, status: "skipped_existing" });
+        continue;
+      }
+
+      appendLog(`GENERATING_LATEX (manual) - ${variant.model}`);
+      const latex = await generateLatex(tailored, {}, latexPrompt, appendLog, runDir, latexTemplate);
+      await fs.promises.writeFile(path.join(runDir, latexFileName), latex, "utf8");
+
+      appendLog(`COMPILING_PDF (manual) - ${variant.model}`);
+      const compileResult = await compileLatex(runDir, CONFIG.latexEngine, {
+        latexFileName,
+        pdfFileName
+      });
+      if (compileResult.log) {
+        appendLog(`LaTeX output (${variant.model}):\n${compileResult.log.slice(0, 4000)}`);
+      }
+      results.push({ model: variant.model, status: "ok", pdf: pdfFileName, tex: latexFileName });
+    }
+
+    // Refresh files map if status exists
+    const status = await readStatus(runDir);
+    if (status) {
+      await writeStatus(runDir, { ...status, files: buildFileMap(runId, runDir) });
+    }
+
+    if (logs.length) {
+      const logPath = path.join(runDir, "logs.txt");
+      const existing = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+      const merged = existing ? `${existing.trim()}\n${logs.join("\n")}\n` : logs.join("\n");
+      await fs.promises.writeFile(logPath, merged, "utf8");
+    }
+
+    res.json({ ok: true, run_id: runId, results });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || "Failed to generate LaTeX variants" });
   }
 });
 
@@ -561,34 +945,128 @@ async function kickOffPipeline({ runId, runDir, jobPayload, resumeId, options })
       return selectionResult;
     });
 
-    const tailored = await withStage("ANALYZING", "Tailoring resume with GPT", () =>
-      tailorResume(jobPayload, masterResume, options, tailorPrompt, appendLog, runDir)
-    );
-    await writeJson(path.join(runDir, "tailored.json"), tailored);
-    await writeJson(path.join(runDir, "tailored_resume.json"), tailored); // compatibility alias
-    if (tailored?.final_resume) {
-      await writeJson(path.join(runDir, "final_resume.json"), tailored.final_resume);
+    const validationModels = (CONFIG.validationTailorModels || []).filter(Boolean);
+    if (validationModels.length && !validationModels.includes(CONFIG.tailorModel)) {
+      validationModels.push(CONFIG.tailorModel);
     }
-    await mergeIntoMeta(runDir, {
-      tailored_hash: hashString(JSON.stringify(tailored || {})),
-      schema_version: schemaVersion,
-      prompt_version: promptVersionUsed,
-      prompt_version_tailor: tailorPrompt.version
+    const modelsToRun = validationModels.length ? validationModels : [CONFIG.tailorModel];
+    const variants = modelsToRun.map((model, idx) => {
+      const safeModel = sanitizeModelName(model);
+      return {
+        model,
+        safeModel,
+        suffix: `__${safeModel}`,
+        isCanonical: idx === 0,
+        tailored: null,
+        metrics: null,
+        latexFileName: null,
+        pdfFileName: null
+      };
     });
 
-    const latex = await withStage("GENERATING_LATEX", "Generating LaTeX with Claude", () =>
-      generateLatex(tailored, options, latexPrompt, appendLog, runDir)
-    );
-    await fs.promises.writeFile(path.join(runDir, "resume.tex"), latex, "utf8");
+    for (let i = 0; i < variants.length; i += 1) {
+      const variant = variants[i];
+      const label = `${variant.model} (${i + 1}/${variants.length})`;
+      const { output, metrics } = await withStage("ANALYZING", `Tailoring resume with ${label}`, () =>
+        tailorResume(jobPayload, masterResume, options, tailorPrompt, appendLog, runDir, {
+          modelOverride: variant.model,
+          promptSuffix: variant.suffix,
+          mergeMeta: variant.isCanonical
+        })
+      );
 
-    const compileResult = await withStage("COMPILING_PDF", "Compiling PDF with LaTeX", () =>
-      compileLatex(runDir, CONFIG.latexEngine)
-    );
+      variant.tailored = output;
+      variant.metrics = metrics;
 
-    if (compileResult.log) {
-      appendLog(`LaTeX output:\n${compileResult.log.slice(0, 4000)}`);
+      const tailoredPath = path.join(runDir, `tailored${variant.suffix}.json`);
+      await writeJson(tailoredPath, output);
+      await writeJson(path.join(runDir, `tailored_resume${variant.suffix}.json`), output); // compatibility alias
+      if (output?.final_resume) {
+        await writeJson(path.join(runDir, `final_resume${variant.suffix}.json`), output.final_resume);
+      }
+
+      if (variant.isCanonical) {
+        await writeJson(path.join(runDir, "tailored.json"), output);
+        await writeJson(path.join(runDir, "tailored_resume.json"), output); // compatibility alias
+        if (output?.final_resume) {
+          await writeJson(path.join(runDir, "final_resume.json"), output.final_resume);
+        }
+        await mergeIntoMeta(runDir, {
+          tailored_hash: hashString(JSON.stringify(output || {})),
+          schema_version: schemaVersion,
+          prompt_version: promptVersionUsed,
+          prompt_version_tailor: tailorPrompt.version
+        });
+      }
+      appendLog(`Tailoring complete for ${variant.model}`);
     }
-    appendLog(`PDF compiled at ${compileResult.pdfPath}`);
+
+    const latexTemplate = await loadLatexTemplateForResume(resumeId, appendLog);
+    await mergeIntoMeta(runDir, {
+      latex_template_path: latexTemplate.path,
+      latex_template_custom: latexTemplate.isCustom,
+      latex_template_hash: hashString(latexTemplate.template || "")
+    });
+
+    for (let i = 0; i < variants.length; i += 1) {
+      const variant = variants[i];
+      const label = `${variant.model} (${i + 1}/${variants.length})`;
+      const latex = await withStage(
+        "GENERATING_LATEX",
+        `Generating LaTeX with Claude for ${label}`,
+        () => generateLatex(variant.tailored, options, latexPrompt, appendLog, runDir, latexTemplate)
+      );
+
+      const latexFileName = `resume${variant.suffix}.tex`;
+      variant.latexFileName = latexFileName;
+      await fs.promises.writeFile(path.join(runDir, latexFileName), latex, "utf8");
+      if (variant.isCanonical) {
+        await fs.promises.writeFile(path.join(runDir, "resume.tex"), latex, "utf8");
+      }
+    }
+
+    for (let i = 0; i < variants.length; i += 1) {
+      const variant = variants[i];
+      const label = `${variant.model} (${i + 1}/${variants.length})`;
+      const pdfFileName = `resume${variant.suffix}.pdf`;
+      const compileResult = await withStage(
+        "COMPILING_PDF",
+        `Compiling PDF with LaTeX for ${label}`,
+        () =>
+          compileLatex(runDir, CONFIG.latexEngine, {
+            latexFileName: variant.latexFileName || `resume${variant.suffix}.tex`,
+            pdfFileName
+          })
+      );
+
+      variant.pdfFileName = path.basename(compileResult.pdfPath);
+      if (compileResult.log) {
+        appendLog(`LaTeX output (${variant.model}):\n${compileResult.log.slice(0, 4000)}`);
+      }
+      if (variant.isCanonical && variant.pdfFileName !== "resume.pdf") {
+        await fs.promises.copyFile(compileResult.pdfPath, path.join(runDir, "resume.pdf"));
+      }
+      appendLog(`PDF compiled for ${variant.model} at ${compileResult.pdfPath}`);
+    }
+
+    const variantMeta = variants.map((variant) => ({
+      model: variant.model,
+      safe_model: variant.safeModel,
+      tailored_path: variant.tailored ? `tailored${variant.suffix}.json` : null,
+      final_resume_path: variant.tailored?.final_resume ? `final_resume${variant.suffix}.json` : null,
+      latex_path: variant.latexFileName,
+      pdf_path: variant.pdfFileName,
+      tailor_ms: variant.metrics?.tailor_ms ?? null,
+      tailor_enforce_ms: variant.metrics?.tailor_enforce_ms ?? null,
+      selection_plan_hash: variant.metrics?.selection_plan_hash ?? null,
+      selection_enforcement: variant.metrics?.selection_enforcement || null,
+      resume_word_count_estimate: variant.metrics?.resume_word_count_estimate ?? null
+    }));
+    await mergeIntoMeta(runDir, {
+      validation_models: modelsToRun,
+      tailor_variants: variantMeta
+    });
+
     await fs.promises.writeFile(path.join(runDir, "logs.txt"), logLines.join("\n"), "utf8");
 
     await updateStatus({
@@ -619,6 +1097,51 @@ async function loadMasterResume(resumeId, appendLog) {
   const parsed = JSON.parse(contents);
   if (appendLog) appendLog(`Loaded master resume ${resumeId} from ${filePath}`);
   return parsed;
+}
+
+function validateLatexTemplateText(latexText) {
+  if (typeof latexText !== "string") {
+    throw new Error("LaTeX must be a string");
+  }
+  if (!latexText.trim()) {
+    throw new Error("LaTeX template is empty");
+  }
+  if (latexText.length > 2_000_000) {
+    throw new Error("LaTeX template is too large");
+  }
+  if (!latexText.includes("\\begin{document}") || !latexText.includes("\\end{document}")) {
+    throw new Error("LaTeX must include \\begin{document} and \\end{document}");
+  }
+  ensureLatexSafe(latexText);
+  return extractLockedBlocks(latexText, LOCK_MARKERS);
+}
+
+async function loadLatexTemplateForResume(resumeId, appendLog) {
+  const safeId = sanitizeResumeId(resumeId);
+  const candidatePath = safeId ? path.join(CONFIG.resumesDir, `${safeId}.tex`) : null;
+  let template = DEFAULT_LATEX_TEMPLATE;
+  let locks = DEFAULT_TEMPLATE_LOCKS;
+  let sourcePath = DEFAULT_LATEX_TEMPLATE_PATH;
+  let isCustom = false;
+
+  if (candidatePath && fs.existsSync(candidatePath)) {
+    const latexText = await fs.promises.readFile(candidatePath, "utf8");
+    locks = validateLatexTemplateText(latexText);
+    template = latexText;
+    sourcePath = candidatePath;
+    isCustom = true;
+  } else {
+    // Safety check the default template in case it changed on disk.
+    locks = locks || validateLatexTemplateText(template);
+  }
+
+  if (!template || !locks) {
+    throw new StageError("No valid LaTeX template found", "latex");
+  }
+  if (appendLog) {
+    appendLog(`Using ${isCustom ? "custom" : "default"} LaTeX template: ${sourcePath}`);
+  }
+  return { template, locks, path: sourcePath, isCustom };
 }
 
 async function scoreEvidenceForRun(masterResume, runId, runDir, appendLog) {
@@ -691,9 +1214,12 @@ async function scoreEvidenceForRun(masterResume, runId, runDir, appendLog) {
   }
 }
 
-async function tailorResume(jobPayload, masterResume, options, prompt, appendLog, runDir) {
+async function tailorResume(jobPayload, masterResume, options, prompt, appendLog, runDir, extra = {}) {
+  const mergeMetaForVariant = extra.mergeMeta !== false;
+  const promptSuffix = extra.promptSuffix || "";
+  const modelOverride = extra.modelOverride || CONFIG.tailorModel;
   if (CONFIG.mockMode) {
-    return buildMockTailored(jobPayload, masterResume);
+    return { output: buildMockTailored(jobPayload, masterResume), metrics: null };
   }
   if (!process.env.OPENAI_API_KEY) {
     throw new StageError("OPENAI_API_KEY is not set", "gpt_tailoring");
@@ -730,12 +1256,13 @@ async function tailorResume(jobPayload, masterResume, options, prompt, appendLog
     { role: "user", content: builder.user }
   ];
   const modelStarted = Date.now();
-  const response = await openai.chat.completions.create({
-    model: CONFIG.tailorModel,
-    temperature: 0.2,
-    response_format: { type: "json_object" },
-    messages
-  });
+  const response = await openai.chat.completions.create(
+    applyTemperature(modelOverride, 0.2, {
+      model: modelOverride,
+      response_format: { type: "json_object" },
+      messages
+    })
+  );
   const tailorMs = Date.now() - modelStarted;
   let text = response.choices[0].message.content || "";
   const promptVersionUsed = builder.schemaVersion || prompt.version || CONFIG.promptsVersion;
@@ -767,9 +1294,20 @@ async function tailorResume(jobPayload, masterResume, options, prompt, appendLog
   const enforceMs = Date.now() - enforceStarted;
   appendLog?.("Tailoring JSON validated against schema.");
   if (builder.promptText && builder.runDir) {
-    await fs.promises.writeFile(path.join(builder.runDir, "prompt_used_tailor.txt"), builder.promptText, "utf8");
+    const promptFile = `prompt_used_tailor${promptSuffix || ""}.txt`;
+    await fs.promises.writeFile(path.join(builder.runDir, promptFile), builder.promptText, "utf8");
+    if (mergeMetaForVariant && promptSuffix) {
+      await fs.promises.writeFile(path.join(builder.runDir, "prompt_used_tailor.txt"), builder.promptText, "utf8");
+    }
   }
-  if (enforcement.meta) {
+  const metrics = {
+    tailor_ms: tailorMs,
+    tailor_enforce_ms: enforceMs,
+    selection_plan_hash: enforcement.selection_plan_hash || null,
+    selection_enforcement: enforcement.meta || null,
+    resume_word_count_estimate: enforcement.word_count_estimate ?? null
+  };
+  if (mergeMetaForVariant) {
     await mergeIntoMeta(runDir, {
       selection_plan_hash: enforcement.selection_plan_hash,
       selection_enforcement: enforcement.meta,
@@ -778,7 +1316,7 @@ async function tailorResume(jobPayload, masterResume, options, prompt, appendLog
       resume_word_count_estimate: enforcement.word_count_estimate
     });
   }
-  return parsed;
+  return { output: parsed, metrics };
 }
 
 async function runRubricExtraction({
@@ -853,23 +1391,29 @@ async function runRubricExtraction({
 }
 
 async function callRubricModel(messages) {
-  const response = await openai.chat.completions.create({
-    model: CONFIG.rubricModel,
-    temperature: CONFIG.rubricTemperature,
-    response_format: { type: "json_object" },
-    messages
-  });
+  const response = await openai.chat.completions.create(
+    applyTemperature(CONFIG.rubricModel, CONFIG.rubricTemperature, {
+      model: CONFIG.rubricModel,
+      response_format: { type: "json_object" },
+      messages
+    })
+  );
   return response.choices[0].message.content || "";
 }
 
-async function generateLatex(tailoredResume, options, prompt, appendLog, runDir) {
+async function generateLatex(tailoredResume, options, prompt, appendLog, runDir, templateBundle) {
+  const template = templateBundle?.template || DEFAULT_LATEX_TEMPLATE;
+  const locks = templateBundle?.locks || DEFAULT_TEMPLATE_LOCKS;
+  if (!template || !locks) {
+    throw new StageError("LaTeX template is missing or invalid", "latex");
+  }
   if (CONFIG.mockMode) {
-    return renderMockLatex(tailoredResume, LATEX_TEMPLATE, TEMPLATE_LOCKS);
+    return renderMockLatex(tailoredResume, template, locks);
   }
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new StageError("ANTHROPIC_API_KEY is not set", "latex");
   }
-  const builder = buildLatexPrompt(tailoredResume, options, prompt, LATEX_TEMPLATE, TEMPLATE_LOCKS, runDir);
+  const builder = buildLatexPrompt(tailoredResume, options, prompt, template, locks, runDir);
   const response = await anthropic.messages.create({
     model: CONFIG.latexModel,
     max_tokens: 4000,
@@ -888,7 +1432,7 @@ async function generateLatex(tailoredResume, options, prompt, appendLog, runDir)
   if (!content.includes("\\begin{document}")) {
     throw new StageError("Invalid LaTeX: missing \\begin{document}", "latex");
   }
-  content = enforceImmutableBlocks(content, TEMPLATE_LOCKS, appendLog);
+  content = enforceImmutableBlocks(content, locks, appendLog);
   ensureLatexSafe(content);
   if (builder.promptText && builder.runDir) {
     await fs.promises.writeFile(path.join(builder.runDir, "prompt_used_latex.txt"), builder.promptText, "utf8");
@@ -896,10 +1440,14 @@ async function generateLatex(tailoredResume, options, prompt, appendLog, runDir)
   return content;
 }
 
-async function compileLatex(runDir, engine) {
-  const latexFile = path.join(runDir, "resume.tex");
+async function compileLatex(runDir, engine, opts = {}) {
+  const latexFileName = opts.latexFileName || "resume.tex";
+  const pdfFileName =
+    opts.pdfFileName ||
+    `${path.basename(latexFileName, path.extname(latexFileName) || ".tex")}.pdf`;
+  const latexFile = path.join(runDir, latexFileName);
   if (!fs.existsSync(latexFile)) {
-    throw new StageError("resume.tex missing", "compile");
+    throw new StageError(`${latexFileName} missing`, "compile");
   }
   const args = ["-interaction=nonstopmode", "-halt-on-error", "-output-directory", runDir, latexFile];
   let stdout = "";
@@ -912,24 +1460,27 @@ async function compileLatex(runDir, engine) {
     const detail = (error.stderr || error.stdout || error.message || "").toString().slice(0, 4000);
     throw new StageError(`LaTeX compile failed: ${detail}`, "compile");
   }
-  const pdfPath = path.join(runDir, "resume.pdf");
+  const pdfPath = path.join(runDir, pdfFileName);
   if (!fs.existsSync(pdfPath)) {
-    throw new StageError("PDF not produced", "compile");
+    throw new StageError(`PDF not produced (${pdfFileName})`, "compile");
   }
   return { pdfPath, log: [stdout, stderr].join("\n").trim() };
 }
 
 function buildFileMap(runId, runDir) {
   const files = {};
-  const pdfPath = path.join(runDir, "resume.pdf");
-  const jsonPath = path.join(runDir, "tailored.json");
-  const legacyJsonPath = path.join(runDir, "tailored_resume.json");
-  const texPath = path.join(runDir, "resume.tex");
-  if (fs.existsSync(pdfPath)) files.pdf = `/download/${runId}/resume.pdf`;
-  if (fs.existsSync(jsonPath)) {
-    files.json = `/download/${runId}/tailored.json`;
-  } else if (fs.existsSync(legacyJsonPath)) {
-    files.json = `/download/${runId}/tailored_resume.json`;
+  const addFile = (key, filename) => {
+    const fullPath = path.join(runDir, filename);
+    if (fs.existsSync(fullPath)) {
+      files[key] = `/download/${runId}/${filename}`;
+      return true;
+    }
+    return false;
+  };
+
+  addFile("pdf", "resume.pdf");
+  if (!addFile("json", "tailored.json")) {
+    addFile("json", "tailored_resume.json");
   }
   const rubricPath = path.join(runDir, "jd_rubric.json");
   if (fs.existsSync(rubricPath)) files.jd_rubric = `/download/${runId}/jd_rubric.json`;
@@ -937,8 +1488,10 @@ function buildFileMap(runId, runDir) {
   if (fs.existsSync(rubricPromptPath)) files.prompt_used_rubric = `/download/${runId}/prompt_used_rubric.txt`;
   const baselinePath = path.join(runDir, "baseline_resume.json");
   if (fs.existsSync(baselinePath)) files.baseline = `/download/${runId}/baseline_resume.json`;
-  const finalPath = path.join(runDir, "final_resume.json");
-  if (fs.existsSync(finalPath)) files.final_resume = `/download/${runId}/final_resume.json`;
+  if (addFile("final_resume", "final_resume.json")) {
+    // already mapped
+  }
+  addFile("tex", "resume.tex");
   const jobTextPath = path.join(runDir, "job_extracted.txt");
   if (fs.existsSync(jobTextPath)) files.job_text = `/download/${runId}/job_extracted.txt`;
   const evidencePath = path.join(runDir, "evidence_scores.json");
@@ -953,9 +1506,58 @@ function buildFileMap(runId, runDir) {
   if (fs.existsSync(selectionPlanPath)) files.selection_plan = `/download/${runId}/selection_plan.json`;
   const selectionDebugPath = path.join(runDir, "selection_debug.json");
   if (fs.existsSync(selectionDebugPath)) files.selection_debug = `/download/${runId}/selection_debug.json`;
-  if (fs.existsSync(texPath)) files.tex = `/download/${runId}/resume.tex`;
   const metaPath = path.join(runDir, "meta.json");
   if (fs.existsSync(metaPath)) files.meta = `/download/${runId}/meta.json`;
+
+  // Variant artifacts (per-model)
+  let dirEntries = [];
+  try {
+    dirEntries = fs.readdirSync(runDir);
+  } catch (error) {
+    dirEntries = [];
+  }
+  dirEntries.forEach((file) => {
+    if (file.startsWith("resume__") && file.endsWith(".pdf")) {
+      const modelKey = file.slice("resume__".length, -4);
+      const key = `pdf_${modelKey}`;
+      files[key] = `/download/${runId}/${file}`;
+      if (!files.pdf) {
+        files.pdf = `/download/${runId}/${file}`;
+      }
+    }
+    if (file.startsWith("resume__") && file.endsWith(".tex")) {
+      const modelKey = file.slice("resume__".length, -4);
+      const key = `tex_${modelKey}`;
+      files[key] = `/download/${runId}/${file}`;
+      if (!files.tex) {
+        files.tex = `/download/${runId}/${file}`;
+      }
+    }
+    if (file.startsWith("tailored__") && file.endsWith(".json")) {
+      const modelKey = file.slice("tailored__".length, -5);
+      const key = `tailored_${modelKey}`;
+      files[key] = `/download/${runId}/${file}`;
+      if (!files.json) {
+        files.json = `/download/${runId}/${file}`;
+      }
+    }
+    if (file.startsWith("tailored_resume__") && file.endsWith(".json")) {
+      const modelKey = file.slice("tailored_resume__".length, -5);
+      const key = `tailored_${modelKey}`;
+      if (!files[key]) {
+        files[key] = `/download/${runId}/${file}`;
+      }
+      if (!files.json) {
+        files.json = `/download/${runId}/${file}`;
+      }
+    }
+    if (file.startsWith("final_resume__") && file.endsWith(".json")) {
+      const modelKey = file.slice("final_resume__".length, -5);
+      const key = `final_resume_${modelKey}`;
+      files[key] = `/download/${runId}/${file}`;
+    }
+  });
+
   return files;
 }
 
@@ -1628,11 +2230,12 @@ async function runRunChat({ runId, runDir, messages, context, focus }) {
   };
 
   const modelStarted = Date.now();
-  const response = await openai.chat.completions.create({
-    model: CONFIG.chatModel,
-    temperature: CONFIG.chatTemperature,
-    messages: [{ role: "system", content: system }, contextMsg, ...messages]
-  });
+  const response = await openai.chat.completions.create(
+    applyTemperature(CONFIG.chatModel, CONFIG.chatTemperature, {
+      model: CONFIG.chatModel,
+      messages: [{ role: "system", content: system }, contextMsg, ...messages]
+    })
+  );
   const chatMs = Date.now() - modelStarted;
   const text = response?.choices?.[0]?.message?.content || "";
   const parsed = parseRunChatModelResponse(text);
@@ -1765,15 +2368,16 @@ async function runRunEditExec({ runId, runDir, context, focus, instruction }) {
   };
 
   const modelStarted = Date.now();
-  const response = await openai.chat.completions.create({
-    model: CONFIG.editModel,
-    temperature: 0.1,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: `INPUT_JSON:\n${JSON.stringify(payload, null, 2)}` }
-    ]
-  });
+  const response = await openai.chat.completions.create(
+    applyTemperature(CONFIG.editModel, 0.1, {
+      model: CONFIG.editModel,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: `INPUT_JSON:\n${JSON.stringify(payload, null, 2)}` }
+      ]
+    })
+  );
   const ms = Date.now() - modelStarted;
   const text = response?.choices?.[0]?.message?.content || "";
   const parsed = parseRunChatModelResponse(text);
@@ -1860,15 +2464,16 @@ async function runRunLatexFullEdit({ runId, runDir, context, instruction }) {
   };
 
   const modelStarted = Date.now();
-  const response = await openai.chat.completions.create({
-    model: CONFIG.editModel,
-    temperature: 0.1,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: `INPUT_JSON:\n${JSON.stringify(payload, null, 2)}` }
-    ]
-  });
+  const response = await openai.chat.completions.create(
+    applyTemperature(CONFIG.editModel, 0.1, {
+      model: CONFIG.editModel,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: `INPUT_JSON:\n${JSON.stringify(payload, null, 2)}` }
+      ]
+    })
+  );
   const ms = Date.now() - modelStarted;
   const text = response?.choices?.[0]?.message?.content || "";
   const parsed = parseRunChatModelResponse(text);
@@ -3572,12 +4177,13 @@ async function repairRubricJson(originalText, prompt, errors, userPayload) {
     { role: "system", content: `${prompt.content}\nReturn valid JSON only.` },
     { role: "user", content: repairUser }
   ];
-  const response = await openai.chat.completions.create({
-    model: CONFIG.rubricModel,
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages
-  });
+  const response = await openai.chat.completions.create(
+    applyTemperature(CONFIG.rubricModel, 0, {
+      model: CONFIG.rubricModel,
+      response_format: { type: "json_object" },
+      messages
+    })
+  );
   return response.choices[0].message.content || "";
 }
 
@@ -3596,12 +4202,13 @@ async function repairTailoredJson(originalText, builder, errors) {
     { role: "system", content: `${builder.system}\nReturn valid JSON only. Guardrail arrays must be empty.` },
     { role: "user", content: repairUser }
   ];
-  const response = await openai.chat.completions.create({
-    model: CONFIG.tailorModel,
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages
-  });
+  const response = await openai.chat.completions.create(
+    applyTemperature(CONFIG.tailorModel, 0, {
+      model: CONFIG.tailorModel,
+      response_format: { type: "json_object" },
+      messages
+    })
+  );
   return response.choices[0].message.content || "";
 }
 
@@ -4332,6 +4939,174 @@ function buildMockTailored(jobPayload, masterResume) {
     return normalizeTailoredV3(upgraded, jobPayload, masterResume, CONFIG.promptsVersion);
   }
   return withExplainability;
+}
+
+function sanitizeResumeId(raw) {
+  if (!raw) return null;
+  const cleaned = raw.toString().trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase();
+  return cleaned || null;
+}
+
+function getResumePath(id) {
+  return path.join(CONFIG.resumesDir, `${id}.json`);
+}
+
+function getResumeLatexPath(id) {
+  return path.join(CONFIG.resumesDir, `${id}.tex`);
+}
+
+function normalizeResumePayload(body, { allowEmptyResume = false } = {}) {
+  const filenameStem =
+    body?.filename && typeof body.filename === "string" ? path.basename(body.filename, path.extname(body.filename)) : null;
+  let resume = body?.resume ?? body?.data ?? body;
+  if (resume === undefined || resume === null) {
+    if (allowEmptyResume) {
+      const idFallback = body?.id || filenameStem;
+      const labelFallback = body?.label || null;
+      return { resume: null, id: idFallback, label: labelFallback };
+    }
+    throw new Error("Resume JSON is required");
+  }
+  if (typeof resume === "string") {
+    try {
+      resume = JSON.parse(resume);
+    } catch (error) {
+      throw new Error("Resume JSON is not valid JSON text");
+    }
+  }
+  if (!resume || typeof resume !== "object" || Array.isArray(resume)) {
+    throw new Error("Resume JSON is required");
+  }
+  const id = body?.id || resume.id || filenameStem;
+  const label = body?.label || resume.label || (resume.meta && resume.meta.label) || null;
+  return { resume, id, label };
+}
+
+async function listResumeFiles() {
+  try {
+    const entries = await fs.promises.readdir(CONFIG.resumesDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((name) => name.toLowerCase().endsWith(".json") && name !== RESUME_REGISTRY_FILE);
+  } catch (error) {
+    return [];
+  }
+}
+
+async function deriveRegistryFromFiles() {
+  const files = await listResumeFiles();
+  let defaultId = null;
+  if (files.includes("default.json")) {
+    defaultId = "default";
+  } else if (files.length) {
+    defaultId = sanitizeResumeId(path.basename(files[0], ".json"));
+  }
+  const registry = { defaultId, labels: {} };
+  try {
+    await writeJson(RESUME_REGISTRY_PATH, registry);
+  } catch (error) {
+    // ignore bootstrap write failures
+  }
+  return registry;
+}
+
+async function readResumeRegistry() {
+  try {
+    const raw = await fs.promises.readFile(RESUME_REGISTRY_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      defaultId: sanitizeResumeId(parsed.defaultId),
+      labels: parsed.labels && typeof parsed.labels === "object" ? parsed.labels : {}
+    };
+  } catch (error) {
+    return deriveRegistryFromFiles();
+  }
+}
+
+async function writeResumeRegistry(registry) {
+  const payload = {
+    defaultId: registry.defaultId ? sanitizeResumeId(registry.defaultId) : null,
+    labels: registry.labels && typeof registry.labels === "object" ? registry.labels : {}
+  };
+  await writeJson(RESUME_REGISTRY_PATH, payload);
+  return payload;
+}
+
+async function buildResumeMeta(fileName, registry) {
+  const filePath = path.join(CONFIG.resumesDir, fileName);
+  const stat = await fs.promises.stat(filePath);
+  let parsed = {};
+  try {
+    parsed = JSON.parse(await fs.promises.readFile(filePath, "utf8"));
+  } catch (error) {
+    parsed = {};
+  }
+  const idFromFile = sanitizeResumeId(path.basename(fileName, path.extname(fileName))) || path.basename(fileName, ".json");
+  const resumeId = sanitizeResumeId(parsed.id) || idFromFile;
+  if (parsed.id !== resumeId) {
+    parsed.id = resumeId;
+    try {
+      await writeJson(filePath, parsed);
+    } catch (error) {
+      // best-effort sync only
+    }
+  }
+  const labels = registry?.labels || {};
+  const label = labels[resumeId] || parsed.label || (parsed.meta && parsed.meta.label) || parsed.name || resumeId;
+  const latexPath = getResumeLatexPath(resumeId);
+  let latexFile = null;
+  let latexUpdatedAt = null;
+  let latexMtimeMs = 0;
+  if (fs.existsSync(latexPath)) {
+    latexFile = path.basename(latexPath);
+    try {
+      const latexStat = await fs.promises.stat(latexPath);
+      latexUpdatedAt = latexStat.mtime?.toISOString?.() || null;
+      latexMtimeMs = Number.isFinite(latexStat.mtimeMs) ? latexStat.mtimeMs : 0;
+    } catch (error) {
+      latexUpdatedAt = null;
+    }
+  }
+  const updatedMs = Math.max(Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0, latexMtimeMs);
+  const updatedAt =
+    updatedMs > 0 ? new Date(updatedMs).toISOString() : stat.mtime?.toISOString?.() || latexUpdatedAt || null;
+  return {
+    id: resumeId,
+    label,
+    file: fileName,
+    isDefault: registry?.defaultId === resumeId,
+    createdAt: stat.birthtime?.toISOString?.() || null,
+    updatedAt,
+    latexFile,
+    latexUpdatedAt
+  };
+}
+
+async function listResumesWithMeta(registryOverride = null) {
+  const registry = registryOverride || (await readResumeRegistry());
+  const files = await listResumeFiles();
+  const metas = [];
+  for (const file of files) {
+    const meta = await buildResumeMeta(file, registry);
+    metas.push(meta);
+  }
+  let defaultId = registry.defaultId;
+  if (!defaultId || !metas.some((r) => r.id === defaultId)) {
+    defaultId = metas[0]?.id || null;
+  }
+  const normalized = metas.map((m) => ({ ...m, isDefault: m.id === defaultId }));
+  normalized.sort((a, b) => {
+    if (a.isDefault && !b.isDefault) return -1;
+    if (!a.isDefault && b.isDefault) return 1;
+    const aTime = a.updatedAt || a.createdAt || "";
+    const bTime = b.updatedAt || b.createdAt || "";
+    return bTime.localeCompare(aTime);
+  });
+  if (defaultId !== registry.defaultId) {
+    await writeResumeRegistry({ defaultId, labels: registry.labels || {} });
+  }
+  return { resumes: normalized, defaultId };
 }
 
 async function writeJson(filePath, data) {

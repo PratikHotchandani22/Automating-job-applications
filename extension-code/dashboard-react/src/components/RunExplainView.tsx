@@ -24,6 +24,12 @@ type ArtifactLoadStatus = {
   error?: string;
 };
 
+type RewriteSummaryEntry = {
+  bullet_id?: string;
+  rewrite_type?: string;
+  rewrite_intent?: string;
+};
+
 const RunExplainView = ({ run }: RunExplainViewProps) => {
   const [activeTab, setActiveTab] = useState<
     "overview" | "requirements" | "changes" | "selection" | "keywords"
@@ -140,6 +146,42 @@ const RunExplainView = ({ run }: RunExplainViewProps) => {
     };
   }, [explainData.selection_plan]);
 
+  // Flatten selected bullets from the selection plan for easy lookup
+  const selectionBullets = useMemo(() => {
+    const plan = explainData.selection_plan;
+    if (!plan?.selected) return [];
+
+    const bullets: any[] = [];
+    const addGroup = (items: any[] | undefined, parentType: string) => {
+      (items || []).forEach((parent: any) => {
+        const roleTitle = parent.title || parent.role || parent.name || "";
+        const company = parent.company || "";
+        const parentId = parent.role_id || parent.id || parent.parent_id || "";
+
+        (parent.bullets || []).forEach((bullet: any) => {
+          bullets.push({
+            ...bullet,
+            parent_type: parentType,
+            parent_id: parentId,
+            roleTitle,
+            company,
+            matched_requirements:
+              bullet.matches?.map((m: any) => m.req_id).filter(Boolean) ||
+              bullet.matched_requirements ||
+              [],
+            relevance_score: bullet.evidence?.score ?? bullet.relevance_score,
+            evidence_tier: bullet.evidence?.tier ?? bullet.evidence_tier,
+          });
+        });
+      });
+    };
+
+    addGroup(plan.selected.work_experience, "experience");
+    addGroup(plan.selected.projects, "project");
+    addGroup(plan.selected.awards, "award");
+    return bullets;
+  }, [explainData.selection_plan]);
+
   // Parse requirements with match status
   const requirementsWithStatus = useMemo(() => {
     const rubric = explainData.jd_rubric;
@@ -152,11 +194,9 @@ const RunExplainView = ({ run }: RunExplainViewProps) => {
     );
 
     const coveredMap = new Map();
-    selectionPlan?.selected_bullets?.forEach((bullet: any) => {
-      bullet.matched_requirements?.forEach((reqId: string) => {
-        if (!coveredMap.has(reqId)) {
-          coveredMap.set(reqId, []);
-        }
+    selectionBullets.forEach((bullet: any) => {
+      (bullet.matched_requirements || []).forEach((reqId: string) => {
+        if (!coveredMap.has(reqId)) coveredMap.set(reqId, []);
         coveredMap.get(reqId).push(bullet);
       });
     });
@@ -171,7 +211,7 @@ const RunExplainView = ({ run }: RunExplainViewProps) => {
         : "covered",
       matchingBullets: coveredMap.get(req.req_id) || [],
     }));
-  }, [explainData.jd_rubric, explainData.selection_plan]);
+  }, [explainData.jd_rubric, explainData.selection_plan, selectionBullets]);
 
   // Filtered requirements based on filter state
   const filteredRequirements = useMemo(() => {
@@ -181,72 +221,126 @@ const RunExplainView = ({ run }: RunExplainViewProps) => {
     return requirementsWithStatus.filter((r: any) => !r.covered);
   }, [requirementsWithStatus, requirementFilter]);
 
-  // Parse bullet changes
-  const bulletChanges = useMemo(() => {
+  // Index baseline bullets by stable bullet_id pattern (parentId_bN)
+  const baselineBulletIndex = useMemo(() => {
+    const map = new Map();
     const baseline = explainData.baseline_resume;
-    const final = explainData.final_resume;
-    const selectionPlan = explainData.selection_plan;
+    if (!baseline) return map;
 
-    if (!baseline || !final || !selectionPlan) return { included: [], excluded: [] };
-
-    const selectedIds = new Set(
-      selectionPlan.selected_bullets?.map((b: any) => b.bullet_id) || []
-    );
-
-    const baselineBullets = new Map();
-    baseline.experience?.forEach((exp: any) => {
-      exp.bullets?.forEach((bullet: string, idx: number) => {
-        const bulletId = `exp_${exp.role_id}_bullet_${idx + 1}`;
-        baselineBullets.set(bulletId, {
-          id: bulletId,
-          text: bullet,
-          roleId: exp.role_id,
-          roleTitle: exp.role,
-          company: exp.company,
+    const addBullets = (items: any[] | undefined, parentType: string) => {
+      (items || []).forEach((parent: any) => {
+        const parentId = parent.id || parent.role_id || parent.project_id || "";
+        const roleTitle = parent.role || parent.title || parent.name || "";
+        const company = parent.company || "";
+        (parent.bullets || []).forEach((text: string, idx: number) => {
+          const bulletId = `${parentId}_b${idx + 1}`;
+          map.set(bulletId, { text, parentId, parentType, roleTitle, company });
         });
       });
-    });
+    };
 
-    const finalBullets = new Map();
-    final.experience?.forEach((exp: any) => {
-      exp.bullets?.forEach((bullet: string, idx: number) => {
-        const bulletId = `exp_${exp.role_id}_bullet_${idx + 1}`;
-        finalBullets.set(bulletId, bullet);
-      });
-    });
+    addBullets(baseline.work_experience, "experience");
+    addBullets(baseline.projects, "project");
+    addBullets(baseline.awards, "award");
 
-    const included = selectionPlan.selected_bullets
-      ?.map((sel: any) => {
-        const baselineBullet = baselineBullets.get(sel.bullet_id);
-        const finalText = finalBullets.get(sel.bullet_id);
+    return map;
+  }, [explainData.baseline_resume]);
+
+  // Parse bullet changes
+  const bulletChanges = useMemo(() => {
+    const explainability = explainData.tailored?.explainability || {};
+    const selectionBulletMap = new Map(
+      selectionBullets.map((b: any) => [b.bullet_id, b])
+    );
+    const rewriteSummaryEntries = (explainability.rewrite_summary ||
+      []) as RewriteSummaryEntry[];
+    const rewriteSummaryMap = new Map<string, RewriteSummaryEntry>(
+      rewriteSummaryEntries
+        .filter(
+          (entry): entry is RewriteSummaryEntry & { bullet_id: string } =>
+            Boolean(entry?.bullet_id)
+        )
+        .map((entry) => [entry.bullet_id, entry])
+    );
+
+    const includedSource =
+      (explainability.included_bullets || []).length > 0
+        ? explainability.included_bullets
+        : selectionBullets;
+
+    const included = (includedSource || [])
+      .map((bullet: any) => {
+        const meta = selectionBulletMap.get(bullet.bullet_id) || {};
+        const baselineInfo = baselineBulletIndex.get(bullet.bullet_id) || {};
+        const rewriteInfo = rewriteSummaryMap.get(bullet.bullet_id);
+        const baselineText =
+          bullet.original_text || meta.original_text || baselineInfo.text || "";
+        const finalText =
+          bullet.rewritten_text || meta.rewritten_text || baselineText;
+
         return {
-          ...sel,
-          baseline: baselineBullet?.text || "",
-          final: finalText || "",
-          changed: baselineBullet?.text !== finalText,
-          roleTitle: baselineBullet?.roleTitle || "",
-          company: baselineBullet?.company || "",
+          ...meta,
+          ...bullet,
+          bullet_id: bullet.bullet_id || meta.bullet_id,
+          baseline: baselineText,
+          final: finalText,
+          changed: baselineText !== finalText,
+          roleTitle: meta.roleTitle || baselineInfo.roleTitle || "",
+          company: meta.company || baselineInfo.company || "",
+          matched_requirements:
+            meta.matched_requirements || bullet.matched_requirements || [],
+          rewrite_intent:
+            meta.rewrite_intent ||
+            rewriteInfo?.rewrite_type ||
+            bullet.rewrite_intent,
+          relevance_score:
+            meta.relevance_score ??
+            meta.evidence?.score ??
+            bullet.relevance_score,
+          evidence_tier:
+            meta.evidence_tier ?? meta.evidence?.tier ?? bullet.evidence_tier,
         };
       })
-      .filter((b: any) => b.baseline);
+      .filter((b: any) => b.bullet_id && (b.baseline || b.final));
 
-    const excluded = Array.from(baselineBullets.values())
-      .filter((b) => !selectedIds.has(b.id))
-      .map((b) => {
-        const dropReason = selectionPlan.dropped_bullets?.find(
-          (d: any) => d.bullet_id === b.id
-        );
-        return {
-          ...b,
-          reason: dropReason?.reason || "not_selected",
-        };
-      });
+    const includedIds = new Set(included.map((b: any) => b.bullet_id));
+    const dropReasons = new Map<string, string>();
 
-    return { included: included || [], excluded };
+    (explainability.dropped_bullets || []).forEach((entry: any) => {
+      if (!entry?.bullet_id || includedIds.has(entry.bullet_id)) return;
+      dropReasons.set(entry.bullet_id, entry.reason || "not_selected");
+    });
+
+    (explainData.selection_plan?.selection_notes?.dropped_due_to_redundancy || []).forEach(
+      (id: string) => {
+        if (!id || includedIds.has(id) || dropReasons.has(id)) return;
+        dropReasons.set(id, "redundant");
+      }
+    );
+    (explainData.selection_plan?.selection_notes?.dropped_due_to_budget || []).forEach(
+      (id: string) => {
+        if (!id || includedIds.has(id) || dropReasons.has(id)) return;
+        dropReasons.set(id, "budget_exceeded");
+      }
+    );
+
+    const excluded = Array.from(dropReasons.entries()).map(([id, reason]) => {
+      const baselineInfo = baselineBulletIndex.get(id) || {};
+      const meta = selectionBulletMap.get(id) || {};
+      return {
+        id,
+        bullet_id: id,
+        text: baselineInfo.text || meta.original_text || meta.text || "",
+        reason,
+      };
+    });
+
+    return { included, excluded };
   }, [
-    explainData.baseline_resume,
-    explainData.final_resume,
+    baselineBulletIndex,
     explainData.selection_plan,
+    explainData.tailored?.explainability,
+    selectionBullets,
   ]);
 
   // Highlight keywords in text

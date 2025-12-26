@@ -27,6 +27,18 @@ const artifactLabels: Record<string, string> = {
   prompt_used_rubric: "prompt_used_rubric.txt"
 };
 
+const formatVariantLabel = (key: string): string | null => {
+  if (key.startsWith("pdf_")) return `PDF (${key.slice(4)})`;
+  if (key.startsWith("tex_")) return `LaTeX (${key.slice(4)})`;
+  if (key.startsWith("tailored_")) return `tailored.json (${key.slice(9)})`;
+  if (key.startsWith("final_resume_")) return `final_resume (${key.slice(13)})`;
+  return null;
+};
+
+const getArtifactLabel = (key: string): string => {
+  return artifactLabels[key] || formatVariantLabel(key) || key;
+};
+
 // Stage order for determining when tabs should be enabled
 const STAGE_ORDER: RunStage[] = [
   "EXTRACTING",
@@ -556,7 +568,7 @@ const RunDetailPage = () => {
                 {Object.entries(run.artifacts || {}).map(([key]) => (
                   <div className="download-row" key={key}>
                     <div>
-                      <div className="cell-title">{artifactLabels[key] || key}</div>
+                      <div className="cell-title">{getArtifactLabel(key)}</div>
                       <p className="hint">Click to download</p>
                     </div>
                     <button className="ghost" onClick={() => download(run.runId, key)}>
