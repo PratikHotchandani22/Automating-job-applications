@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Page Reader Extractor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>Job Page Reader Extractor</h1>
+      <p class="subtitle">Local-only POC · On-demand extraction</p>
+    </div>
+    <div class="badge">v0.1</div>
+  </header>
+
+  <section class="controls">
+    <div class="control-row">
+      <label for="platformSelect">Platform</label>
+      <select id="platformSelect">
+        <option value="linkedin">LinkedIn</option>
+        <option value="glassdoor">Glassdoor</option>
+        <option value="greenhouse">Greenhouse</option>
+        <option value="lever">Lever</option>
+        <option value="workday">Workday</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="control-row">
+      <label for="tagsInput">Tags (comma separated)</label>
+      <input id="tagsInput" type="text" placeholder="e.g. remote, backend, python">
+    </div>
+    <div class="control-row">
+      <label for="notesInput">Notes</label>
+      <textarea id="notesInput" rows="2" placeholder="Add your notes"></textarea>
+    </div>
+    <div class="control-row checkbox-row">
+      <label><input id="debugToggle" type="checkbox"> Include debug in saved JSON</label>
+      <label><input id="historyToggle" type="checkbox" checked> Keep history</label>
+    </div>
+  </section>
+
+  <section class="actions">
+    <div class="action-row">
+      <button id="analyzeBtn" class="primary">Analyze</button>
+      <button id="downloadPdfBtn" class="secondary" disabled>Download PDF</button>
+    </div>
+    <div class="action-row wrap">
+      <button id="downloadJsonBtn" class="secondary" disabled>Download JSON</button>
+      <button id="downloadLatexBtn" class="secondary" disabled>Download LaTeX</button>
+      <button id="saveJsonBtn" class="link" disabled>Save extraction JSON</button>
+      <button id="saveMdBtn" class="link" disabled>Save extraction MD</button>
+      <button id="extractBtn" class="link">Re-extract</button>
+    </div>
+    <span id="statusText" class="status"></span>
+  </section>
+
+  <section class="status-tracker">
+    <div class="status-head">
+      <h3>Pipeline</h3>
+      <span id="statusChip" class="chip muted">Idle</span>
+    </div>
+    <div id="statusList" class="status-list"></div>
+    <p id="statusDetail" class="status detail"></p>
+  </section>
+
+  <section id="warning" class="warning hidden">
+    Low confidence extraction — expand “See more” and retry.
+  </section>
+
+  <section class="preview">
+    <div class="preview-head">
+      <div>
+        <p class="meta-line"><span id="metaUrl">URL: —</span></p>
+        <p class="meta-line"><span id="metaMethod">Method: —</span> · <span id="metaConfidence">Confidence: —</span></p>
+      </div>
+      <div id="confidenceChip" class="chip muted">No data</div>
+    </div>
+    <h2 id="previewTitle">Title —</h2>
+    <p id="previewCompany">Company —</p>
+    <p id="previewLocation">Location —</p>
+    <details>
+      <summary>See more</summary>
+      <pre id="previewDescription">Description preview will appear here after extraction.</pre>
+    </details>
+  </section>
+
+  <section class="history">
+    <div class="history-head">
+      <h3>Recent extractions</h3>
+      <button id="refreshHistoryBtn" class="link">Refresh</button>
+    </div>
+    <div id="historyList" class="history-list">No history yet.</div>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

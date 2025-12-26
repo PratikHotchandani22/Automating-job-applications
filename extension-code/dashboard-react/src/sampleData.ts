@@ -1,0 +1,97 @@
+import type { RunRecord } from "./types";
+
+const now = Date.now();
+const day = 24 * 60 * 60 * 1000;
+
+export const sampleRuns: RunRecord[] = [
+  {
+    runId: "RUN-3012",
+    clientRunId: "run_client_3012",
+    queueId: "legacy-RUN-3012",
+    queuePosition: 1,
+    queueSize: 1,
+    title: "Lead Data Scientist",
+    company: "NVIDIA",
+    platform: "LinkedIn",
+    status: "DONE",
+    result: "success",
+    coverage: 82,
+    runtimeSec: 86,
+    startedAt: new Date(now - 2 * day).toISOString(),
+    updatedAt: new Date(now - 2 * day + 86 * 1000).toISOString(),
+    artifacts: { pdf: "/download/3012/resume.pdf", json: "/download/3012/tailored.json" },
+    keywords: ["LLM", "C++", "model optimization"],
+    uncovered: []
+  },
+  {
+    runId: "RUN-3013",
+    queueId: "legacy-RUN-3013",
+    queuePosition: 1,
+    queueSize: 1,
+    title: "Senior Machine Learning Engineer",
+    company: "Franklin Fitch",
+    platform: "Workday",
+    status: "ANALYZING",
+    result: "pending",
+    coverage: 64,
+    runtimeSec: 55,
+    startedAt: new Date(now - 4 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(now - 3.5 * 60 * 60 * 1000).toISOString(),
+    artifacts: { pdf: "/download/3013/resume.pdf" },
+    keywords: ["Python", "MLOps", "Kubernetes"],
+    uncovered: ["Cloud cost controls"]
+  },
+  {
+    runId: "RUN-3014",
+    queueId: "legacy-RUN-3014",
+    queuePosition: 1,
+    queueSize: 1,
+    title: "Principal Analyst, Clinical Ops",
+    company: "Vertex Pharmaceuticals",
+    platform: "Greenhouse",
+    status: "ERROR",
+    result: "error",
+    coverage: 48,
+    runtimeSec: 62,
+    startedAt: new Date(now - 6 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(now - 5.5 * 60 * 60 * 1000).toISOString(),
+    artifacts: { json: "/download/3014/tailored.json" },
+    keywords: ["Regulatory", "Clinical writing"],
+    uncovered: ["LaTeX compile error", "Missing rubric file"],
+    message: "Compile failed during LaTeX render"
+  },
+  {
+    runId: "RUN-3015",
+    queueId: "legacy-RUN-3015",
+    queuePosition: 1,
+    queueSize: 1,
+    title: "Staff AI Engineer",
+    company: "General Motors",
+    platform: "Other",
+    status: "COMPILING_PDF",
+    result: "pending",
+    coverage: 77,
+    runtimeSec: 33,
+    startedAt: new Date(now - 50 * 60 * 1000).toISOString(),
+    updatedAt: new Date(now - 48 * 60 * 1000).toISOString(),
+    artifacts: { tex: "/download/3015/output.tex" },
+    keywords: ["Autonomy", "Embedded", "C++"]
+  },
+  {
+    runId: "RUN-3016",
+    queueId: "legacy-RUN-3016",
+    queuePosition: 1,
+    queueSize: 1,
+    title: "Forward Deployed AI Engineer",
+    company: "Palantir",
+    platform: "LinkedIn",
+    status: "DONE",
+    result: "success",
+    coverage: 89,
+    runtimeSec: 71,
+    startedAt: new Date(now - 6 * day).toISOString(),
+    updatedAt: new Date(now - 6 * day + 71 * 1000).toISOString(),
+    artifacts: { pdf: "/download/3016/resume.pdf", tailored: "/download/3016/tailored.json" },
+    keywords: ["Rust", "LLM Ops", "Data pipelines"]
+  }
+];

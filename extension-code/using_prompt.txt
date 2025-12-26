@@ -1,0 +1,48 @@
+Using Prompt: How Prompts Are Built and Used (current state)
+
+Where prompts live
+- Backend/prompts/<stage>/<version>.md (e.g., backend/prompts/tailor/latest_v2.md, backend/prompts/latex/latest_v2.md).
+- PROMPT_VERSION env controls which version is loaded; fallback to legacy if missing.
+- Each run writes prompt_used_tailor.txt / prompt_used_latex.txt and meta.json with prompt file paths + hashes.
+
+Tailor prompt construction (backend/server.js → buildTailorPrompt)
+- Reads markdown prompt file (stage “tailor”) into the system message.
+- Builds a JSON schema example (TAILORED_SCHEMA_EXAMPLE) for the selected version; injected verbatim into the user message.
+- User message includes:
+  - “Prompt version: <version>”
+  - “Strict schema (no extra keys):” + schema JSON
+  - “Job payload (only job key passed through):” + { job: job_payload.job }
+  - “Master resume JSON:” + full master resume
+  - “Raw job text hash (sha256): <hash of description_text>”
+- System instructions append:
+  - Set output.version to the schema version
+  - Single-turn only; respond with JSON validating the schema
+  - Populate final_resume as fully written resume, truthful to master resume
+- OpenAI chat call: model from OPENAI_MODEL (default gpt-4o-mini), temp 0.2, response_format json_object.
+
+Tailor schema (latest_v2 highlights)
+- Adds explainability: baseline_resume ref, job_preview (extracted_preview/raw_text_hash), changes (before/after bullets with bullet_ids), requirements (must/nice with req_id), mappings (bullet_to_requirements, keyword_inserts).
+- final_resume includes stable ids per work_experience/projects.
+- Legacy responses are normalized/upgraded; IDs are attached and explainability defaults are derived if missing.
+
+Latex prompt construction (backend/server.js → buildLatexPrompt)
+- Reads markdown prompt file (stage “latex”) into system message.
+- User message includes:
+  - Prompt version + page limit
+  - Final resume JSON (only payload sent)
+  - Base LaTeX template with lock markers
+- System reminders enforce immutable header/education blocks and page_limit.
+- Anthropic messages.create call with model from ANTHROPIC_MODEL, temp 0.2.
+- Output is stripped of fences, validated for \begin{document}, unsafe commands blocked, lock markers enforced.
+
+Artifacts per run
+- baseline_resume.json (snapshot of master at run start)
+- job_extracted.txt (full extracted text)
+- tailored.json (schema v2 with explain fields) + tailored_resume.json alias
+- final_resume.json (render-ready payload)
+- resume.tex, resume.pdf, logs.txt, prompt_used_*.txt, meta.json
+- /download/<run_id>/<file> exposes artifacts for the extension.
+
+Extension consumption
+- Side panel Explain tab fetches tailored.json (+ baseline/final if present) via /download.
+- Uses only structured explain fields for diffs, keyword highlights, requirement mapping; no UI-side guessing.
