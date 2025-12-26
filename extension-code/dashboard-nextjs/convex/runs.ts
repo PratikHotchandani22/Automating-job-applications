@@ -197,7 +197,7 @@ export const getRunByRunId = query({
 });
 
 /**
- * Get all runs for a user
+ * Get all runs for a user (basic, without job details)
  */
 export const getRuns = query({
   args: { userId: v.id("users") },
@@ -208,6 +208,102 @@ export const getRuns = query({
       .collect();
 
     return filterNotDeleted(runs);
+  },
+});
+
+/**
+ * Get all runs for a user with job details (enriched)
+ * Returns data in the format expected by RunsTable component
+ */
+export const getRunsWithJobDetails = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const runs = await ctx.db
+      .query("runs")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .collect();
+
+    const filteredRuns = filterNotDeleted(runs);
+
+    // Enrich each run with job details and coverage
+    const enrichedRuns = await Promise.all(
+      filteredRuns.map(async (run) => {
+        // Get job details
+        const job = await ctx.db.get(run.jobId);
+        
+        // Get selection plan for coverage data
+        const selectionPlan = await ctx.db
+          .query("selectionPlans")
+          .withIndex("by_run", (q) => q.eq("runId", run._id))
+          .first();
+
+        // Calculate coverage percentage
+        let coverage = null;
+        if (selectionPlan?.coverage) {
+          const { mustTotal, mustCovered, niceTotal, niceCovered } = selectionPlan.coverage;
+          const totalReqs = mustTotal + niceTotal;
+          const totalCovered = mustCovered + niceCovered;
+          coverage = totalReqs > 0 ? Math.round((totalCovered / totalReqs) * 100) : null;
+        }
+
+        // Calculate runtime in seconds
+        const runtimeSec = run.timing?.totalMs 
+          ? Math.round(run.timing.totalMs / 1000) 
+          : run.startedAt && run.completedAt 
+            ? Math.round((run.completedAt - run.startedAt) / 1000)
+            : null;
+
+        // Map status to RunRecord format
+        const result = run.status === "success" 
+          ? "success" 
+          : run.status === "error" 
+            ? "error" 
+            : "pending";
+
+        return {
+          // Run identifiers
+          runId: run.runId,
+          _id: run._id,
+          
+          // Job details from joined job table
+          title: job?.title || "Untitled role",
+          company: job?.company || "Unknown",
+          platform: job?.platform || "Other",
+          
+          // Run status
+          status: run.stage || "UNKNOWN",
+          stage: run.stage,
+          result,
+          
+          // Metrics
+          coverage,
+          runtimeSec,
+          
+          // Timestamps
+          startedAt: run.startedAt ? new Date(run.startedAt).toISOString() : null,
+          updatedAt: run.updatedAt ? new Date(run.updatedAt).toISOString() : null,
+          createdAt: run.createdAt ? new Date(run.createdAt).toISOString() : null,
+          completedAt: run.completedAt ? new Date(run.completedAt).toISOString() : null,
+          
+          // Error message if any
+          error: run.errorMessage || null,
+          message: run.errorMessage || null,
+          
+          // Related IDs
+          jobId: run.jobId,
+          masterResumeId: run.masterResumeId,
+          
+          // Timing breakdown
+          timing: run.timing,
+          
+          // Cache hits
+          cacheHits: run.cacheHits,
+        };
+      })
+    );
+
+    return enrichedRuns;
   },
 });
 

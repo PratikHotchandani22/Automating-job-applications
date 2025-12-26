@@ -148,6 +148,9 @@ app.get("/health", (req, res) => {
 app.post("/analyze", async (req, res) => {
   try {
     const { job_payload, resume_id = "default", master_resume_json, options = {} } = req.body || {};
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:150',message:'Analyze endpoint called',data:{resume_id,has_master_resume_json:!!master_resume_json,work_exp_count:master_resume_json?.work_experience?.length,project_count:master_resume_json?.projects?.length,options},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     if (!job_payload || !job_payload.job) {
       res.status(400).json({ status: "error", message: "job_payload is required" });
       return;
@@ -159,6 +162,9 @@ app.post("/analyze", async (req, res) => {
       ensureDir(CONFIG.resumesDir);
       await writeJson(resumeFilePath, master_resume_json);
       console.log(`Saved master resume JSON to ${resumeFilePath}`);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:162',message:'Master resume JSON saved',data:{resumeFilePath,first_work_exp_id:master_resume_json?.work_experience?.[0]?.id,first_work_exp_company:master_resume_json?.work_experience?.[0]?.company,first_bullet_text:master_resume_json?.work_experience?.[0]?.bullets?.[0]?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
     }
 
     const runId = uuidv4();
@@ -700,6 +706,9 @@ async function scoreEvidenceForRun(masterResume, runId, runDir, appendLog) {
 }
 
 async function tailorResume(jobPayload, masterResume, options, prompt, appendLog, runDir) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:tailorResume:entry',message:'tailorResume called',data:{masterResume_work_exp_count:masterResume?.work_experience?.length,masterResume_first_exp_id:masterResume?.work_experience?.[0]?.id,masterResume_first_bullet:masterResume?.work_experience?.[0]?.bullets?.[0]?.substring(0,80),prompt_version:prompt?.version},timestamp:Date.now(),sessionId:'debug-session',runId:'tailor-debug',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   if (CONFIG.mockMode) {
     return buildMockTailored(jobPayload, masterResume);
   }
@@ -714,11 +723,19 @@ async function tailorResume(jobPayload, masterResume, options, prompt, appendLog
   let jdRubric = null;
   try {
     selectionPlan = JSON.parse(await fs.promises.readFile(selectionPlanPath, "utf8"));
+    // #region agent log
+    const selectedExpBullets = selectionPlan?.selected?.work_experience?.flatMap(r => r.bullets?.map(b => b.bullet_id) || []) || [];
+    const selectedProjBullets = selectionPlan?.selected?.projects?.flatMap(p => p.bullets?.map(b => b.bullet_id) || []) || [];
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:tailorResume:selectionPlan',message:'Selection plan loaded',data:{version:selectionPlan?.version,selected_exp_bullets:selectedExpBullets,selected_proj_bullets:selectedProjBullets,rewrite_intents:selectionPlan?.selected?.work_experience?.[0]?.bullets?.slice(0,3).map(b=>({id:b.bullet_id,intent:b.rewrite_intent}))},timestamp:Date.now(),sessionId:'debug-session',runId:'tailor-debug',hypothesisId:'B,C,E'})}).catch(()=>{});
+    // #endregion
   } catch (error) {
     throw new StageError("selection_plan.json missing for tailoring stage", "selection_enforcement");
   }
   try {
     baselineResume = JSON.parse(await fs.promises.readFile(baselinePath, "utf8"));
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:tailorResume:baseline',message:'Baseline resume loaded',data:{baseline_first_exp_id:baselineResume?.work_experience?.[0]?.id,baseline_first_bullet:baselineResume?.work_experience?.[0]?.bullets?.[0]?.substring(0,80)},timestamp:Date.now(),sessionId:'debug-session',runId:'tailor-debug',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
   } catch (error) {
     baselineResume = masterResume;
   }
@@ -749,6 +766,10 @@ async function tailorResume(jobPayload, masterResume, options, prompt, appendLog
   const promptVersionUsed = builder.schemaVersion || prompt.version || CONFIG.promptsVersion;
   let parsed = parseJsonSafe(text);
   parsed = normalizeTailoredOutput(parsed, jobPayload, masterResume, promptVersionUsed);
+  // #region agent log
+  const llmExpBullets = parsed?.changes?.experience?.flatMap(r => r.updated_bullets?.map(b => ({id:b.bullet_id,before:b.before_text?.substring(0,50),after:b.after_text?.substring(0,50)})) || []) || [];
+  fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:tailorResume:llmResponse',message:'LLM tailor response received',data:{promptVersionUsed,has_changes:!!parsed?.changes,llm_exp_bullets_sample:llmExpBullets.slice(0,5),llm_final_resume_first_bullet:parsed?.final_resume?.work_experience?.[0]?.bullets?.[0]?.substring(0,80)},timestamp:Date.now(),sessionId:'debug-session',runId:'tailor-debug',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
   let validation = validateTailored(parsed, promptVersionUsed);
   if (!validation.valid) {
     appendLog?.(`Tailor JSON invalid (${validation.errors.join("; ")}). Attempting repair.`);
@@ -765,6 +786,10 @@ async function tailorResume(jobPayload, masterResume, options, prompt, appendLog
     selectionPlanHash: `sha256:${hashString(JSON.stringify(selectionPlan || {}))}`
   });
   parsed = enforcement.output;
+  // #region agent log
+  const enforcedExpBullets = parsed?.changes?.experience?.flatMap(r => r.updated_bullets?.map(b => ({id:b.bullet_id,before:b.before_text?.substring(0,50),after:b.after_text?.substring(0,50)})) || []) || [];
+  fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:tailorResume:afterEnforcement',message:'After enforcement step',data:{enforced_exp_bullets_sample:enforcedExpBullets.slice(0,5),enforced_final_resume_first_bullet:parsed?.final_resume?.work_experience?.[0]?.bullets?.[0]?.substring(0,80),enforcement_meta:enforcement?.meta},timestamp:Date.now(),sessionId:'debug-session',runId:'tailor-debug',hypothesisId:'C,E'})}).catch(()=>{});
+  // #endregion
   const postEnforceValidation = validateTailored(parsed, promptVersionUsed);
   if (!postEnforceValidation.valid) {
     throw new StageError(

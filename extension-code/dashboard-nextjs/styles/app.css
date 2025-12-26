@@ -2255,3 +2255,257 @@ textarea:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ===========================================
+   TAILORED RESUME VIEW STYLES
+   =========================================== */
+
+.tailored-resume-view .trv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.tailored-resume-view .trv-meta h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 18px;
+  color: #e5edff;
+}
+
+.tailored-resume-view .trv-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tailored-resume-view .trv-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tailored-resume-view .trv-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
+.tailored-resume-view .trv-tab {
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.tailored-resume-view .trv-tab:hover {
+  background: rgba(96, 165, 250, 0.1);
+  color: #e2e8f0;
+}
+
+.tailored-resume-view .trv-tab.active {
+  background: var(--bg);
+  color: var(--primary);
+  border-bottom: 2px solid var(--primary);
+  margin-bottom: -1px;
+}
+
+.tailored-resume-view .trv-content {
+  min-height: 400px;
+}
+
+.tailored-resume-view .trv-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.tailored-resume-view .trv-section {
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.tailored-resume-view .trv-section h4 {
+  margin: 0 0 1rem 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+}
+
+.tailored-resume-view .trv-summary {
+  line-height: 1.6;
+  color: #e2e8f0;
+  margin: 0;
+  font-size: 14px;
+}
+
+.tailored-resume-view .trv-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tailored-resume-view .skill-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 13px;
+}
+
+.tailored-resume-view .skill-label {
+  color: var(--muted);
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.tailored-resume-view .skill-list {
+  color: #e2e8f0;
+}
+
+.tailored-resume-view .trv-experience,
+.tailored-resume-view .trv-project,
+.tailored-resume-view .trv-education {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tailored-resume-view .trv-experience:last-child,
+.tailored-resume-view .trv-project:last-child,
+.tailored-resume-view .trv-education:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.tailored-resume-view .exp-header,
+.tailored-resume-view .proj-header,
+.tailored-resume-view .edu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.tailored-resume-view .exp-dates,
+.tailored-resume-view .proj-date,
+.tailored-resume-view .edu-dates {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tailored-resume-view .exp-title,
+.tailored-resume-view .edu-degree {
+  color: #e2e8f0;
+  font-size: 14px;
+  margin-bottom: 0.5rem;
+}
+
+.tailored-resume-view .exp-location,
+.tailored-resume-view .edu-gpa {
+  color: var(--muted);
+}
+
+.tailored-resume-view .exp-bullets,
+.tailored-resume-view .proj-bullets {
+  margin: 0.5rem 0 0 1rem;
+  padding: 0;
+  list-style: disc;
+}
+
+.tailored-resume-view .exp-bullets li,
+.tailored-resume-view .proj-bullets li {
+  margin-bottom: 0.5rem;
+  line-height: 1.5;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.tailored-resume-view .rewrite-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 2px 6px;
+  background: rgba(96, 165, 250, 0.2);
+  color: var(--primary);
+  border-radius: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.tailored-resume-view .trv-awards {
+  margin: 0;
+  padding: 0 0 0 1rem;
+  list-style: disc;
+}
+
+.tailored-resume-view .trv-awards li {
+  margin-bottom: 0.5rem;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.tailored-resume-view .award-details {
+  color: var(--muted);
+}
+
+.tailored-resume-view .trv-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.tailored-resume-view .bullets-header {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+
+.tailored-resume-view .bullet-unchanged {
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+.tailored-resume-view .trv-latex {
+  display: flex;
+  flex-direction: column;
+}
+
+.tailored-resume-view .latex-code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  max-height: 500px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tailored-resume-view .trv-artifacts {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.tailored-resume-view .trv-artifacts h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 14px;
+  color: var(--muted);
+}

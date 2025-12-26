@@ -181,6 +181,15 @@ export const startTailoringPipeline = action({
 
     // Convert resume to backend format
     const resumeJson = await convertResumeToBackendFormat(ctx, args.masterResumeId);
+    // #region agent log
+    console.log('[DEBUG:resumePipeline] convertResumeToBackendFormat result:', {
+      work_exp_count: resumeJson?.work_experience?.length,
+      first_exp_id: resumeJson?.work_experience?.[0]?.id,
+      first_exp_company: resumeJson?.work_experience?.[0]?.company,
+      first_bullet: resumeJson?.work_experience?.[0]?.bullets?.[0]?.substring(0, 80),
+      project_count: resumeJson?.projects?.length
+    });
+    // #endregion
 
     // Build job payload for backend
     const jobPayload = {
