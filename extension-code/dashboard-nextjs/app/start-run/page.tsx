@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -8,6 +8,20 @@ import UserOnboarding from "@/components/UserOnboarding";
 import Link from "next/link";
 import StatusPill from "@/components/StatusPill";
 import { formatDateTime } from "@/utils/runFilters";
+
+// Declare chrome types for TypeScript
+declare global {
+  interface Window {
+    chrome?: {
+      runtime?: {
+        sendMessage: (extensionId: string, message: any, callback?: (response: any) => void) => void;
+      };
+    };
+  }
+}
+
+// Known extension ID - users can update this if using unpacked extension
+const EXTENSION_ID = "YOUR_EXTENSION_ID_HERE"; // Will be auto-detected
 
 export default function StartRunPage() {
   const { user: clerkUser } = useUser();
@@ -17,6 +31,9 @@ export default function StartRunPage() {
   const [statusText, setStatusText] = useState("Ready.");
   const [backendStatus, setBackendStatus] = useState<"online" | "offline" | "checking">("online");
   const [syncingJobs, setSyncingJobs] = useState(false);
+  const [extensionId, setExtensionId] = useState<string | null>(null);
+  const [extensionDetected, setExtensionDetected] = useState(false);
+  const extensionIdRef = useRef<string | null>(null);
   
   // Get user from Convex
   const convexUser = useQuery(
@@ -33,6 +50,12 @@ export default function StartRunPage() {
   const activeResume = useMemo(() => {
     return resumes?.find((r: any) => r.isActive) || resumes?.[0];
   }, [resumes]);
+
+  // Get resume bullets for the active resume
+  const resumeBullets = useQuery(
+    api.resumeBullets.getResumeBullets,
+    activeResume ? { masterResumeId: activeResume._id } : "skip"
+  );
 
   // Get tabs from extension (like React dashboard did)
   const [tabs, setTabs] = useState<any[]>([]);
@@ -51,59 +74,171 @@ export default function StartRunPage() {
 
   const createRun = useMutation(api.runs.createRun);
 
+  // Helper to check if we're in an iframe
+  const isInIframe = useCallback(() => {
+    try {
+      return typeof window !== "undefined" && window.parent !== window;
+    } catch (e) {
+      return true;
+    }
+  }, []);
+
+  // Check if chrome.runtime is available for external messaging
+  const hasChromeRuntime = typeof window !== "undefined" && 
+    window.chrome?.runtime?.sendMessage !== undefined;
+
+  // Function to send message to extension using external messaging
+  const sendExtensionMessage = useCallback((message: any): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      const extId = extensionIdRef.current;
+      if (!hasChromeRuntime || !extId) {
+        reject(new Error("Extension not available"));
+        return;
+      }
+      try {
+        window.chrome!.runtime!.sendMessage(extId, message, (response: any) => {
+          if (response?.ok === false) {
+            reject(new Error(response?.error || "Extension request failed"));
+          } else {
+            resolve(response);
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }, [hasChromeRuntime]);
+
   // Function to request tabs from extension
-  const requestTabs = useCallback(() => {
+  const requestTabs = useCallback(async () => {
     // Check if we're in an iframe by trying to access parent
     let isInIframe = false;
     try {
-      // Try to access parent - if we can and it's different, we're in an iframe
       isInIframe = typeof window !== "undefined" && 
                    window.parent !== window && 
                    window.parent !== null;
     } catch (e) {
-      // Cross-origin iframe - we're definitely in an iframe
       isInIframe = true;
     }
     
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:54',message:'requestTabs called',data:{hasWindow:typeof window!=='undefined',isIframe,windowLocation:typeof window!=='undefined'?window.location.href:'none',parentExists:typeof window!=='undefined'&&window.parent!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'requestTabs called',data:{hasWindow:typeof window!=='undefined',isInIframe,hasChromeRuntime,extensionId:extensionIdRef.current,windowLocation:typeof window!=='undefined'?window.location.href:'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
     
     if (isInIframe && typeof window !== "undefined") {
       // We're in an iframe - request tabs from parent (extension sidepanel)
       const message = { type: "GET_TABS", scope: "currentWindow" };
       try {
-        // Try sending to parent - use "*" to allow cross-origin
         window.parent.postMessage(message, "*");
-        // Also try sending to top window
         if (window.top && window.top !== window) {
           window.top.postMessage(message, "*");
         }
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:72',message:'postMessage sent to parent',data:{messageType:message.type,hasTop:!!window.top},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'postMessage sent to parent (iframe mode)',data:{messageType:message.type},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
         // #endregion
       } catch (e) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:78',message:'postMessage error',data:{error:String(e)},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'postMessage error',data:{error:String(e)},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
         // #endregion
       }
+    } else if (hasChromeRuntime && extensionIdRef.current) {
+      // Not in iframe but extension is available - use direct messaging
+      try {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'Using direct extension messaging',data:{extensionId:extensionIdRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        const response = await sendExtensionMessage({ action: "GET_TABS", scope: "currentWindow" });
+        if (response?.ok && response?.tabs) {
+          const filtered = response.tabs.filter((t: any) => 
+            !t.isDashboard && 
+            !(t.url || "").startsWith("chrome-extension://")
+          );
+          setTabs(filtered);
+          setStatusText(`Found ${filtered.length} tabs.`);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'Got tabs via direct messaging',data:{tabsCount:filtered.length},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
+        }
+      } catch (e) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'Direct extension message failed',data:{error:String(e)},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        setStatusText("Extension communication failed. Please check that the extension is installed.");
+      }
     } else {
-      // Not in iframe - show message that extension is required
-      setStatusText("Please open this page through the extension sidepanel to access tabs.");
+      // No extension available
+      setStatusText("Extension not detected. Please install the ResumeGen Tracker extension and reload this page.");
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:84',message:'Not in iframe - cannot access tabs',data:{hasWindow:typeof window!=='undefined',isIframe},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'No extension available',data:{hasChromeRuntime,extensionId:extensionIdRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'F'})}).catch(()=>{});
       // #endregion
     }
-  }, []);
+  }, [hasChromeRuntime, sendExtensionMessage]);
+
+  // Detect extension on mount
+  useEffect(() => {
+    if (!hasChromeRuntime) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:detectExtension',message:'No chrome.runtime available',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'G'})}).catch(()=>{});
+      // #endregion
+      return;
+    }
+
+    // Try to detect extension by sending a ping to known extension IDs
+    // For unpacked extensions, users need to provide the ID
+    const tryExtensionIds = [
+      localStorage.getItem("resumegen_extension_id"), // User-provided ID
+      // Add your extension ID here when published
+    ].filter(Boolean) as string[];
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:detectExtension',message:'Attempting extension detection',data:{tryExtensionIds},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'G'})}).catch(()=>{});
+    // #endregion
+
+    const detectExtension = async () => {
+      for (const extId of tryExtensionIds) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            window.chrome!.runtime!.sendMessage(extId, { action: "GET_EXTENSION_ID" }, (response: any) => {
+              if (response?.ok && response?.extensionId) {
+                extensionIdRef.current = response.extensionId;
+                setExtensionId(response.extensionId);
+                setExtensionDetected(true);
+                setStatusText("Extension connected. Click 'Refresh tabs' to load tabs.");
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:detectExtension',message:'Extension detected',data:{extensionId:response.extensionId},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'G'})}).catch(()=>{});
+                // #endregion
+                resolve();
+              } else {
+                reject(new Error("Invalid response"));
+              }
+            });
+          });
+          return; // Found a working extension
+        } catch (e) {
+          // Try next ID
+        }
+      }
+      
+      // No extension found with known IDs - show instructions
+      setStatusText("Extension not detected. Enter your extension ID in the input below.");
+    };
+
+    detectExtension();
+  }, [hasChromeRuntime]);
 
   // Listen for tab data from extension and sync jobs
   useEffect(() => {
-    // Request tabs on mount
+    // Request tabs on mount (but only if extension is detected or we're in iframe)
+    const isInIframe = typeof window !== "undefined" && window.parent !== window;
+    if (isInIframe || extensionDetected) {
     requestTabs();
+    }
     
     // Also request tabs after a short delay to ensure iframe is ready
     const timeout = setTimeout(() => {
+      if (isInIframe || extensionDetected) {
       requestTabs();
+      }
     }, 1000);
 
     const handleMessage = async (event: MessageEvent) => {
@@ -167,7 +302,7 @@ export default function StartRunPage() {
       clearTimeout(timeout);
       window.removeEventListener("message", handleMessage);
     };
-  }, [clerkUser, syncingJobs, requestTabs]);
+  }, [clerkUser, syncingJobs, requestTabs, extensionDetected]);
 
   // Track which jobs have been analyzed
   const analyzedByJobId = useMemo(() => {
@@ -225,38 +360,222 @@ export default function StartRunPage() {
       return;
     }
 
+    if (resumeBullets === undefined) {
+      setStatusText("Loading resume data... Please wait.");
+      return;
+    }
+
     if (runningSelectedCount > 0) {
       setStatusText(`Already running for ${runningSelectedCount} selected tab${runningSelectedCount > 1 ? "s" : ""}.`);
       return;
     }
 
-    if (backendStatus !== "online") {
-      setStatusText("Backend required for analysis.");
+    // Check if we can communicate with extension
+    if (!extensionIdRef.current && !isInIframe()) {
+      setStatusText("Extension not connected. Please enter your extension ID above.");
       return;
     }
 
     setAnalyzing(true);
-    setStatusText("Extracting from tabs and starting runs...");
+    setStatusText("Extracting job data from tabs...");
 
     try {
-      // For each selected tab, we need to:
-      // 1. Extract job data from the tab
-      // 2. Create/update job in Convex
-      // 3. Create run
+      // Convert selected IDs to numbers (tab IDs)
+      const tabIds = selectedJobIds.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
       
-      // Note: This is a simplified version - in production you'd want to handle this via the extension
-      // For now, we'll show a message that this needs to be implemented
-      setStatusText("Tab-based analysis requires extension integration. Please use the extension's analyze feature.");
+      if (tabIds.length === 0) {
+        setStatusText("No valid tabs selected.");
+        setAnalyzing(false);
+        return;
+      }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Starting analysis',data:{tabIds,selectedJobIds,extensionId:extensionIdRef.current,isInIframe:isInIframe()},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
+      // #endregion
+
+      let successCount = 0;
+      let failCount = 0;
+      const results: any[] = [];
+
+      // Process each selected tab
+      for (const tabId of tabIds) {
+        try {
+          setStatusText(`Extracting from tab ${tabId}...`);
+          
+          // Step 1: Extract job data from tab using extension
+          const extractResponse = await sendExtensionMessage({
+            action: "EXTRACT_JOB_FROM_TAB",
+            tabId
+          });
+
+          if (!extractResponse?.ok || !extractResponse?.data) {
+            failCount++;
+            results.push({ tabId, ok: false, error: "Extraction failed" });
+            continue;
+          }
+
+          const extraction = extractResponse.data;
+          const jobPayload = {
+            job: {
+              title: extraction.job?.title || "",
+              company: extraction.job?.company || "",
+              location: extraction.job?.location || "",
+              description_text: extraction.job?.description_text || "",
+            },
+            meta: {
+              url: extraction.meta?.url || "",
+              platform: extraction.meta?.platform || "",
+            }
+          };
+
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Job extracted',data:{tabId,title:jobPayload.job.title,company:jobPayload.job.company,descLength:jobPayload.job.description_text.length},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
+          // #endregion
+
+          if (!jobPayload.job.description_text) {
+            failCount++;
+            results.push({ tabId, ok: false, error: "No job description found" });
+            continue;
+          }
+
+          // Step 2: Call the Next.js analyze API
+          setStatusText(`Analyzing job: ${jobPayload.job.title || "Unknown"}...`);
+
+          // Build the master_resume object from activeResume fields and resumeBullets
+          // Group bullets by parentId to build experience and projects arrays
+          const experienceBullets = (resumeBullets || []).filter((b: any) => b.parentType === "experience");
+          const projectBullets = (resumeBullets || []).filter((b: any) => b.parentType === "project");
+          
+          // Build experience array from bullets
+          const experienceMap = new Map<string, any>();
+          experienceBullets.forEach((bullet: any) => {
+            const key = bullet.parentId;
+            if (!experienceMap.has(key)) {
+              experienceMap.set(key, {
+                role_id: key,
+                company: bullet.company || "",
+                title: bullet.role || "",
+                dates: bullet.dates || "",
+                location: bullet.location || "",
+                bullets: [],
+              });
+            }
+            experienceMap.get(key)!.bullets.push(bullet.text);
+          });
+          const experience = Array.from(experienceMap.values());
+          
+          // Build projects array from bullets
+          const projectsMap = new Map<string, any>();
+          projectBullets.forEach((bullet: any) => {
+            const key = bullet.parentId;
+            if (!projectsMap.has(key)) {
+              projectsMap.set(key, {
+                project_id: key,
+                name: bullet.projectName || key,
+                dates: bullet.dates || "",
+                description: "",
+                bullets: [],
+                technologies: bullet.tags || [],
+              });
+            }
+            projectsMap.get(key)!.bullets.push(bullet.text);
+          });
+          const projects = Array.from(projectsMap.values());
+
+          const masterResumePayload = {
+            contact: {
+              name: activeResume.header?.fullName,
+              email: activeResume.header?.email,
+              phone: activeResume.header?.phone,
+              location: activeResume.header?.address,
+              linkedin: activeResume.header?.linkedin,
+              github: activeResume.header?.github,
+            },
+            summary: activeResume.summary,
+            experience,
+            projects,
+            skills: {
+              languages: activeResume.skills?.programming_languages || [],
+              frameworks: activeResume.skills?.frameworks_libraries || [],
+              tools: activeResume.skills?.tools_cloud_technologies || [],
+              databases: [],
+              cloud: [],
+              other: [
+                ...(activeResume.skills?.data_science_analytics || []),
+                ...(activeResume.skills?.machine_learning_ai || []),
+                ...(activeResume.skills?.other_skills || []),
+              ],
+            },
+            education: (activeResume.education || []).map((edu: any) => ({
+              school: edu.institution,
+              degree: edu.degree,
+              dates: edu.dates,
+              location: edu.location,
+              gpa: edu.gpa,
+            })),
+            certifications: [],
+          };
+
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:beforeAnalyze',message:'Master resume payload being sent',data:{exp_count:masterResumePayload.experience.length,proj_count:masterResumePayload.projects.length,first_exp_company:masterResumePayload.experience[0]?.company,first_exp_bullets:masterResumePayload.experience[0]?.bullets?.length,resumeBullets_count:resumeBullets?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-fix',hypothesisId:'FIX_VERIFY'})}).catch(()=>{});
+          // #endregion
+
+          const analyzeResponse = await fetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              job_payload: jobPayload,
+              master_resume: masterResumePayload,
+            }),
+          });
+
+          const analyzeResult = await analyzeResponse.json();
+
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Analyze API response',data:{tabId,success:analyzeResult.success,runId:analyzeResult.run_id,error:analyzeResult.error},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
+          // #endregion
+
+          if (analyzeResult.success) {
+            successCount++;
+            results.push({ 
+              tabId, 
+              ok: true, 
+              runId: analyzeResult.run_id,
+              title: jobPayload.job.title,
+              company: jobPayload.job.company,
+            });
+          } else {
+            failCount++;
+            results.push({ tabId, ok: false, error: analyzeResult.error || "Analysis failed" });
+          }
+        } catch (e: any) {
+          failCount++;
+          results.push({ tabId, ok: false, error: e.message });
+        }
+      }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Analysis complete',data:{successCount,failCount,results},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
+      // #endregion
+
+      if (failCount > 0 && successCount > 0) {
+        setStatusText(`Analysis complete. ${successCount} succeeded, ${failCount} failed.`);
+      } else if (failCount > 0) {
+        setStatusText(`Analysis failed for all ${failCount} tab(s). Check console for details.`);
+      } else {
+        setStatusText(`Analysis complete for ${successCount} tab(s)!`);
+      }
       
-      // TODO: Implement proper tab extraction and run creation
-      // This would require calling the extension's EXTRACT_FROM_TAB and ANALYZE_CAPTURE actions
-      
+      setSelectedJobIds([]); // Clear selection after starting
     } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Analysis error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
+      // #endregion
       setStatusText(error.message || "Failed to start run");
     } finally {
       setAnalyzing(false);
     }
-  }, [selectedJobIds, activeResume, backendStatus, convexUser, tabs, runningSelectedCount]);
+  }, [selectedJobIds, activeResume, resumeBullets, runningSelectedCount, sendExtensionMessage, isInIframe]);
 
   // Show onboarding if user not set up
   if (!convexUser) {
@@ -276,6 +595,55 @@ export default function StartRunPage() {
       {!activeResume && (
         <div className="banner warn">
           No active master resume. <Link href="/settings" className="link-button">Create one in Settings</Link>
+        </div>
+      )}
+
+      {/* Extension ID setup - only show when not in iframe and extension not detected */}
+      {!extensionDetected && typeof window !== "undefined" && window.parent === window && (
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <div className="panel-head">
+            <div>
+              <h3>Extension Setup</h3>
+              <p className="hint">Enter your ResumeGen Tracker extension ID to enable direct communication</p>
+            </div>
+          </div>
+          <div style={{ padding: "1rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input
+              type="text"
+              placeholder="Extension ID (e.g., abcdefghijklmnopqrstuvwxyz)"
+              defaultValue={typeof localStorage !== "undefined" ? localStorage.getItem("resumegen_extension_id") || "" : ""}
+              style={{
+                flex: 1,
+                padding: "0.5rem",
+                borderRadius: "4px",
+                border: "1px solid var(--border)",
+                background: "var(--bg-secondary)",
+                color: "var(--text-primary)",
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const input = e.target as HTMLInputElement;
+                  localStorage.setItem("resumegen_extension_id", input.value);
+                  window.location.reload();
+                }
+              }}
+            />
+            <button
+              className="primary small"
+              onClick={() => {
+                const input = document.querySelector('input[placeholder*="Extension ID"]') as HTMLInputElement;
+                if (input?.value) {
+                  localStorage.setItem("resumegen_extension_id", input.value);
+                  window.location.reload();
+                }
+              }}
+            >
+              Connect
+            </button>
+          </div>
+          <p className="hint" style={{ padding: "0 1rem 1rem" }}>
+            Find your extension ID at <code>chrome://extensions</code> (enable Developer mode to see it)
+          </p>
         </div>
       )}
 

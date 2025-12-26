@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import RunsTable from "@/components/RunsTable";
 import RunFilters from "@/components/RunFilters";
 import { defaultFilters, applyFilters } from "@/utils/runFilters";
-import type { Filters } from "@/types";
+import type { Filters, RunRecord } from "@/types";
 import UserOnboarding from "@/components/UserOnboarding";
 import { useUser } from "@clerk/nextjs";
 
@@ -19,17 +19,43 @@ export default function RunsPage() {
     clerkUser ? { clerkId: clerkUser.id } : "skip"
   );
   
-  // Get user's runs from Convex
-  const runs = useQuery(
-    api.runs.getRuns,
+  // Get user's runs from Convex with job details
+  const runsData = useQuery(
+    api.runs.getRunsWithJobDetails,
     convexUser ? { userId: convexUser._id } : "skip"
-  ) || [];
+  );
+  
+  // Map Convex data to RunRecord format
+  const runs: RunRecord[] = useMemo(() => {
+    if (!runsData) return [];
+    return runsData.map((run) => ({
+      runId: run.runId,
+      title: run.title,
+      company: run.company,
+      platform: run.platform,
+      status: run.status as any,
+      result: run.result as any,
+      coverage: run.coverage,
+      runtimeSec: run.runtimeSec,
+      startedAt: run.startedAt,
+      updatedAt: run.updatedAt,
+      createdAt: run.createdAt,
+      error: run.error,
+      message: run.message,
+    }));
+  }, [runsData]);
   
   const [filters, setFilters] = useState<Filters>(defaultFilters);
 
-  const filteredRuns = useMemo(() => applyFilters(runs as any[], filters), [runs, filters]);
+  const filteredRuns = useMemo(() => applyFilters(runs, filters), [runs, filters]);
 
   const handleSelect = (runId: string) => {
+    // Use Next.js router for better navigation
+    window.location.href = `/run/${runId}`;
+  };
+
+  // Handle viewing run details
+  const handleViewRun = (runId: string) => {
     window.location.href = `/run/${runId}`;
   };
 

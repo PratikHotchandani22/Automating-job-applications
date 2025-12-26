@@ -748,7 +748,28 @@ chrome.action.onClicked.addListener((tab) => {
   })();
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Handle messages from external websites (Next.js dashboard at localhost:3000)
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  // Verify the sender is from our allowed origins
+  const allowedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+  if (!sender.origin || !allowedOrigins.some(o => sender.origin.startsWith(o))) {
+    sendResponse({ ok: false, error: "Unauthorized origin" });
+    return true;
+  }
+
+  // Handle GET_EXTENSION_ID request - used for initial handshake
+  if (message.action === "GET_EXTENSION_ID") {
+    sendResponse({ ok: true, extensionId: chrome.runtime.id });
+    return true;
+  }
+
+  // Forward all other messages to the main handler
+  handleMessage(message, sender, sendResponse);
+  return true;
+});
+
+// Shared message handler for both internal and external messages
+const handleMessage = (message, sender, sendResponse) => {
   if (!message || !message.action) return undefined;
 
   const respond = (payload) => sendResponse(payload);
@@ -811,16 +832,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       stopRunIds.add(message.runId);
       stopPendingRuns({ runId: message.runId, message: "Run stopped by user" }).catch(() => undefined);
       respond({ ok: true });
-      return true;
-    }
-    case "STOP_QUEUE": {
-      try {
-        if (!message.queueId) throw new Error("queueId required");
-        stopQueueIds.add(message.queueId);
-        respond({ ok: true });
-      } catch (err) {
-        fail(err);
-      }
       return true;
     }
     case "SET_UI_STATE": {
@@ -910,4 +921,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     default:
       return undefined;
   }
+};
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  return handleMessage(message, sender, sendResponse);
 });
