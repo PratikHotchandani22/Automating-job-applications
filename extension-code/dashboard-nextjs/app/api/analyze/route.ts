@@ -524,32 +524,61 @@ CRITICAL REMINDERS:
     // Store tailored resume in Convex
     if (convexRunId && tailored) {
       try {
+        const buildMasterBulletsMap = (entries: any[] = [], idFields: string[], fallbackPrefix: string) => {
+          const map = new Map<string, string[]>();
+          entries.forEach((entry, idx) => {
+            const key =
+              idFields
+                .map((field) => entry?.[field])
+                .find((value) => typeof value === "string" && value.length > 0) ?? `${fallbackPrefix}_${idx}`;
+            map.set(key, entry?.bullets || []);
+          });
+          return map;
+        };
+
+        const masterExperienceBullets = buildMasterBulletsMap(master_resume?.experience, ["role_id", "roleId"], "role");
+        const masterProjectBullets = buildMasterBulletsMap(master_resume?.projects, ["project_id", "projectId"], "proj");
+
         // Transform LLM output to match Convex schema
-        const workExperience = (tailored.experience || []).map((exp: any, idx: number) => ({
-          roleId: exp.role_id || `role_${idx}`,
-          company: exp.company || "Unknown",
-          title: exp.title || "Unknown",
-          dateRange: exp.dates || "",
-          location: exp.location,
-          bullets: (exp.bullets || []).map((bullet: string, bIdx: number) => ({
-            bulletId: `${exp.role_id || `role_${idx}`}_b${bIdx}`,
-            originalText: bullet, // In this simplified flow, original = tailored
-            tailoredText: bullet,
-            wasRewritten: true,
-          })),
-        }));
+        const workExperience = (tailored.experience || []).map((exp: any, idx: number) => {
+          const roleKey = exp.role_id || exp.roleId || `role_${idx}`;
+          const masterBullets = masterExperienceBullets.get(roleKey) || [];
+          return {
+            roleId: roleKey,
+            company: exp.company || "Unknown",
+            title: exp.title || "Unknown",
+            dateRange: exp.dates || "",
+            location: exp.location,
+            bullets: (exp.bullets || []).map((bullet: string, bIdx: number) => {
+              const originalText = masterBullets[bIdx] || bullet;
+              return {
+                bulletId: `${roleKey}_b${bIdx}`,
+                originalText,
+                tailoredText: bullet,
+                wasRewritten: originalText !== bullet,
+              };
+            }),
+          };
+        });
         
-        const projects = (tailored.projects || []).map((proj: any, idx: number) => ({
-          projectId: proj.project_id || `proj_${idx}`,
-          name: proj.name || "Unknown Project",
-          date: proj.date,
-          bullets: (proj.bullets || []).map((bullet: string, bIdx: number) => ({
-            bulletId: `${proj.project_id || `proj_${idx}`}_b${bIdx}`,
-            originalText: bullet,
-            tailoredText: bullet,
-            wasRewritten: true,
-          })),
-        }));
+        const projects = (tailored.projects || []).map((proj: any, idx: number) => {
+          const projectKey = proj.project_id || proj.projectId || `proj_${idx}`;
+          const masterBullets = masterProjectBullets.get(projectKey) || [];
+          return {
+            projectId: projectKey,
+            name: proj.name || "Unknown Project",
+            date: proj.date,
+            bullets: (proj.bullets || []).map((bullet: string, bIdx: number) => {
+              const originalText = masterBullets[bIdx] || bullet;
+              return {
+                bulletId: `${projectKey}_b${bIdx}`,
+                originalText,
+                tailoredText: bullet,
+                wasRewritten: originalText !== bullet,
+              };
+            }),
+          };
+        });
         
         const education = (master_resume.education || []).map((edu: any) => ({
           institution: edu.school || edu.institution || "Unknown",
