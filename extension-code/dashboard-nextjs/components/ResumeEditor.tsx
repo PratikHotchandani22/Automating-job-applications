@@ -49,28 +49,42 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
 
   // Group work experience bullets by parentId (company/role)
   const [workExpGroups, setWorkExpGroups] = useState<Record<string, any[]>>({});
+  const [projectGroups, setProjectGroups] = useState<Record<string, any[]>>({});
   const [workExpPendingChanges, setWorkExpPendingChanges] = useState(false);
 
   // Group bullets when they're loaded
   useEffect(() => {
     if (allBullets) {
       const experienceBullets = allBullets.filter(b => b.parentType === "experience");
-      const grouped: Record<string, any[]> = {};
-      
+      const expGrouped: Record<string, any[]> = {};
       experienceBullets.forEach(bullet => {
         const key = bullet.parentId;
-        if (!grouped[key]) {
-          grouped[key] = [];
+        if (!expGrouped[key]) {
+          expGrouped[key] = [];
         }
-        grouped[key].push(bullet);
+        expGrouped[key].push(bullet);
       });
-
-      // Sort bullets within each group by order
-      Object.keys(grouped).forEach(key => {
-        grouped[key].sort((a, b) => (a.order || 0) - (b.order || 0));
+      Object.keys(expGrouped).forEach(key => {
+        expGrouped[key].sort((a, b) => (a.order || 0) - (b.order || 0));
       });
+      setWorkExpGroups(expGrouped);
 
-      setWorkExpGroups(grouped);
+      const projectBullets = allBullets.filter(b => b.parentType === "project");
+      const projGrouped: Record<string, any[]> = {};
+      projectBullets.forEach(bullet => {
+        const key = bullet.parentId;
+        if (!projGrouped[key]) {
+          projGrouped[key] = [];
+        }
+        projGrouped[key].push(bullet);
+      });
+      Object.keys(projGrouped).forEach(key => {
+        projGrouped[key].sort((a, b) => (a.order || 0) - (b.order || 0));
+      });
+      setProjectGroups(projGrouped);
+    } else {
+      setWorkExpGroups({});
+      setProjectGroups({});
     }
   }, [allBullets]);
 
@@ -196,6 +210,31 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
       setWorkExpPendingChanges(true);
     } catch (error) {
       console.error("Error adding bullet:", error);
+      alert("Failed to add bullet. Please try again.");
+    }
+  };
+
+  const handleAddProjectBullet = async (parentId: string, projectName: string) => {
+    if (!resume) return;
+
+    try {
+      const existingBullets = projectGroups[parentId] || [];
+      const nextOrder = existingBullets.length > 0
+        ? Math.max(...existingBullets.map(b => b.order || 0)) + 1
+        : 0;
+
+      await createBullet({
+        masterResumeId: resume._id,
+        bulletId: `${parentId}_p${nextOrder + 1}`,
+        parentType: "project",
+        parentId,
+        projectName: projectName || undefined,
+        text: "",
+        order: nextOrder,
+      });
+      setWorkExpPendingChanges(true);
+    } catch (error) {
+      console.error("Error adding project bullet:", error);
       alert("Failed to add bullet. Please try again.");
     }
   };
@@ -572,6 +611,155 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
             })}
           </Section>
 
+          {/* Projects Section */}
+          <Section title="Projects">
+            {Object.keys(projectGroups).length === 0 && (
+              <p className="hint" style={{ fontSize: "12px", marginBottom: "1rem" }}>
+                No projects found. Project sections will appear here after uploading a resume with project content.
+              </p>
+            )}
+            {Object.entries(projectGroups).map(([parentId, bullets]) => {
+              const firstBullet = bullets[0];
+              const projectName = firstBullet?.projectName || "";
+              const dates = firstBullet?.dates || "";
+              const tags = firstBullet?.tags || [];
+
+              return (
+                <div
+                  key={parentId}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    padding: "1rem",
+                    marginBottom: "1.5rem",
+                    backgroundColor: "rgba(255, 255, 255, 0.02)",
+                  }}
+                >
+                  <div style={{ marginBottom: "1rem" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            marginBottom: "0.5rem",
+                            fontSize: "13px",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          Project Name
+                        </label>
+                        <input
+                          type="text"
+                          className="input"
+                          value={projectName}
+                          disabled={true}
+                          style={{ width: "100%", opacity: 0.7 }}
+                          placeholder="Project name"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            marginBottom: "0.5rem",
+                            fontSize: "13px",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          Dates
+                        </label>
+                        <input
+                          type="text"
+                          className="input"
+                          value={dates}
+                          disabled={true}
+                          style={{ width: "100%", opacity: 0.7 }}
+                          placeholder="Project dates"
+                        />
+                      </div>
+                    </div>
+                    {tags.length > 0 && (
+                      <div style={{ marginBottom: "1rem" }}>
+                        <label
+                          style={{
+                            display: "block",
+                            marginBottom: "0.5rem",
+                            fontSize: "13px",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          Technologies
+                        </label>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                          {tags.map((tag: string) => (
+                            <span
+                              key={`${parentId}-tag-${tag}`}
+                              style={{
+                                fontSize: "12px",
+                                padding: "0.25rem 0.5rem",
+                                borderRadius: "999px",
+                                border: "1px solid var(--border)",
+                                backgroundColor: "rgba(255, 255, 255, 0.03)",
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: "0.5rem",
+                        fontSize: "13px",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      Project Details
+                    </label>
+                    {bullets.map((bullet, idx) => (
+                      <div
+                        key={bullet._id}
+                        style={{
+                          display: "flex",
+                          gap: "0.5rem",
+                          marginBottom: "0.5rem",
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <textarea
+                          className="input"
+                          value={bullet.text}
+                          onChange={(e) => handleBulletUpdate(bullet._id, e.target.value)}
+                          placeholder="Enter bullet point..."
+                          rows={2}
+                          style={{ flex: 1, resize: "vertical" }}
+                        />
+                        <button
+                          className="ghost tiny"
+                          onClick={() => handleBulletDelete(bullet._id)}
+                          style={{ marginTop: "0.25rem" }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="ghost small"
+                      onClick={() => handleAddProjectBullet(parentId, projectName)}
+                      style={{ marginTop: "0.5rem" }}
+                    >
+                      + Add Bullet Point
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </Section>
+
           {/* Education Section */}
           <Section title="Education">
             {education.map((edu: any, index: number) => (
@@ -848,4 +1036,3 @@ function ArrayEditor({
     </div>
   );
 }
-

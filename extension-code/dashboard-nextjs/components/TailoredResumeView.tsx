@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { generateResumeLatex } from "@/lib/latexGenerator";
@@ -103,6 +103,7 @@ interface TailoredResumeViewProps {
   runId: Id<"runs">;
   artifacts: Artifact[];
   onArtifactCreated?: () => void;
+  registerGeneratePdf?: (context: { trigger: () => Promise<void>; loading: boolean } | null) => void;
 }
 
 export default function TailoredResumeView({
@@ -112,6 +113,7 @@ export default function TailoredResumeView({
   runId,
   artifacts,
   onArtifactCreated,
+  registerGeneratePdf,
 }: TailoredResumeViewProps) {
   const [activeTab, setActiveTab] = useState<"preview" | "bullets" | "latex">("preview");
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -174,19 +176,41 @@ export default function TailoredResumeView({
   const existingPdf = artifacts.find((a) => a.artifactType === "pdf");
   const existingTex = artifacts.find((a) => a.artifactType === "tex");
 
+  // Helper function to generate filename in format: fullname_jobtitle_companyname
+  const generateFilename = useCallback(() => {
+    // Get full name (e.g., "Pratik Hotchandani")
+    const fullName = masterResume?.header?.fullName || "resume";
+    
+    // Get job title and company
+    const jobTitle = job?.title || "resume";
+    const jobCompany = job?.company || "company";
+    
+    // Build filename: fullname_jobtitle_companyname
+    const filename = `${fullName}_${jobTitle}_${jobCompany}`;
+    
+    // Sanitize for filesystem (replace invalid chars with underscore)
+    return filename.replace(/[^a-zA-Z0-9_-]/g, "_");
+  }, [masterResume, job]);
+
   // Handle PDF generation and download
   const handleGeneratePdf = useCallback(async (download = true, store = true) => {
     setGeneratingPdf(true);
     setPdfError(null);
 
+    // #region agent log
+    const generatedFilename = generateFilename();
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TailoredResumeView.tsx:195',message:'handleGeneratePdf entry with full name',data:{fullName:masterResume?.header?.fullName,jobTitle:job?.title,jobCompany:job?.company,generatedFilename,download,store},timestamp:Date.now(),sessionId:'debug-session',runId:'fullname-fix',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+
     try {
+
       // Call our PDF generation API
       const response = await fetch("/api/generate-pdf", {
         method: download ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           latex: latexContent,
-          filename: `${job?.company || "company"}_${job?.title || "resume"}_tailored`.replace(/[^a-zA-Z0-9_-]/g, "_"),
+          filename: generatedFilename,
         }),
       });
 
@@ -201,7 +225,11 @@ export default function TailoredResumeView({
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `${job?.company || "company"}_${job?.title || "resume"}_tailored.pdf`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+        const downloadFilename = `${generatedFilename}.pdf`;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TailoredResumeView.tsx:226',message:'download filename with full name',data:{downloadFilename,fullName:masterResume?.header?.fullName,jobTitle:job?.title,jobCompany:job?.company},timestamp:Date.now(),sessionId:'debug-session',runId:'fullname-fix',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        link.download = downloadFilename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -215,7 +243,7 @@ export default function TailoredResumeView({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             latex: latexContent,
-            filename: `${job?.company || "company"}_${job?.title || "resume"}_tailored`.replace(/[^a-zA-Z0-9_-]/g, "_"),
+            filename: generatedFilename,
           }),
         });
 
@@ -263,7 +291,7 @@ export default function TailoredResumeView({
     } finally {
       setGeneratingPdf(false);
     }
-  }, [latexContent, job, runId, tailoredResume.modelKey, generateUploadUrl, storeArtifact, onArtifactCreated]);
+  }, [latexContent, job, masterResume, runId, tailoredResume.modelKey, generateUploadUrl, storeArtifact, onArtifactCreated, generateFilename]);
 
   // Handle LaTeX download
   const handleDownloadLatex = useCallback(async () => {
@@ -310,6 +338,19 @@ export default function TailoredResumeView({
   const handleCopyLatex = useCallback(() => {
     navigator.clipboard.writeText(latexContent);
   }, [latexContent]);
+
+  const pdfContext = useMemo(() => {
+    return {
+      trigger: () => handleGeneratePdf(true, true),
+      loading: generatingPdf,
+    };
+  }, [handleGeneratePdf, generatingPdf]);
+
+  useEffect(() => {
+    if (!registerGeneratePdf) return undefined;
+    registerGeneratePdf(pdfContext);
+    return () => registerGeneratePdf(null);
+  }, [registerGeneratePdf, pdfContext]);
 
   return (
     <div className="tailored-resume-view">
@@ -923,4 +964,3 @@ export default function TailoredResumeView({
     </div>
   );
 }
-

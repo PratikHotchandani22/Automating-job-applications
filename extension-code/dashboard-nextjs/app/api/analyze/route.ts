@@ -32,6 +32,108 @@ function detectPlatform(url?: string): string {
   return "other";
 }
 
+const JOB_DESCRIPTION_FILTER_SYSTEM_PROMPT = `You are a job description cleaning assistant.
+The input contains a scraped job listing that mixes the actual job description content with platform UI, stats, social highlights, and marketing copy.
+Return only the real job description text: the title/company/location block, summary, sections such as About the job, responsibilities, qualifications, benefits, compensation, logistics, and any other hiring details.
+Remove noise such as "Set alert for similar jobs", candidate-count widgets, promotional footers, social links, and any content that is not part of the job description itself.
+Preserve the original paragraphs and bullet lists, keep the order of sections, and do not invent any new information or comments. Return plain text only.`;
+const JOB_DESCRIPTION_FILTER_TEMPERATURE = 0.1;
+const JOB_DESCRIPTION_FILTER_MAX_TOKENS = 1500;
+
+async function cleanJobDescription(rawText: string): Promise<string> {
+  const text = (rawText || "").trim();
+  if (!text || !openai) return rawText;
+  try {
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      temperature: JOB_DESCRIPTION_FILTER_TEMPERATURE,
+      max_tokens: JOB_DESCRIPTION_FILTER_MAX_TOKENS,
+      messages: [
+        { role: "system", content: JOB_DESCRIPTION_FILTER_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: `Clean the following scraped job listing and return only the job description text (title, summary, responsibilities, qualifications, benefits, compensation, logistics, etc.). Remove platform UI noise, widgets, recommended jobs, and marketing copy. Do not invent new content.\n\nOriginal text:\n${text}`
+        }
+      ]
+    });
+    const cleaned = response.choices?.[0]?.message?.content;
+    if (cleaned) {
+      const stripped = stripMarkdownFences(cleaned.trim());
+      if (stripped) return stripped;
+    }
+  } catch (error) {
+    console.warn("Job description cleaning failed:", error);
+  }
+  return rawText;
+}
+
+function stripMarkdownFences(text: string): string {
+  if (!text) return "";
+  let cleaned = text;
+  cleaned = cleaned.replace(/^```[\w\s]*\s*/im, "");
+  cleaned = cleaned.replace(/\s*```$/im, "");
+  return cleaned.trim();
+}
+
+const STRUCTURED_JOB_SYSTEM_PROMPT = `You are a hiring analyst who reads job descriptions and returns a structured outline of the sections that are present.
+Respond with a JSON array only. Each entry in the array should be an object with two keys: "title" and "content".
+* "title" should be the section heading (e.g., "About the Job", "Responsibilities", "Required Qualifications", "Preferred Qualifications", "Compensation", "Benefits", "Logistics", "Equal Opportunity Statement"). If a section appears multiple times, keep the original order but only output one entry per heading.
+* "content" should contain the paragraphs or bullet list that belong to that section, preserving spacing and bullet markers.
+Retain the order of sections as they appear. If no explicit heading exists, return a single object with title "About the Job" and the entire description as content.
+Do not include any markdown fences, explanations, or commentary—only valid JSON.`;
+const STRUCTURED_JOB_TEMPERATURE = 0.2;
+const STRUCTURED_JOB_MAX_TOKENS = 1200;
+
+interface StructuredSection {
+  title: string;
+  content: string;
+}
+
+async function structureJobDescription(text: string): Promise<StructuredSection[]> {
+  if (!text || !openai) return [];
+  try {
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      temperature: STRUCTURED_JOB_TEMPERATURE,
+      max_tokens: STRUCTURED_JOB_MAX_TOKENS,
+      messages: [
+        { role: "system", content: STRUCTURED_JOB_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: `Extract the structured sections from the following cleaned job description. Return a JSON array and nothing else.\n\nJob Description:\n${text}`,
+        },
+      ],
+    });
+    const candidate = response.choices?.[0]?.message?.content;
+    if (!candidate) return [];
+    const parsed = JSON.parse(stripMarkdownFences(candidate)) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (
+          typeof item !== "object" ||
+          item === null ||
+          typeof (item as any).title !== "string" ||
+          typeof (item as any).content !== "string"
+        ) {
+          return null;
+        }
+        return {
+          title: (item as any).title.trim(),
+          content: (item as any).content.trim(),
+        };
+      })
+      .filter(
+        (section): section is StructuredSection =>
+          Boolean(section && section.title && section.content)
+      )
+      .slice(0, 12);
+  } catch (error) {
+    console.warn("Job structure extraction failed:", error);
+    return [];
+  }
+}
+
 // Rubric extraction prompt
 const RUBRIC_SYSTEM_PROMPT = `You are an expert at analyzing job descriptions and extracting structured requirements.
 
@@ -228,8 +330,10 @@ export async function POST(request: NextRequest) {
     }
 
     const runId = generateRunId();
-    const jobText = job_payload.job.description_text;
-    const jobTextHash = hashString(jobText);
+    const rawJobText = job_payload.job.description_text || "";
+    const filteredJobText = await cleanJobDescription(rawJobText);
+    const structuredJobSections = await structureJobDescription(filteredJobText);
+    const jobTextHash = hashString(filteredJobText);
 
     // Create or get the job in Convex
     let convexJobId: Id<"jobs"> | null = null;
@@ -242,14 +346,26 @@ export async function POST(request: NextRequest) {
         title: job_payload.job.title || "Untitled Position",
         company: job_payload.job.company,
         location: job_payload.job.location,
-        rawDescription: jobText,
-        extractedText: jobText,
+        rawDescription: rawJobText,
+        extractedText: filteredJobText,
+        structuredDescription: structuredJobSections.length ? structuredJobSections : undefined,
         descriptionHash: jobTextHash,
       });
       console.log(`Created/found job in Convex: ${convexJobId}`);
     } catch (e) {
       console.error("Failed to create job in Convex:", e);
       // Continue - we can still analyze without Convex tracking
+    }
+
+    if (convexJobId && structuredJobSections.length) {
+      try {
+        await convex.mutation(api.jobs.updateJob, {
+          jobId: convexJobId,
+          structuredDescription: structuredJobSections,
+        });
+      } catch (error) {
+        console.error("Failed to patch structured description:", error);
+      }
     }
 
     // Get the user's active master resume if not provided
@@ -307,7 +423,7 @@ export async function POST(request: NextRequest) {
     await updateStatus("rubric_generating");
     
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/analyze/route.ts:rubric_start',message:'Starting rubric extraction',data:{jobTitle:job_payload.job.title,jobCompany:job_payload.job.company,descLength:jobText?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'H1'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/analyze/route.ts:rubric_start',message:'Starting rubric extraction',data:{jobTitle:job_payload.job.title,jobCompany:job_payload.job.company,descLength:filteredJobText?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'H1'})}).catch(()=>{});
     // #endregion
     
     let rubric: any;
@@ -318,7 +434,7 @@ export async function POST(request: NextRequest) {
           { role: "system", content: RUBRIC_SYSTEM_PROMPT },
           { 
             role: "user", 
-            content: `Extract requirements from this job description:\n\n${jobText}\n\nJob Title: ${job_payload.job.title || "Unknown"}\nCompany: ${job_payload.job.company || "Unknown"}\nLocation: ${job_payload.job.location || "Unknown"}` 
+            content: `Extract requirements from this job description:\n\n${filteredJobText}\n\nJob Title: ${job_payload.job.title || "Unknown"}\nCompany: ${job_payload.job.company || "Unknown"}\nLocation: ${job_payload.job.location || "Unknown"}` 
           }
         ],
         temperature: 0.2,
@@ -776,4 +892,3 @@ export async function GET() {
     convex_configured: !!process.env.NEXT_PUBLIC_CONVEX_URL,
   });
 }
-

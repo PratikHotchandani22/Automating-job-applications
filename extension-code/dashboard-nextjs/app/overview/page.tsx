@@ -31,7 +31,7 @@ export default function OverviewPage() {
   
   // Get user's runs from Convex
   const runs = useQuery(
-    api.runs.getRuns,
+    api.runs.getRunsWithJobDetails,
     convexUser ? { userId: convexUser._id } : "skip"
   ) || [];
 

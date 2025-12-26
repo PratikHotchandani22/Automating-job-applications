@@ -56,6 +56,73 @@ function formatDuration(ms: number): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
+const JOB_SECTION_TITLES = [
+  "About the Job",
+  "About the Role",
+  "About the Position",
+  "About the Company",
+  "Summary",
+  "Responsibilities",
+  "Key Responsibilities",
+  "Primary Responsibilities",
+  "Required Qualifications",
+  "Preferred Qualifications",
+  "Compensation",
+  "Benefits",
+  "Logistics",
+  "Equal Opportunity Statement",
+] as const;
+
+function parseJobDescriptionSections(description?: string) {
+  if (!description) return [];
+  const normalized = description.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+
+  const lowerText = normalized.toLowerCase();
+  const matches = JOB_SECTION_TITLES.map((title) => {
+    const idx = lowerText.indexOf(title.toLowerCase());
+    if (idx === -1) return null;
+    return { title, idx };
+  })
+    .filter((match): match is { title: string; idx: number } => Boolean(match))
+    .sort((a, b) => a.idx - b.idx);
+
+  const sections: { title: string; content: string }[] = [];
+  if (matches.length === 0) {
+    return [{ title: "About the Job", content: normalized }];
+  }
+
+  if (matches[0].idx > 0) {
+    const leadingText = normalized.slice(0, matches[0].idx).trim();
+    if (leadingText) {
+      sections.push({ title: "About the Job", content: leadingText });
+    }
+  }
+
+  for (let i = 0; i < matches.length; i += 1) {
+    const { title, idx } = matches[i];
+    const start = idx + title.length;
+    const nextMatch = matches[i + 1];
+    const end = nextMatch ? nextMatch.idx : normalized.length;
+    let content = normalized.slice(start, end).trim();
+    while (content.startsWith(":")) {
+      content = content.slice(1).trim();
+    }
+    if (!content) {
+      content = normalized.slice(start, end).trim();
+    }
+    if (content) {
+      sections.push({ title, content });
+    }
+  }
+
+  if (sections.length === 0 && normalized) {
+    sections.push({ title: "About the Job", content: normalized });
+  }
+
+  return sections;
+}
+
 export default function RunResultsPage() {
   const params = useParams();
   const router = useRouter();
@@ -78,6 +145,24 @@ export default function RunResultsPage() {
     runIdParam ? { runId: runIdParam } : "skip"
   );
 
+  const [generatePdfContext, setGeneratePdfContext] = useState<{
+    trigger: () => Promise<void>;
+    loading: boolean;
+  } | null>(null);
+  const registerGeneratePdf = useCallback(
+    (context: { trigger: () => Promise<void>; loading: boolean } | null) => {
+      setGeneratePdfContext(context);
+    },
+    []
+  );
+
+  const jobDescriptionText = runDetails?.job?.extractedText || runDetails?.job?.rawDescription;
+  const jobSections = useMemo(() => {
+    if (runDetails?.job?.structuredDescription?.length) {
+      return runDetails.job.structuredDescription;
+    }
+    return parseJobDescriptionSections(jobDescriptionText);
+  }, [runDetails?.job?.structuredDescription, jobDescriptionText]);
   // Compute run progress
   const runProgress = useMemo(() => {
     if (!runDetails?.run) return 0;
@@ -143,6 +228,9 @@ export default function RunResultsPage() {
   }
 
   const { run, job, masterResume, jdRubric, selectionPlan, tailoredResumes, artifacts } = runDetails;
+  const generatePdfLoading = Boolean(generatePdfContext?.loading);
+  const generatePdfDisabled =
+    !generatePdfContext || generatePdfLoading || run.status !== "success";
 
   return (
     <div className="run-detail-page">
@@ -157,35 +245,48 @@ export default function RunResultsPage() {
 
       {/* Header Panel */}
       <div className="panel">
-        <div className="run-detail-head">
-          <div>
-            <div className="run-id-row">
-              <button className="run-id-pill status-pill subtle" onClick={handleCopyRunId}>
-                <code>{run.runId.slice(0, 12)}...</code>
-                <span className="copy-icon">📋</span>
-              </button>
-              {copyToast && <span className="copy-toast">Copied!</span>}
+          <div className="run-detail-head">
+            <div>
+              <div className="run-id-row">
+                <button className="run-id-pill status-pill subtle" onClick={handleCopyRunId}>
+                  <code>{run.runId.slice(0, 12)}...</code>
+                  <span className="copy-icon">📋</span>
+                </button>
+                {copyToast && <span className="copy-toast">Copied!</span>}
+              </div>
+              <h2>{job?.title || "Untitled Job"}</h2>
+              <p className="hint">
+                {job?.company || "Unknown Company"}
+                {job?.location && ` • ${job.location}`}
+              </p>
             </div>
-            <h2>{job?.title || "Untitled Job"}</h2>
-            <p className="hint">
-              {job?.company || "Unknown Company"}
-              {job?.location && ` • ${job.location}`}
-            </p>
+            <div className="actions-inline">
+              {job?.jobUrl && (
+                <a
+                  href={job.jobUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="primary"
+                >
+                  View Job
+                </a>
+              )}
+              <button
+                className="primary"
+                type="button"
+                disabled={generatePdfDisabled}
+                onClick={() => generatePdfContext?.trigger()}
+              >
+                {generatePdfLoading ? "Generating..." : "Generate PDF"}
+              </button>
+              <button className="ghost small refresh-btn" onClick={handleRefresh} title="Refresh">
+                🔄
+              </button>
+              <Link href="/runs" className="ghost small">
+                ← All Runs
+              </Link>
+            </div>
           </div>
-          <div className="actions-inline">
-            <button className="ghost small refresh-btn" onClick={handleRefresh} title="Refresh">
-              🔄
-            </button>
-            {job?.jobUrl && (
-              <a href={job.jobUrl} target="_blank" rel="noopener noreferrer" className="ghost small">
-                View Job ↗
-              </a>
-            )}
-            <Link href="/runs" className="ghost small">
-              ← All Runs
-            </Link>
-          </div>
-        </div>
 
         {/* Status Row */}
         <div className="run-status-row">
@@ -294,32 +395,27 @@ export default function RunResultsPage() {
       <div className="panel">
         {activeTab === "overview" && (
           <div className="tab-pane">
-            {/* Job Summary */}
             {job && (
-              <div className="explain-section">
-                <h3>Job Details</h3>
-                <div className="info-grid">
-                  <div className="info-item">
-                    <label>Title</label>
-                    <div>{job.title}</div>
-                  </div>
-                  {job.company && (
-                    <div className="info-item">
-                      <label>Company</label>
-                      <div>{job.company}</div>
+              <div className="job-detail-shell">
+                {jobDescriptionText ? (
+                  <section className="explain-section job-description-panel">
+                    <div className="job-description-accordion">
+                      {jobSections.map((section, idx) => (
+                        <details key={`${section.title}-${idx}`} open={idx === 0}>
+                          <summary>
+                            <span className="job-section-title">{section.title}</span>
+                            <span className="job-section-toggle" aria-hidden="true" />
+                          </summary>
+                          <div className="section-content">{section.content}</div>
+                        </details>
+                      ))}
                     </div>
-                  )}
-                  {job.location && (
-                    <div className="info-item">
-                      <label>Location</label>
-                      <div>{job.location}</div>
-                    </div>
-                  )}
-                  <div className="info-item">
-                    <label>Platform</label>
-                    <div>{job.platform || "Unknown"}</div>
-                  </div>
-                </div>
+                  </section>
+                ) : (
+                  <section className="explain-section job-description-panel">
+                    <p className="hint">No job description was captured for this posting.</p>
+                  </section>
+                )}
               </div>
             )}
 
@@ -383,53 +479,15 @@ export default function RunResultsPage() {
               </div>
             )}
 
-            {/* Quick Actions */}
-            <div className="explain-section">
-              <h3>Quick Actions</h3>
-              <div className="actions-inline" style={{ marginTop: "1rem" }}>
-                {primaryTailoredResume && (
-                  <button className="primary" onClick={() => setActiveTab("tailored")}>
-                    View Tailored Resume
-                  </button>
-                )}
-                {!primaryTailoredResume && run.status === "running" && (
-                  <button className="primary" disabled>
-                    Resume in progress...
-                  </button>
-                )}
-                {jdRubric && (
-                  <button className="ghost" onClick={() => setActiveTab("rubric")}>
-                    View Rubric
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Generated Artifacts */}
-            {artifacts?.length > 0 && (
-              <div className="explain-section">
-                <h3>Generated Artifacts</h3>
-                <div className="downloads-grid">
-                  {artifacts.map((artifact: any) => (
-                    <div key={artifact._id} className="download-item">
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span>
-                          <strong>{artifact.artifactType.toUpperCase()}</strong> - {artifact.fileName}
-                        </span>
-                        <span className="hint">
-                          {(artifact.sizeBytes / 1024).toFixed(1)} KB
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {activeTab === "tailored" && primaryTailoredResume && (
-          <div className="tab-pane">
+        {primaryTailoredResume && (
+          <div
+            className="tab-pane"
+            aria-hidden={activeTab !== "tailored"}
+            style={{ display: activeTab === "tailored" ? undefined : "none" }}
+          >
             <TailoredResumeView
               tailoredResume={primaryTailoredResume}
               masterResume={masterResume}
@@ -437,6 +495,7 @@ export default function RunResultsPage() {
               runId={run._id}
               artifacts={artifacts || []}
               onArtifactCreated={handleRefresh}
+              registerGeneratePdf={registerGeneratePdf}
             />
           </div>
         )}
@@ -681,4 +740,3 @@ export default function RunResultsPage() {
     </div>
   );
 }
-
