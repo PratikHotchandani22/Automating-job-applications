@@ -256,6 +256,14 @@ export default defineSchema({
     seniority: v.optional(v.string()),
     rawDescription: v.string(),
     extractedText: v.optional(v.string()),
+    structuredDescription: v.optional(
+      v.array(
+        v.object({
+          title: v.string(),
+          content: v.string(),
+        })
+      )
+    ),
     descriptionHash: v.string(),
     userTags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
@@ -557,4 +565,3 @@ export default defineSchema({
     .index("by_user_status", ["userId", "applicationStatus"])
     .index("by_user_recent", ["userId", "updatedAt"]),
 });
-

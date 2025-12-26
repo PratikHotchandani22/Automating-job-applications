@@ -21,6 +21,14 @@ export const createJob = mutation({
     seniority: v.optional(v.string()),
     rawDescription: v.string(),
     extractedText: v.optional(v.string()),
+    structuredDescription: v.optional(
+      v.array(
+        v.object({
+          title: v.string(),
+          content: v.string(),
+        })
+      )
+    ),
     descriptionHash: v.string(),
     userTags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
@@ -54,6 +62,7 @@ export const createJob = mutation({
       seniority: args.seniority,
       rawDescription: args.rawDescription,
       extractedText: args.extractedText,
+      structuredDescription: args.structuredDescription,
       descriptionHash: args.descriptionHash,
       userTags: args.userTags,
       notes: args.notes,
@@ -144,6 +153,8 @@ export const updateJob = mutation({
     if (args.userTags !== undefined) update.userTags = args.userTags;
     if (args.notes !== undefined) update.notes = args.notes;
     if (args.isFavorite !== undefined) update.isFavorite = args.isFavorite;
+    if (args.structuredDescription !== undefined)
+      update.structuredDescription = args.structuredDescription;
 
     await ctx.db.patch(args.jobId, update);
   },
@@ -162,4 +173,3 @@ export const deleteJob = mutation({
     });
   },
 });
-

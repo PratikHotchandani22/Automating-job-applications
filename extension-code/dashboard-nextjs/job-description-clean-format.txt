@@ -1,0 +1,594 @@
+Original Job Description from LLM:
+
+Capital One
+
+Senior Machine Learning Engineer 
+
+Cambridge, MA · 1 week ago · 36 people clicked apply
+
+Promoted by hirer • Responses managed off LinkedIn
+
+Full-time
+Apply
+Save
+
+Job match is low, review match details
+
+Your profile is missing some qualifications, add your experience or try exploring other jobs.
+
+Show match details
+
+Help me update my profile
+
+BETA • Is this information helpful?
+
+About the job
+
+Job Description
+
+As a Capital One Machine Learning Engineer (MLE), you'll be part of an Agile team dedicated to productionizing machine learning applications and systems at scale. You’ll participate in the detailed technical design, development, and implementation of machine learning applications using existing and emerging technology platforms. You’ll focus on machine learning architectural design, develop and review model and application code, and ensure high availability and performance of our machine learning applications. You'll have the opportunity to continuously learn and apply the latest innovations and best practices in machine learning engineering.
+
+What you’ll do in the role: 
+
+
+The MLE role overlaps with many disciplines, such as Ops, Modeling, and Data Engineering. In this role, you'll be expected to perform many ML engineering activities, including one or more of the following:
+Design, build, and/or deliver ML models and components that solve real-world business problems, while working in collaboration with the Product and Data Science teams. 
+Inform your ML infrastructure decisions using your understanding of ML modeling techniques and issues, including choice of model, data, and feature selection, model training, hyperparameter tuning, dimensionality, bias/variance, and validation). 
+Solve complex problems by writing and testing application code, developing and validating ML models, and automating tests and deployment. 
+Collaborate as part of a cross-functional Agile team to create and enhance software that enables state-of-the-art big data and ML applications. 
+Retrain, maintain, and monitor models in production. 
+Leverage or build cloud-based architectures, technologies, and/or platforms to deliver optimized ML models at scale. 
+Construct optimized data pipelines to feed ML models. 
+Leverage continuous integration and continuous deployment best practices, including test automation and monitoring, to ensure successful deployment of ML models and application code. 
+Ensure all code is well-managed to reduce vulnerabilities, models are well-governed from a risk perspective, and the ML follows best practices in Responsible and Explainable AI. 
+Use programming languages like Python, Scala, or Java. 
+
+
+Basic Qualifications:
+
+
+Bachelor’s degree
+At least 4 years of experience programming with Python, Scala, or Java (Internship experience does not apply)
+At least 3 years of experience designing and building data-intensive solutions using distributed computing 
+At least 2 years of on-the-job experience with an industry recognized ML frameworks (scikit-learn, PyTorch, Dask, Spark, or TensorFlow) 
+At least 1 year of experience productionizing, monitoring, and maintaining models 
+
+
+Preferred Qualifications:
+
+
+1+ years of experience building, scaling, and optimizing ML systems
+1+ years of experience with data gathering and preparation for ML models
+2+ years of experience developing performant, resilient, and maintainable code
+Experience developing and deploying ML solutions in a public cloud such as AWS, Azure, or Google Cloud Platform
+Master's or doctoral degree in computer science, electrical engineering, mathematics, or a similar field 
+3+ years of experience with distributed file systems or multi-node database paradigms
+Contributed to open source ML software 
+Authored/co-authored a paper on a ML technique, model, or proof of concept
+3+ years of experience building production-ready data pipelines that feed ML models 
+Experience designing, implementing, and scaling complex data pipelines for ML models and evaluating their performance 
+
+
+At this time, Capital One will not sponsor a new applicant for employment authorization, or offer any immigration related support for this position (i.e. H1B, F-1 OPT, F-1 STEM OPT, F-1 CPT, J-1, TN, E-2, E-3, L-1 and O-1, or any EADs or other forms of work authorization that require immigration support from an employer).
+
+The minimum and maximum full-time annual salaries for this role are listed below, by location. Please note that this salary information is solely for candidates hired to perform work within one of these locations, and refers to the amount Capital One is willing to pay at the time of this posting. Salaries for part-time roles will be prorated based upon the agreed upon number of hours to be regularly worked.
+
+Cambridge, MA: $158,600 - $181,000 for Senior Machine Learning Engineer
+
+McLean, VA: $158,600 - $181,000 for Senior Machine Learning Engineer
+
+Richmond, VA: $144,200 - $164,600 for Senior Machine Learning Engineer
+
+Candidates hired to work in other locations will be subject to the pay range associated with that location, and the actual annualized salary amount offered to any candidate at the time of hire will be reflected solely in the candidate’s offer letter.
+
+This role is also eligible to earn performance based incentive compensation, which may include cash bonus(es) and/or long term incentives (LTI). Incentives could be discretionary or non discretionary depending on the plan.
+
+Capital One offers a comprehensive, competitive, and inclusive set of health, financial and other benefits that support your total well-being. Learn more at the Capital One Careers website. Eligibility varies based on full or part-time status, exempt or non-exempt status, and management level.
+
+This role is expected to accept applications for a minimum of 5 business days.
+
+No agencies please. Capital One is an equal opportunity employer (EOE, including disability/vet) committed to non-discrimination in compliance with applicable federal, state, and local laws. Capital One promotes a drug-free workplace. Capital One will consider for employment qualified applicants with a criminal history in a manner consistent with the requirements of applicable laws regarding criminal background inquiries, including, to the extent applicable, Article 23-A of the New York Correction Law; San Francisco, California Police Code Article 49, Sections 4901-4920; New York City’s Fair Chance Act; Philadelphia’s Fair Criminal Records Screening Act; and other applicable federal, state, and local laws and regulations regarding criminal background inquiries.
+
+If you have visited our website in search of information on employment opportunities or to apply for a position, and you require an accommodation, please contact Capital One Recruiting at 1-800-304-9102 or via email at RecruitingAccommodation@capitalone.com. All information you provide will be kept confidential and will be used only to the extent required to provide needed reasonable accommodations.
+
+For technical support or questions about Capital One's recruiting process, please send an email to Careers@capitalone.com
+
+Capital One does not provide, endorse nor guarantee and is not liable for third-party products, services, educational tools or other information available through this site.
+
+Capital One Financial is made up of several different entities. Please note that any position posted in Canada is for Capital One Canada, any position posted in the United Kingdom is for Capital One Europe and any position posted in the Philippines is for Capital One Philippines Service Corp. (COPSSC).
+… more
+
+Set alert for similar jobs
+
+Senior Machine Learning Engineer, Cambridge, Massachusetts, United States
+
+Off
+See how you compare to others who clicked apply
+Based on LinkedIn data. Excludes subsidiaries.
+Candidates who clicked apply
+
+36
+
+total
+
+2
+
+in the past day
+
+Candidate seniority level
+
+83% Entry level candidates
+
+14% Senior level candidates
+
+Candidate education level
+
+47
+
+%
+
+have a Master's Degree (Similar to you)
+
+
+32
+
+%
+
+have a Master of Science
+
+
+12
+
+%
+
+have a Doctor of Philosophy
+
+
+9
+
+%
+
+have other degrees
+Exclusive Job Seeker Insights about Capital One
+Powered by Bing
+
+Company focus areas
+
+• Credit Card Business Growth: Focus on expanding the credit card business, which generated 72% of total net revenue in 2024. This includes increasing marketing spend and managing credit risk effectively.
+
+...more
+
+Sources: sec.gov +1 more
+
+Hiring & headcount
+
+Significant growth in research: The 'Research' department has seen a 26% increase in employee count, indicating a strong focus on innovation and development, which could present opportunities for investment in new technologies and research initiatives. Expansion in product management: The 'Product Management' department has grown by 15%, suggesting a strategic emphasis on developing and managing new products, which could lead to increased market offerings and potential revenue growth. Increased focus on business development: The 'Business Development' department has experienced an 11% increase in headcount, highlighting efforts to explore new business opportunities and partnerships, which could drive future growth and expansion. Engineering and sales growth: Both the 'Engineering' and 'Sales' departments have seen a 9% increase in employee count, reflecting a commitment to enhancing technical capabilities and expanding market reach, which could result in improved product offerings and sales performance.
+… more
+
+The latest hiring trend
+
+81,727
+
+Total employees
+
+13%
+
+Company-wide
+
+2 year growth
+
+0%
+
+Engineering
+
+2 year growth
+
+Jan 2024
+May 2024
+Sep 2024
+Jan 2025
+May 2025
+Sep 2025
+0
+50000
+100000
+
+Median employee tenure: 4.3 years
+
+Competitors
+
+Capital One Financial Corporation operates in a highly competitive landscape, primarily focusing on credit cards, auto loans, and retail banking within the non-prime and near-prime consumer segments. The company has secured a critical structural advantage through its payment network, positioning itself strongly against competitors like Mastercard, Visa, and American Express. The competitive environment is shaped by technological advancements, customer-centric solutions, and strategic acquisitions.
+… more
+
+Sources: bullfincher.io +3 more
+
+Show Premium Insights
+About the company
+
+Capital One
+
+1,045,932 followers
+
+Follow
+
+Financial Services
+
+ • 
+
+10001+ employees
+
+ • 
+
+61,445 on LinkedIn
+
+At Capital One, we're making things better for our customers and associates through innovation and collaboration. We were founded on the belief that everyone deserves financial freedom—and are dedicated to a world where all have equal opportunity to prosper. 
+
+Banking is in our DNA, but we are so much more than a bank. We always think about what’s next—and how we can bring our customers the tools needed to improve their financial lives. Your ideas, experiences and skills will help make banking better. You’ll be part of a supportive culture while earning amazing benefits. That’s life at Capital One. 
+
+Capital One is an equal opportunity employer (EOE, including disability/vet) committed to non-discrimination in compliance with applicable federal, state, and local laws.
+
+View our Social Media Community Guidelines https://www.capitalone.com/digital/social-media/
+
+… more
+
+Interested in working with us in the future?
+
+Privately share your profile with our recruiters – you’ll be noted as expressing interest for up to a year and be notified about jobs and updates. Learn more
+
+I’m interested
+
+You’ve reached the limit of 50 companies. To express interest in this company, remove interest in others. We suggest prioritizing your choices to help you stand out.
+
+Manage my interest
+
+Company photos
+
+More jobs
+
+Research Engineer (Deep Learning)
+
+OtoNexus Medical Technologies
+
+Greater Seattle Area (Hybrid)
+
+Posted on December 5, 2025, 12:02 AM
+3 weeks ago
+
+ · 
+
+ Easy Apply
+
+New Grad Data Scientist/Engineer (Health Tech Startup) 🤓
+
+1Phi Inc
+
+United States (Remote)
+
+$60K/yr - $95K/yr
+
+ • 
+
+Medical, 401(k)
+
+Posted on December 26, 2025, 10:58 AM
+1 hour ago
+
+ · 
+
+ Easy Apply
+
+AI Compiler and Performance Engineer
+
+ElastixAI
+
+Seattle, WA (Hybrid)
+
+$130K/yr - $250K/yr
+
+ • 
+
+1 benefit
+
+Posted on November 15, 2025, 6:37 PM
+1 month ago
+
+AI Prompting Engineer - Biological Reasoning Systems - Biotech Industry
+
+Ayass BioScience, LLC
+
+Frisco, TX (On-site)
+
+$150K/yr - $220K/yr
+
+Actively reviewing applicants
+
+Posted on August 4, 2025, 12:29 AM
+5 months ago
+
+ · 
+
+ Easy Apply
+
+Principal / Distinguished Engineer - Distributed Systems, Graph Databases, and Planet-Scale AI Infrastructure
+
+Anonymous 
+
+Laguna Beach, CA (Hybrid)
+
+Actively reviewing applicants
+
+Posted on November 8, 2025, 2:22 PM
+1 month ago
+
+ · 
+
+ Easy Apply
+
+Machine Learning Engineer (Verified job)
+Machine Learning Engineer 
+
+Robert Half
+
+Arlington, VA (On-site)
+
+$125K/yr - $145K/yr
+
+ • 
+
+401(k), +1 benefit
+
+Posted on December 17, 2025, 12:01 PM
+1 week ago
+
+ · 
+
+ Easy Apply
+
+AI Lab Research Engineer
+
+Lila Sciences
+
+Cambridge, MA (Hybrid)
+
+Posted on December 12, 2025, 5:22 AM
+2 weeks ago
+
+ · 
+
+ Easy Apply
+
+Machine Learning Engineer, Entry Level
+
+Emonics LLC
+
+Dallas, TX (On-site)
+
+1 connection works here
+
+Posted on December 24, 2025, 4:42 PM
+1 day ago
+
+ · 
+
+ Easy Apply
+
+AI Software Engineer
+
+Familiar Machines and Magic
+
+Woburn, MA (On-site)
+
+Posted on September 14, 2025, 10:14 PM
+3 months ago
+
+ · 
+
+ Easy Apply
+
+Senior Quality Assurance Engineer
+
+Confidential
+
+Bethesda, MD (On-site)
+
+Posted on November 3, 2025, 1:24 PM
+1 month ago
+
+ · 
+
+ Easy Apply
+
+Machine Learning Scientist (All Levels) (Verified job)
+Machine Learning Scientist (All Levels) 
+
+Abridge
+
+New York, NY (Remote)
+
+$205K/yr - $300K/yr
+
+ • 
+
+1 benefit
+
+Posted on December 19, 2025, 8:34 AM
+1 week ago
+
+Lead Machine Learning Engineer
+
+Butlr
+
+San Francisco Bay Area (On-site)
+
+$160K/yr - $220K/yr
+
+Actively reviewing applicants
+
+Posted on August 13, 2025, 10:54 AM
+4 months ago
+
+ · 
+
+ Easy Apply
+
+See more jobs like this
+
+Need to hire fast?
+
+Post a job
+
+About
+
+Accessibility
+
+Talent Solutions
+
+Community Guidelines
+
+Careers
+
+Marketing Solutions 
+
+Privacy & Terms
+
+Ad Choices
+
+Advertising
+
+Sales Solutions
+
+Mobile
+
+Small Business
+
+Safety Center
+
+LinkedIn Corporation © 2025
+
+Questions?
+
+Visit our Help Center.
+
+Manage your account and privacy
+
+Go to your Settings.
+
+Recommendation transparency
+
+Learn more about Recommended Content.
+
+Select language
+
+العربية (Arabic)
+বাংলা (Bangla)
+Čeština (Czech)
+Dansk (Danish)
+Deutsch (German)
+Ελληνικά (Greek)
+English (English)
+Español (Spanish)
+فارسی (Persian)
+Suomi (Finnish)
+Français (French)
+हिंदी (Hindi)
+Magyar (Hungarian)
+Bahasa Indonesia (Indonesian)
+Italiano (Italian)
+עברית (Hebrew)
+日本語 (Japanese)
+한국어 (Korean)
+मराठी (Marathi)
+Bahasa Malaysia (Malay)
+Nederlands (Dutch)
+Norsk (Norwegian)
+ਪੰਜਾਬੀ (Punjabi)
+Polski (Polish)
+Português (Portuguese)
+Română (Romanian)
+Русский (Russian)
+Svenska (Swedish)
+తెలుగు (Telugu)
+ภาษาไทย (Thai)
+Tagalog (Tagalog)
+Türkçe (Turkish)
+Українська (Ukrainian)
+Tiếng Việt (Vietnamese)
+简体中文 (Chinese (Simplified))
+正體中文 (Chinese (Traditional))
+
+
+
+Filtered resume it should be:
+
+Capital One
+
+Senior Machine Learning Engineer 
+
+Cambridge, MA · 1 week ago 
+Full-time
+
+
+About the job
+
+Job Description
+
+As a Capital One Machine Learning Engineer (MLE), you'll be part of an Agile team dedicated to productionizing machine learning applications and systems at scale. You’ll participate in the detailed technical design, development, and implementation of machine learning applications using existing and emerging technology platforms. You’ll focus on machine learning architectural design, develop and review model and application code, and ensure high availability and performance of our machine learning applications. You'll have the opportunity to continuously learn and apply the latest innovations and best practices in machine learning engineering.
+
+What you’ll do in the role: 
+
+
+The MLE role overlaps with many disciplines, such as Ops, Modeling, and Data Engineering. In this role, you'll be expected to perform many ML engineering activities, including one or more of the following:
+Design, build, and/or deliver ML models and components that solve real-world business problems, while working in collaboration with the Product and Data Science teams. 
+Inform your ML infrastructure decisions using your understanding of ML modeling techniques and issues, including choice of model, data, and feature selection, model training, hyperparameter tuning, dimensionality, bias/variance, and validation). 
+Solve complex problems by writing and testing application code, developing and validating ML models, and automating tests and deployment. 
+Collaborate as part of a cross-functional Agile team to create and enhance software that enables state-of-the-art big data and ML applications. 
+Retrain, maintain, and monitor models in production. 
+Leverage or build cloud-based architectures, technologies, and/or platforms to deliver optimized ML models at scale. 
+Construct optimized data pipelines to feed ML models. 
+Leverage continuous integration and continuous deployment best practices, including test automation and monitoring, to ensure successful deployment of ML models and application code. 
+Ensure all code is well-managed to reduce vulnerabilities, models are well-governed from a risk perspective, and the ML follows best practices in Responsible and Explainable AI. 
+Use programming languages like Python, Scala, or Java. 
+
+
+Basic Qualifications:
+
+
+Bachelor’s degree
+At least 4 years of experience programming with Python, Scala, or Java (Internship experience does not apply)
+At least 3 years of experience designing and building data-intensive solutions using distributed computing 
+At least 2 years of on-the-job experience with an industry recognized ML frameworks (scikit-learn, PyTorch, Dask, Spark, or TensorFlow) 
+At least 1 year of experience productionizing, monitoring, and maintaining models 
+
+
+Preferred Qualifications:
+
+
+1+ years of experience building, scaling, and optimizing ML systems
+1+ years of experience with data gathering and preparation for ML models
+2+ years of experience developing performant, resilient, and maintainable code
+Experience developing and deploying ML solutions in a public cloud such as AWS, Azure, or Google Cloud Platform
+Master's or doctoral degree in computer science, electrical engineering, mathematics, or a similar field 
+3+ years of experience with distributed file systems or multi-node database paradigms
+Contributed to open source ML software 
+Authored/co-authored a paper on a ML technique, model, or proof of concept
+3+ years of experience building production-ready data pipelines that feed ML models 
+Experience designing, implementing, and scaling complex data pipelines for ML models and evaluating their performance 
+
+
+At this time, Capital One will not sponsor a new applicant for employment authorization, or offer any immigration related support for this position (i.e. H1B, F-1 OPT, F-1 STEM OPT, F-1 CPT, J-1, TN, E-2, E-3, L-1 and O-1, or any EADs or other forms of work authorization that require immigration support from an employer).
+
+The minimum and maximum full-time annual salaries for this role are listed below, by location. Please note that this salary information is solely for candidates hired to perform work within one of these locations, and refers to the amount Capital One is willing to pay at the time of this posting. Salaries for part-time roles will be prorated based upon the agreed upon number of hours to be regularly worked.
+
+Cambridge, MA: $158,600 - $181,000 for Senior Machine Learning Engineer
+
+McLean, VA: $158,600 - $181,000 for Senior Machine Learning Engineer
+
+Richmond, VA: $144,200 - $164,600 for Senior Machine Learning Engineer
+
+Candidates hired to work in other locations will be subject to the pay range associated with that location, and the actual annualized salary amount offered to any candidate at the time of hire will be reflected solely in the candidate’s offer letter.
+
+This role is also eligible to earn performance based incentive compensation, which may include cash bonus(es) and/or long term incentives (LTI). Incentives could be discretionary or non discretionary depending on the plan.
+
+Capital One offers a comprehensive, competitive, and inclusive set of health, financial and other benefits that support your total well-being. Learn more at the Capital One Careers website. Eligibility varies based on full or part-time status, exempt or non-exempt status, and management level.
+
+This role is expected to accept applications for a minimum of 5 business days.
