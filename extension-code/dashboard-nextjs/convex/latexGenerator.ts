@@ -39,7 +39,21 @@ export function generateResumeLatex(
       details?: string;
     }>;
     mentorship?: string[];
-    links?: string[];
+    links?:
+      | {
+          headerLinks: {
+            linkedin?: string;
+            github?: string;
+            portfolio?: string;
+            other?: string[];
+          };
+          projectLinks: Array<{
+            projectName: string;
+            links: string[];
+          }>;
+          allLinks: string[];
+        }
+      | string[];
   },
   workExperiences: Array<{
     company?: string;
@@ -110,10 +124,15 @@ export function generateResumeLatex(
   if (resume.header?.address) contactParts.push(escapeLaTeX(resume.header.address));
   if (resume.header?.phone) contactParts.push(escapeLaTeX(resume.header.phone));
   if (resume.header?.email) contactParts.push(`\\href{mailto:${resume.header.email}}{${escapeLaTeX(resume.header.email)}}`);
-  if (resume.header?.linkedin) contactParts.push(`\\href{${resume.header.linkedin}}{LinkedIn}`);
-  if (resume.header?.github) contactParts.push(`\\href{${resume.header.github}}{GitHub}`);
-  if (resume.header?.portfolio) contactParts.push(`\\href{${resume.header.portfolio}}{Portfolio}`);
-  if (resume.header?.website) contactParts.push(`\\href{${resume.header.website}}{Website}`);
+  const headerLinks = Array.isArray(resume.links) ? undefined : resume.links?.headerLinks;
+  const linkedin = resume.header?.linkedin || headerLinks?.linkedin;
+  const github = resume.header?.github || headerLinks?.github;
+  const portfolio = resume.header?.portfolio || headerLinks?.portfolio;
+  const website = resume.header?.website;
+  if (linkedin) contactParts.push(`\\href{${linkedin}}{LinkedIn}`);
+  if (github) contactParts.push(`\\href{${github}}{GitHub}`);
+  if (portfolio) contactParts.push(`\\href{${portfolio}}{Portfolio}`);
+  if (website) contactParts.push(`\\href{${website}}{Website}`);
 
   latex += `    ${contactParts.join(" --- ")}\n`;
   latex += `\\end{center}\n%===LOCK_HEADER_END===\n\n`;
@@ -218,15 +237,15 @@ export function generateResumeLatex(
       const dates = proj.dates ? ` \\hfill \\textbf{${escapeLaTeX(proj.dates)}}` : "";
       const tags = proj.tags && proj.tags.length > 0 ? `: ${proj.tags.map(t => escapeLaTeX(t)).join(", ")}` : "";
       const links: string[] = [];
-      
+
       if (proj.links && proj.links.length > 0) {
-        proj.links.forEach((link, idx) => {
-          const linkText = idx === 0 ? "GitHub" : idx === 1 ? "WebApp" : `Link${idx + 1}`;
-          links.push(`\\href{${link}}{\\textbf{${linkText}}}`);
+        proj.links.forEach((link) => {
+          const label = labelProjectLink(link);
+          links.push(`${label}: \\href{${link}}{${escapeLaTeX(link)}}`);
         });
       }
       
-      latex += `\\noindent\\textbf{${escapeLaTeX(name)}${tags}}${links.length > 0 ? ", " + links.join(", ") : ""}${dates}\n`;
+      latex += `\\noindent\\textbf{${escapeLaTeX(name)}${tags}}${links.length > 0 ? " --- " + links.join(" --- ") : ""}${dates}\n`;
       
       if (proj.bullets.length > 0) {
         latex += `\\begin{itemize}\n`;
@@ -294,3 +313,10 @@ function escapeLaTeX(text: string): string {
     .replace(/\n/g, " ");
 }
 
+function labelProjectLink(link: string): string {
+  const lower = link.toLowerCase();
+  if (lower.includes("github.com")) return "GitHub";
+  if (lower.includes("arxiv.org") || lower.includes("doi.org")) return "Paper";
+  if (lower.includes("demo") || lower.includes("app")) return "Demo";
+  return "Link";
+}

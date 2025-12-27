@@ -13,6 +13,9 @@ export const createTailoredResume = mutation({
     modelName: v.string(),
     tailoredHash: v.string(),
     summary: v.string(),
+    coverLetter: v.optional(v.string()),
+    diagnostics: v.optional(v.string()),
+    reasoningSummary: v.optional(v.string()),
     workExperience: v.array(
       v.object({
         roleId: v.string(),
@@ -35,6 +38,7 @@ export const createTailoredResume = mutation({
         projectId: v.string(),
         name: v.string(),
         date: v.optional(v.string()),
+        links: v.optional(v.array(v.string())),
         bullets: v.array(
           v.object({
             bulletId: v.string(),
@@ -90,6 +94,9 @@ export const createTailoredResume = mutation({
       modelName: args.modelName,
       tailoredHash: args.tailoredHash,
       summary: args.summary,
+      coverLetter: args.coverLetter,
+      diagnostics: args.diagnostics,
+      reasoningSummary: args.reasoningSummary,
       workExperience: args.workExperience,
       projects: args.projects,
       education: args.education,
@@ -145,4 +152,3 @@ export const getTailoredResumes = query({
       .collect();
   },
 });
-

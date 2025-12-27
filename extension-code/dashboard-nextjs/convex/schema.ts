@@ -8,6 +8,8 @@ import { v } from "convex/values";
 // ─────────────────────────────────────────────────────────────────
 
 const runStageValidator = v.union(
+  v.literal("queued"),
+  v.literal("analyzing"),
   v.literal("initialized"),
   v.literal("extracting"),
   v.literal("rubric_generating"),
@@ -163,7 +165,28 @@ export default defineSchema({
       details: v.optional(v.string()),
     }))),
     mentorship: v.optional(v.array(v.string())),
-    links: v.optional(v.array(v.string())),
+    links: v.optional(
+      v.union(
+        v.array(v.string()),
+        v.object({
+          headerLinks: v.object({
+            linkedin: v.optional(v.string()),
+            github: v.optional(v.string()),
+            portfolio: v.optional(v.string()),
+            other: v.optional(v.array(v.string())),
+          }),
+          projectLinks: v.array(
+            v.object({
+              projectName: v.string(),
+              links: v.array(v.string()),
+            })
+          ),
+          allLinks: v.array(v.string()),
+        })
+      )
+    ),
+    processingStatus: v.optional(v.string()),
+    processingError: v.optional(v.string()),
     customLatexTemplate: v.optional(v.string()),
     isDeleted: v.optional(v.boolean()),
     deletedAt: v.optional(v.number()),
@@ -189,6 +212,7 @@ export default defineSchema({
     location: v.optional(v.string()),
     text: v.string(),
     tags: v.optional(v.array(v.string())),
+    links: v.optional(v.array(v.string())),
     order: v.number(),
     createdAt: v.number(),
   })
@@ -286,6 +310,7 @@ export default defineSchema({
     userId: v.id("users"),
     masterResumeId: v.id("masterResumes"),
     jobId: v.id("jobs"),
+    runStrategy: v.optional(v.union(v.literal("free"), v.literal("premium"))),
     status: runStatusValidator,
     stage: runStageValidator,
     errorMessage: v.optional(v.string()),
@@ -464,6 +489,9 @@ export default defineSchema({
     modelName: v.string(),
     tailoredHash: v.string(),
     summary: v.string(),
+    coverLetter: v.optional(v.string()),
+    diagnostics: v.optional(v.string()),
+    reasoningSummary: v.optional(v.string()),
     workExperience: v.array(v.object({
       roleId: v.string(),
       company: v.string(),
@@ -481,6 +509,7 @@ export default defineSchema({
       projectId: v.string(),
       name: v.string(),
       date: v.optional(v.string()),
+      links: v.optional(v.array(v.string())),
       bullets: v.array(v.object({
         bulletId: v.string(),
         originalText: v.string(),

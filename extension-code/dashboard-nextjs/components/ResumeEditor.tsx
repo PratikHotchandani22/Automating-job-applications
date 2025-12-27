@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -9,6 +9,167 @@ interface ResumeEditorProps {
   resume: any;
   onClose: () => void;
   onSave?: () => void;
+}
+
+type ResumeBullet = {
+  text?: string;
+};
+
+type ResumeWarning = {
+  id: string;
+  message: string;
+  section: string;
+};
+
+type ResumeWarningsInput = {
+  header: Record<string, any>;
+  summary: string;
+  skills: Record<string, string[]>;
+  education: any[];
+  workExpGroups: Record<string, ResumeBullet[]>;
+  projectGroups: Record<string, ResumeBullet[]>;
+  links: string[];
+};
+
+const LINK_REQUIREMENTS = [
+  {
+    id: "linkedin",
+    label: "LinkedIn profile",
+    headerField: "linkedin",
+    patterns: ["linkedin.com"],
+  },
+  {
+    id: "github",
+    label: "GitHub profile",
+    headerField: "github",
+    patterns: ["github.com"],
+  },
+  {
+    id: "portfolio",
+    label: "Portfolio link",
+    headerField: "portfolio",
+    patterns: ["portfolio", "github.io"],
+  },
+  {
+    id: "website",
+    label: "Personal website",
+    headerField: "website",
+    patterns: [],
+    requireHeaderField: true,
+  },
+];
+
+function normalizeString(value?: string) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function hasTruthyValues(value: any): boolean {
+  if (typeof value === "string") {
+    return Boolean(value.trim());
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => hasTruthyValues(item));
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.values(value).some((nested) => hasTruthyValues(nested));
+  }
+  return Boolean(value);
+}
+
+function computeResumeWarnings({
+  header,
+  summary,
+  skills,
+  education,
+  workExpGroups,
+  projectGroups,
+  links,
+}: ResumeWarningsInput): ResumeWarning[] {
+  const warnings: ResumeWarning[] = [];
+  const normalizedHeader = header || {};
+  const headerHasContent = Object.values(normalizedHeader).some((value) => hasTruthyValues(value));
+  if (!headerHasContent) {
+    warnings.push({
+      id: "missing-header",
+      message: "Add header contact info (name, email, phone or address) so recruiters can reach you.",
+      section: "Header",
+    });
+  }
+
+  const summaryText = normalizeString(summary);
+  if (!summaryText) {
+    warnings.push({
+      id: "missing-summary",
+      message: "Add a professional summary so hiring teams know your focus and expertise.",
+      section: "Professional Summary",
+    });
+  }
+
+  const hasSkills =
+    skills &&
+    Object.values(skills).some((category) =>
+      Array.isArray(category) ? category.some((item) => normalizeString(item)) : false
+    );
+  if (!hasSkills) {
+    warnings.push({
+      id: "missing-skills",
+      message: "Add at least one skill entry so employers understand your technical strengths.",
+      section: "Skills",
+    });
+  }
+
+  const hasWorkExperience = Object.values(workExpGroups).some((group) =>
+    group.some((bullet) => Boolean(normalizeString(bullet?.text)))
+  );
+  if (!hasWorkExperience) {
+    warnings.push({
+      id: "missing-work",
+      message: "Add work experience bullets so hiring teams can evaluate your roles and impact.",
+      section: "Work Experience",
+    });
+  }
+
+  const hasProjects = Object.values(projectGroups).some((group) =>
+    group.some((bullet) => Boolean(normalizeString(bullet?.text)))
+  );
+  if (!hasProjects) {
+    warnings.push({
+      id: "missing-projects",
+      message: "Add at least one project with details to showcase how you apply your skills.",
+      section: "Projects",
+    });
+  }
+
+  const hasEducation = education.some((edu: any) =>
+    Object.values(edu || {}).some((value) => hasTruthyValues(value))
+  );
+  if (!hasEducation) {
+    warnings.push({
+      id: "missing-education",
+      message: "Include your education so recruiters understand your academic background.",
+      section: "Education",
+    });
+  }
+
+  const normalizedLinks = links.map((link) => normalizeString(link).toLowerCase());
+  for (const requirement of LINK_REQUIREMENTS) {
+    const headerValue = normalizeString(normalizedHeader[requirement.headerField]);
+    const hasHeaderLink = Boolean(headerValue);
+    const hasMatchingLink =
+      !requirement.requireHeaderField &&
+      requirement.patterns.some((pattern) =>
+        normalizedLinks.some((link) => link.includes(pattern))
+      );
+    if (!hasHeaderLink && !hasMatchingLink) {
+      warnings.push({
+        id: `missing-link-${requirement.id}`,
+        message: `Add your ${requirement.label} URL so recruiters can see your online presence.`,
+        section: "Header",
+      });
+    }
+  }
+
+  return warnings;
 }
 
 export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorProps) {
@@ -45,12 +206,30 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
   const [education, setEducation] = useState(resume?.education || []);
   const [awards, setAwards] = useState(resume?.awards || []);
   const [mentorship, setMentorship] = useState(resume?.mentorship || []);
-  const [links, setLinks] = useState(resume?.links || []);
+  const [links, setLinks] = useState(
+    Array.isArray(resume?.links) ? resume?.links : resume?.links?.allLinks || []
+  );
 
   // Group work experience bullets by parentId (company/role)
   const [workExpGroups, setWorkExpGroups] = useState<Record<string, any[]>>({});
   const [projectGroups, setProjectGroups] = useState<Record<string, any[]>>({});
   const [workExpPendingChanges, setWorkExpPendingChanges] = useState(false);
+  const [ignoredWarnings, setIgnoredWarnings] = useState(false);
+  const [lastSaveWarnings, setLastSaveWarnings] = useState<ResumeWarning[]>([]);
+
+  const warnings = useMemo(
+    () =>
+      computeResumeWarnings({
+        header,
+        summary,
+        skills,
+        education,
+        workExpGroups,
+        projectGroups,
+        links,
+      }),
+    [header, summary, skills, education, workExpGroups, projectGroups, links]
+  );
 
   // Group bullets when they're loaded
   useEffect(() => {
@@ -104,7 +283,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
       setEducation(resume.education || []);
       setAwards(resume.awards || []);
       setMentorship(resume.mentorship || []);
-      setLinks(resume.links || []);
+      setLinks(Array.isArray(resume.links) ? resume.links : resume.links?.allLinks || []);
     }
   }, [resume]);
 
@@ -116,7 +295,8 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
     const hasEducationChanges = JSON.stringify(education) !== JSON.stringify(resume?.education || []);
     const hasAwardsChanges = JSON.stringify(awards) !== JSON.stringify(resume?.awards || []);
     const hasMentorshipChanges = JSON.stringify(mentorship) !== JSON.stringify(resume?.mentorship || []);
-    const hasLinksChanges = JSON.stringify(links) !== JSON.stringify(resume?.links || []);
+    const existingAllLinks = Array.isArray(resume?.links) ? resume?.links : resume?.links?.allLinks || [];
+    const hasLinksChanges = JSON.stringify(links) !== JSON.stringify(existingAllLinks);
 
     setHasChanges(
       hasHeaderChanges ||
@@ -130,12 +310,27 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
     );
   }, [header, summary, skills, education, awards, mentorship, links, workExpPendingChanges, resume]);
 
+  useEffect(() => {
+    if (warnings.length === 0 && ignoredWarnings) {
+      setIgnoredWarnings(false);
+    }
+  }, [warnings, ignoredWarnings]);
+
+  useEffect(() => {
+    if (warnings.length === 0 && lastSaveWarnings.length > 0) {
+      setLastSaveWarnings([]);
+    }
+  }, [warnings, lastSaveWarnings.length]);
+
   const handleSave = async () => {
     if (!resume || (!hasChanges && !workExpPendingChanges)) return;
 
     setIsSaving(true);
     try {
       // Save resume sections
+      const existingLinks = Array.isArray(resume?.links)
+        ? { headerLinks: {}, projectLinks: [], allLinks: resume.links }
+        : resume?.links || { headerLinks: {}, projectLinks: [], allLinks: [] };
       await updateResume({
         resumeId: resume._id,
         header: Object.keys(header).length > 0 ? header : undefined,
@@ -144,8 +339,23 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
         education,
         awards: awards.length > 0 ? awards : undefined,
         mentorship: mentorship.length > 0 ? mentorship : undefined,
-        links: links.length > 0 ? links : undefined,
+        links: {
+          headerLinks: existingLinks.headerLinks || {},
+          projectLinks: existingLinks.projectLinks || [],
+          allLinks: links,
+        },
       });
+
+      const warningsAfterSave = computeResumeWarnings({
+        header,
+        summary,
+        skills,
+        education,
+        workExpGroups,
+        projectGroups,
+        links,
+      });
+      setLastSaveWarnings(warningsAfterSave);
 
       // Note: Work experience bullets are saved in real-time as they're edited
       // No bulk save needed here
@@ -349,6 +559,88 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
         </div>
 
         <div style={{ padding: "1.5rem" }}>
+          {warnings.length > 0 && !ignoredWarnings && (
+            <div className="warning-box" style={{ marginBottom: "1rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "0.75rem",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div>
+                  <strong>
+                    {`We noticed ${warnings.length} warning${warnings.length === 1 ? "" : "s"} on this resume.`}
+                  </strong>
+                  <p
+                    className="hint"
+                    style={{ fontSize: "12px", margin: "0.25rem 0 0 0" }}
+                  >
+                    Resolve the highlighted sections below or ignore the warnings.
+                  </p>
+                </div>
+                <button
+                  className="ghost tiny"
+                  onClick={() => setIgnoredWarnings(true)}
+                >
+                  Ignore warnings
+                </button>
+              </div>
+              <ul
+                style={{
+                  margin: "0.75rem 0 0 1rem",
+                  padding: 0,
+                  listStyleType: "disc",
+                }}
+              >
+                {warnings.map((warning) => (
+                  <li
+                    key={warning.id}
+                    style={{ fontSize: "13px", marginBottom: "0.25rem" }}
+                  >
+                    {warning.message}
+                  </li>
+                ))}
+              </ul>
+              {lastSaveWarnings.length > 0 && (
+                <p
+                  className="hint"
+                  style={{ fontSize: "12px", marginTop: "0.5rem" }}
+                >
+                  {`After your last save we still saw ${lastSaveWarnings.length} warning${lastSaveWarnings.length === 1 ? "" : "s"}. Resolve them and save again, or keep ignoring for now.`}
+                </p>
+              )}
+            </div>
+          )}
+          {ignoredWarnings && (
+            <div
+              className="warning-box"
+              style={{
+                marginBottom: "1rem",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "0.75rem",
+              }}
+            >
+              <div>
+                <strong>Warnings are currently ignored.</strong>
+                <p
+                  className="hint"
+                  style={{ fontSize: "12px", margin: "0.25rem 0 0 0" }}
+                >
+                  Re-enable warnings to re-check missing sections before saving.
+                </p>
+              </div>
+              <button
+                className="ghost tiny"
+                onClick={() => setIgnoredWarnings(false)}
+              >
+                Show warnings
+              </button>
+            </div>
+          )}
           {/* Header Section */}
           <Section title="Header Information">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
@@ -623,6 +915,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
               const projectName = firstBullet?.projectName || "";
               const dates = firstBullet?.dates || "";
               const tags = firstBullet?.tags || [];
+              const links = firstBullet?.links || [];
 
               return (
                 <div
@@ -704,6 +997,34 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
                             >
                               {tag}
                             </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {links.length > 0 && (
+                      <div style={{ marginBottom: "1rem" }}>
+                        <label
+                          style={{
+                            display: "block",
+                            marginBottom: "0.5rem",
+                            fontSize: "13px",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          Links
+                        </label>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                          {links.map((link: string) => (
+                            <a
+                              key={`${parentId}-link-${link}`}
+                              href={link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="link-button"
+                              style={{ fontSize: "12px", width: "fit-content" }}
+                            >
+                              {link}
+                            </a>
                           ))}
                         </div>
                       </div>

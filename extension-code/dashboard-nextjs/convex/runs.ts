@@ -14,6 +14,7 @@ export const createRun = mutation({
     userId: v.id("users"),
     masterResumeId: v.id("masterResumes"),
     jobId: v.id("jobs"),
+    runStrategy: v.optional(v.union(v.literal("free"), v.literal("premium"))),
     status: v.union(
       v.literal("pending"),
       v.literal("running"),
@@ -21,6 +22,8 @@ export const createRun = mutation({
       v.literal("error")
     ),
     stage: v.union(
+      v.literal("queued"),
+      v.literal("analyzing"),
       v.literal("initialized"),
       v.literal("extracting"),
       v.literal("rubric_generating"),
@@ -60,6 +63,7 @@ export const createRun = mutation({
       userId: args.userId,
       masterResumeId: args.masterResumeId,
       jobId: args.jobId,
+      runStrategy: args.runStrategy,
       status: args.status,
       stage: args.stage,
       mockMode: args.mockMode,
@@ -91,6 +95,8 @@ export const updateRunStatus = mutation({
     ),
     stage: v.optional(
       v.union(
+        v.literal("queued"),
+        v.literal("analyzing"),
         v.literal("initialized"),
         v.literal("extracting"),
         v.literal("rubric_generating"),
@@ -107,6 +113,9 @@ export const updateRunStatus = mutation({
       )
     ),
     errorMessage: v.optional(v.string()),
+    runStrategy: v.optional(v.union(v.literal("free"), v.literal("premium"))),
+    modelVariants: v.optional(v.array(v.string())),
+    primaryModelKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const update: any = {
@@ -116,6 +125,9 @@ export const updateRunStatus = mutation({
     if (args.status !== undefined) update.status = args.status;
     if (args.stage !== undefined) update.stage = args.stage;
     if (args.errorMessage !== undefined) update.errorMessage = args.errorMessage;
+    if (args.runStrategy !== undefined) update.runStrategy = args.runStrategy;
+    if (args.modelVariants !== undefined) update.modelVariants = args.modelVariants;
+    if (args.primaryModelKey !== undefined) update.primaryModelKey = args.primaryModelKey;
 
     // Set completedAt if status is success or error
     if (args.status === "success" || args.status === "error") {
@@ -380,4 +392,3 @@ export const deleteRun = mutation({
     });
   },
 });
-

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
@@ -10,6 +10,8 @@ import TailoredResumeView from "@/components/TailoredResumeView";
 import UserOnboarding from "@/components/UserOnboarding";
 
 const STAGE_ORDER = [
+  "queued",
+  "analyzing",
   "initialized",
   "extracting",
   "rubric_generating",
@@ -25,6 +27,8 @@ const STAGE_ORDER = [
 ];
 
 const STAGE_LABELS: Record<string, string> = {
+  queued: "Queued",
+  analyzing: "Analyzing",
   initialized: "Initialized",
   extracting: "Extracting",
   rubric_generating: "Generating Rubric",
@@ -125,9 +129,9 @@ function parseJobDescriptionSections(description?: string) {
 
 export default function RunResultsPage() {
   const params = useParams();
-  const router = useRouter();
   const runIdParam = params.runId as string;
   const { user: clerkUser } = useUser();
+  const executeTriggeredRef = useRef(false);
   
   const [activeTab, setActiveTab] = useState<"overview" | "tailored" | "rubric" | "selection">("overview");
   const [copyToast, setCopyToast] = useState(false);
@@ -144,6 +148,21 @@ export default function RunResultsPage() {
     api.runDetails.getFullRunDetailsByRunId,
     runIdParam ? { runId: runIdParam } : "skip"
   );
+
+  useEffect(() => {
+    if (!runDetails?.run || executeTriggeredRef.current) return;
+    if (runDetails.run.status !== "pending" || runDetails.run.stage !== "queued") return;
+
+    executeTriggeredRef.current = true;
+    fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phase: "execute", run_id: runDetails.run.runId }),
+      keepalive: true,
+    }).catch(() => {
+      executeTriggeredRef.current = false;
+    });
+  }, [runDetails?.run]);
 
   const [generatePdfContext, setGeneratePdfContext] = useState<{
     trigger: () => Promise<void>;
@@ -518,6 +537,29 @@ export default function RunResultsPage() {
 
         {activeTab === "rubric" && jdRubric && (
           <div className="tab-pane">
+            {job && (
+              <section className="explain-section job-description-panel">
+                <h3>Job Description (Tailoring Input)</h3>
+                <p className="section-hint">
+                  This is the raw job description text that was provided to the resume tailoring prompt.
+                </p>
+                {jobDescriptionText ? (
+                  <div className="job-description-accordion">
+                    {jobSections.map((section, idx) => (
+                      <details key={`${section.title}-${idx}`} open={idx === 0}>
+                        <summary>
+                          <span className="job-section-title">{section.title}</span>
+                          <span className="job-section-toggle" aria-hidden="true" />
+                        </summary>
+                        <div className="section-content">{section.content}</div>
+                      </details>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="hint">No job description was captured for this posting.</p>
+                )}
+              </section>
+            )}
             <div className="explain-section">
               <h3>Job Requirements ({jdRubric.requirements.length})</h3>
               <p className="section-hint">

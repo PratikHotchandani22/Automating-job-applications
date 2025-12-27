@@ -76,7 +76,7 @@ async function convertResumeToBackendFormat(
       dates: firstBullet.dates || "",
       tags: firstBullet.tags || [],
       bullets: bullets.map((b: any) => b.text),
-      links: [],
+      links: firstBullet.links || [],
     });
   });
 
@@ -104,7 +104,9 @@ async function convertResumeToBackendFormat(
     })),
     awards: masterResume.awards || [],
     mentorship: masterResume.mentorship || [],
-    links: masterResume.links || [],
+    links: Array.isArray(masterResume.links)
+      ? masterResume.links
+      : masterResume.links?.allLinks || [],
   };
 }
 
@@ -705,4 +707,3 @@ export const downloadAndStoreArtifact = action({
     };
   },
 });
-

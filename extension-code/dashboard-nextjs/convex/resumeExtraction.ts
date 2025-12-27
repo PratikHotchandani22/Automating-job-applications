@@ -5,6 +5,14 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { generateContentHash } from "./helpers";
 import { generateResumeLatex } from "./latexGenerator";
+import {
+  buildHeaderLinks,
+  buildProjectLinks,
+  extractAllLinks,
+  extractProjectNamesFromText,
+  mergeProjectsWithFallback,
+  ResumeLinkData,
+} from "./resumeParsing";
 
 /**
  * Extract structured data from resume text using LLM
@@ -15,10 +23,61 @@ export const extractResumeData = action({
     resumeText: v.string(),
     resumeName: v.string(),
     isActive: v.boolean(),
+    resumeId: v.optional(v.id("masterResumes")),
+    resumeLinks: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
+    const apiAny = api as any;
+    let resumeId: any = args.resumeId;
+    let contentHashValue = "";
+    try {
     // Generate content hash using Web Crypto API
     const contentHash = await generateContentHash(args.resumeText);
+    contentHashValue = `sha256:${contentHash}`;
+
+    const existingResume = await ctx.runQuery(apiAny.masterResumes.getMasterResumeByContentHash, {
+      userId: args.userId,
+      contentHash: contentHashValue,
+    });
+
+    if (existingResume && resumeId && existingResume._id !== resumeId) {
+      await ctx.runMutation(api.masterResumes.deleteMasterResume, {
+        resumeId,
+      });
+      resumeId = undefined;
+    }
+
+    if (existingResume) {
+      resumeId = existingResume._id;
+      await ctx.runMutation(api.resumeBullets.deleteResumeBulletsByResume, {
+        masterResumeId: resumeId,
+      });
+    }
+
+    if (!resumeId) {
+      resumeId = await ctx.runMutation(api.masterResumes.createMasterResume, {
+        userId: args.userId,
+        name: args.resumeName,
+        contentHash: contentHashValue,
+        isActive: args.isActive,
+        skills: {
+          programming_languages: [],
+          frameworks_libraries: [],
+          tools_cloud_technologies: [],
+          data_science_analytics: [],
+          machine_learning_ai: [],
+          other_skills: [],
+        },
+        education: [],
+        processingStatus: "extracting_structured_resume",
+      });
+    } else {
+      await ctx.runMutation(api.masterResumes.updateMasterResume, {
+        resumeId,
+        processingStatus: "extracting_structured_resume",
+        processingError: undefined,
+      });
+    }
 
     // Create prompt for LLM extraction
     const extractionPrompt = `You are an expert resume parser and structured-data extraction system.
@@ -40,6 +99,7 @@ Normalize lists (skills, bullets, links) as arrays even if only one item exists.
 Deduplicate skills and links if repeated across sections.
 If multiple roles exist at the same company, create separate work experience entries.
 Do not hallucinate URLs, emails, phone numbers, or GPAs.
+Return every project entry found in the resume. Do not stop at the first project.
 Return valid JSON only. No markdown, no explanations, no comments.
 
 Skills Classification Rules
@@ -118,7 +178,7 @@ Return exactly this JSON structure:
 }
 
 Input Resume Text
-${args.resumeText.substring(0, 8000)}
+${args.resumeText}
 
 Final Instruction
 Return only valid JSON that strictly conforms to the schema above.`;
@@ -161,6 +221,14 @@ Return only valid JSON that strictly conforms to the schema above.`;
 
     const data = await response.json();
     const extractedContent = JSON.parse(data.choices[0].message.content);
+    console.log("[resumeExtraction] extracted JSON:", {
+      projectCount: Array.isArray(extractedContent.projects)
+        ? extractedContent.projects.length
+        : 0,
+      projectSample: Array.isArray(extractedContent.projects)
+        ? extractedContent.projects.slice(0, 2)
+        : [],
+    });
 
     // Clean header object: convert null values to undefined (Convex validators don't accept null)
     let cleanedHeader: {
@@ -173,7 +241,7 @@ Return only valid JSON that strictly conforms to the schema above.`;
       portfolio?: string;
       website?: string;
     } | undefined = undefined;
-    if (extractedContent.header && typeof extractedContent.header === 'object') {
+    if (extractedContent.header && typeof extractedContent.header === "object") {
       cleanedHeader = {};
       const headerFields: Array<'fullName' | 'email' | 'phone' | 'address' | 'linkedin' | 'github' | 'portfolio' | 'website'> = ['fullName', 'email', 'phone', 'address', 'linkedin', 'github', 'portfolio', 'website'];
       for (const field of headerFields) {
@@ -191,7 +259,7 @@ Return only valid JSON that strictly conforms to the schema above.`;
     }
 
     // Clean summary: convert null to undefined
-    const cleanedSummary = (extractedContent.summary !== null && extractedContent.summary !== undefined && typeof extractedContent.summary === 'string' && extractedContent.summary.trim() !== '')
+    const cleanedSummary = (extractedContent.summary !== null && extractedContent.summary !== undefined && typeof extractedContent.summary === "string" && extractedContent.summary.trim() !== "")
       ? extractedContent.summary
       : undefined;
 
@@ -211,7 +279,7 @@ Return only valid JSON that strictly conforms to the schema above.`;
       machine_learning_ai: [],
       other_skills: [],
     };
-    if (extractedContent.skills && typeof extractedContent.skills === 'object') {
+    if (extractedContent.skills && typeof extractedContent.skills === "object") {
       const skillCategories: Array<keyof typeof cleanedSkills> = ['programming_languages', 'frameworks_libraries', 'tools_cloud_technologies', 'data_science_analytics', 'machine_learning_ai', 'other_skills'];
       for (const category of skillCategories) {
         if (Array.isArray(extractedContent.skills[category])) {
@@ -288,22 +356,58 @@ Return only valid JSON that strictly conforms to the schema above.`;
       }
     }
 
-    // Clean links array: filter out null values
-    let cleanedLinks = undefined;
-    if (extractedContent.links && Array.isArray(extractedContent.links)) {
-      cleanedLinks = extractedContent.links.filter(
-        (link: any) => link !== null && link !== undefined && typeof link === 'string' && link.trim() !== ''
-      );
-      if (cleanedLinks.length === 0) {
-        cleanedLinks = undefined;
+    const fallbackProjectNames = extractProjectNamesFromText(args.resumeText);
+    const mergedProjects = mergeProjectsWithFallback(
+      Array.isArray(extractedContent.projects) ? extractedContent.projects : [],
+      fallbackProjectNames
+    );
+    const normalizedProjectNames = new Set(
+      fallbackProjectNames.map((name) => name.trim().toLowerCase()).filter(Boolean)
+    );
+    const filteredProjects =
+      normalizedProjectNames.size > 0
+        ? mergedProjects.filter((proj: any) => {
+            const name = typeof proj?.name === "string" ? proj.name.trim().toLowerCase() : "";
+            return name && normalizedProjectNames.has(name);
+          })
+        : mergedProjects;
+    extractedContent.projects = filteredProjects;
+
+    const textLinks = extractAllLinks(args.resumeText);
+    const resumeLinks = Array.isArray(args.resumeLinks) ? args.resumeLinks : [];
+    const normalizedResumeLinks = resumeLinks.flatMap((link) => extractAllLinks(link));
+    const allLinks = Array.from(new Set([...textLinks, ...normalizedResumeLinks]));
+    const headerLinks = buildHeaderLinks(args.resumeText, allLinks);
+    const projectLinks = buildProjectLinks(
+      mergedProjects.map((proj: any) => proj?.name).filter(Boolean),
+      args.resumeText,
+      allLinks
+    );
+
+    const linksPayload: ResumeLinkData = {
+      headerLinks,
+      projectLinks,
+      allLinks,
+    };
+
+    if (cleanedHeader) {
+      const isUrl = (value?: string) =>
+        typeof value === "string" && /https?:\/\//i.test(value);
+      if ((!cleanedHeader.linkedin || !isUrl(cleanedHeader.linkedin)) && headerLinks.linkedin) {
+        cleanedHeader.linkedin = headerLinks.linkedin;
+      }
+      if ((!cleanedHeader.github || !isUrl(cleanedHeader.github)) && headerLinks.github) {
+        cleanedHeader.github = headerLinks.github;
+      }
+      if ((!cleanedHeader.portfolio || !isUrl(cleanedHeader.portfolio)) && headerLinks.portfolio) {
+        cleanedHeader.portfolio = headerLinks.portfolio;
       }
     }
 
-    // Create master resume
-    const resumeId: any = await ctx.runMutation(api.masterResumes.createMasterResume, {
-      userId: args.userId,
+    await ctx.runMutation(api.masterResumes.updateMasterResume, {
+      resumeId,
       name: args.resumeName,
-      contentHash: `sha256:${contentHash}`,
+      contentHash: contentHashValue,
       isActive: args.isActive,
       header: cleanedHeader,
       summary: cleanedSummary,
@@ -311,7 +415,8 @@ Return only valid JSON that strictly conforms to the schema above.`;
       education: cleanedEducation,
       awards: cleanedAwards,
       mentorship: cleanedMentorship,
-      links: cleanedLinks,
+      links: linksPayload,
+      processingStatus: "saving_to_database",
     });
 
     // Create resume bullets for work experience and projects
@@ -356,44 +461,93 @@ Return only valid JSON that strictly conforms to the schema above.`;
       });
     }
 
-    // Add project bullets
+    // Add project bullets (ensure projects appear even without bullets)
+    const projectLinkMap = new Map<string, string[]>();
+    projectLinks.forEach((entry) => {
+      if (entry.projectName) {
+        projectLinkMap.set(entry.projectName.toLowerCase(), entry.links);
+      }
+    });
+
     if (extractedContent.projects) {
       extractedContent.projects.forEach((proj: any, projIdx: number) => {
+        const parentId = `proj_${projIdx}`;
+        let addedBullet = false;
+        const projectName = typeof proj.name === "string" ? proj.name.trim() : "";
+        const projectLinksForProject =
+          projectName && projectLinkMap.has(projectName.toLowerCase())
+            ? projectLinkMap.get(projectName.toLowerCase())
+            : [];
+
         if (proj.bullets && Array.isArray(proj.bullets)) {
           proj.bullets.forEach((bullet: any, bulletIdx: number) => {
-            // Skip null or invalid bullets
-            if (bullet === null || bullet === undefined || typeof bullet !== 'string' || bullet.trim() === '') {
+            if (bullet === null || bullet === undefined || typeof bullet !== "string") {
               return;
             }
+            const cleanedBullet = bullet.trim();
+            if (!cleanedBullet) return;
 
             const bulletData: any = {
               masterResumeId: resumeId,
-              bulletId: `${proj.id || `proj_${projIdx}`}_b${bulletIdx + 1}`,
+              bulletId: `${parentId}_b${bulletIdx + 1}`,
               parentType: "project" as const,
-              parentId: proj.id || `proj_${projIdx}`,
-              text: bullet.trim(),
+              parentId,
+              text: cleanedBullet,
               order: bulletIdx,
             };
 
-            // Only include optional fields if they're non-null, non-undefined strings
-            if (proj.name !== null && proj.name !== undefined && typeof proj.name === 'string' && proj.name.trim() !== '') {
-              bulletData.projectName = proj.name.trim();
+            if (projectName) {
+              bulletData.projectName = projectName;
             }
-            if (proj.dates !== null && proj.dates !== undefined && typeof proj.dates === 'string' && proj.dates.trim() !== '') {
+            if (proj.dates !== null && proj.dates !== undefined && typeof proj.dates === "string" && proj.dates.trim() !== "") {
               bulletData.dates = proj.dates.trim();
             }
-            // Clean tags array: filter out null values
             if (proj.tags && Array.isArray(proj.tags)) {
               const cleanedTags = proj.tags.filter(
-                (tag: any) => tag !== null && tag !== undefined && typeof tag === 'string' && tag.trim() !== ''
+                (tag: any) => tag !== null && tag !== undefined && typeof tag === "string" && tag.trim() !== ""
               );
               if (cleanedTags.length > 0) {
                 bulletData.tags = cleanedTags;
               }
             }
+            if (projectLinksForProject && projectLinksForProject.length > 0) {
+              bulletData.links = projectLinksForProject;
+            }
 
             bullets.push(bulletData);
+            addedBullet = true;
           });
+        }
+
+        if (!addedBullet) {
+          const bulletData: any = {
+            masterResumeId: resumeId,
+            bulletId: `${parentId}_b1`,
+            parentType: "project" as const,
+            parentId,
+            text: "",
+            order: 0,
+          };
+
+          if (projectName) {
+            bulletData.projectName = projectName;
+          }
+          if (proj.dates !== null && proj.dates !== undefined && typeof proj.dates === "string" && proj.dates.trim() !== "") {
+            bulletData.dates = proj.dates.trim();
+          }
+          if (proj.tags && Array.isArray(proj.tags)) {
+            const cleanedTags = proj.tags.filter(
+              (tag: any) => tag !== null && tag !== undefined && typeof tag === "string" && tag.trim() !== ""
+            );
+            if (cleanedTags.length > 0) {
+              bulletData.tags = cleanedTags;
+            }
+          }
+          if (projectLinksForProject && projectLinksForProject.length > 0) {
+            bulletData.links = projectLinksForProject;
+          }
+
+          bullets.push(bulletData);
         }
       });
     }
@@ -457,15 +611,20 @@ Return only valid JSON that strictly conforms to the schema above.`;
       const projects: any[] = [];
       if (extractedContent.projects && Array.isArray(extractedContent.projects)) {
         extractedContent.projects.forEach((proj: any, idx: number) => {
-          const parentId = proj.id || `proj_${idx}`;
+          const parentId = `proj_${idx}`;
           const bullets = projectMap.get(parentId) || [];
           bullets.sort((a, b) => (a.order || 0) - (b.order || 0));
+          const projectName = typeof proj.name === "string" ? proj.name.trim() : "";
+          const projectLinksForProject =
+            projectName && projectLinkMap.has(projectName.toLowerCase())
+              ? projectLinkMap.get(projectName.toLowerCase())
+              : [];
           
           projects.push({
             name: proj.name,
             dates: proj.dates,
             tags: proj.tags,
-            links: proj.links,
+            links: projectLinksForProject,
             bullets: bullets.map((b: any) => ({ text: b.text })),
           });
         });
@@ -490,17 +649,33 @@ Return only valid JSON that strictly conforms to the schema above.`;
       await ctx.runMutation(api.masterResumes.updateMasterResume, {
         resumeId,
         customLatexTemplate: latexTemplate,
+        processingStatus: "done",
       });
 
       // Note: The resume JSON will be automatically generated and saved to backend
       // when startTailoringPipeline is called, so we don't need to save it here
     }
 
+    console.log("[resumeExtraction] stored projects:", {
+      resumeId,
+      count: extractedContent.projects ? extractedContent.projects.length : 0,
+      names: (extractedContent.projects || []).map((proj: any) => proj?.name).filter(Boolean),
+    });
+
     return {
       success: true,
       resumeId,
       extractedData: extractedContent,
     };
+    } catch (error: any) {
+      if (resumeId) {
+        await ctx.runMutation(api.masterResumes.updateMasterResume, {
+          resumeId,
+          processingStatus: "failed",
+          processingError: error.message || "Failed to extract resume",
+        });
+      }
+      throw error;
+    }
   },
 });
-

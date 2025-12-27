@@ -99,6 +99,58 @@
   gap: 16px;
 }
 
+.setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.setup-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setup-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.setup-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+}
+
+.setup-status.done {
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #bbf7d0;
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.setup-status.pending {
+  border-color: rgba(96, 165, 250, 0.35);
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.setup-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

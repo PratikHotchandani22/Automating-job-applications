@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -10,6 +10,7 @@ import Link from "next/link";
 import { formatDateTime } from "@/utils/runFilters";
 import UserOnboarding from "@/components/UserOnboarding";
 import { useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 
 type Range = "today" | "7d" | "30d";
 
@@ -21,12 +22,18 @@ const rangeToDays: Record<Range, number> = {
 
 export default function OverviewPage() {
   const { user: clerkUser } = useUser();
+  const router = useRouter();
   const [range, setRange] = useState<Range>("7d");
   
   // Get user from Convex
   const convexUser = useQuery(
     api.users.getUserByClerkId,
     clerkUser ? { clerkId: clerkUser.id } : "skip"
+  );
+
+  const resumes = useQuery(
+    api.masterResumes.getMasterResumes,
+    convexUser ? { userId: convexUser._id } : "skip"
   );
   
   // Get user's runs from Convex
@@ -93,6 +100,13 @@ export default function OverviewPage() {
   }, [runs]);
 
   const recentRuns = useMemo(() => runs.slice(0, 10), [runs]);
+
+  useEffect(() => {
+    if (!convexUser || !resumes) return;
+    if (resumes.length === 0) {
+      router.replace("/billing");
+    }
+  }, [convexUser, resumes, router]);
 
   // Show onboarding if user not set up
   if (!convexUser) {
