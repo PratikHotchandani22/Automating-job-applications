@@ -55,8 +55,29 @@ export const createMasterResume = mutation({
       )
     ),
     mentorship: v.optional(v.array(v.string())),
-    links: v.optional(v.array(v.string())),
+    links: v.optional(
+      v.union(
+        v.array(v.string()),
+        v.object({
+          headerLinks: v.object({
+            linkedin: v.optional(v.string()),
+            github: v.optional(v.string()),
+            portfolio: v.optional(v.string()),
+            other: v.optional(v.array(v.string())),
+          }),
+          projectLinks: v.array(
+            v.object({
+              projectName: v.string(),
+              links: v.array(v.string()),
+            })
+          ),
+          allLinks: v.array(v.string()),
+        })
+      )
+    ),
     customLatexTemplate: v.optional(v.string()),
+    processingStatus: v.optional(v.string()),
+    processingError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // If this is set as active, deactivate other resumes for this user
@@ -90,6 +111,8 @@ export const createMasterResume = mutation({
       mentorship: args.mentorship,
       links: args.links,
       customLatexTemplate: args.customLatexTemplate,
+      processingStatus: args.processingStatus,
+      processingError: args.processingError,
       createdAt: now,
       updatedAt: now,
     });
@@ -108,6 +131,22 @@ export const getMasterResumes = query({
       .collect();
 
     return filterNotDeleted(resumes);
+  },
+});
+
+/**
+ * Get master resume by content hash for a user
+ */
+export const getMasterResumeByContentHash = query({
+  args: { userId: v.id("users"), contentHash: v.string() },
+  handler: async (ctx, args) => {
+    const resumes = await ctx.db
+      .query("masterResumes")
+      .withIndex("by_content_hash", (q) => q.eq("contentHash", args.contentHash))
+      .collect();
+    return resumes.find(
+      (resume) => resume.userId === args.userId && !resume.isDeleted
+    );
   },
 });
 
@@ -153,6 +192,7 @@ export const updateMasterResume = mutation({
     resumeId: v.id("masterResumes"),
     name: v.optional(v.string()),
     contentHash: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
     header: v.optional(
       v.object({
         fullName: v.optional(v.string()),
@@ -199,8 +239,29 @@ export const updateMasterResume = mutation({
       )
     ),
     mentorship: v.optional(v.array(v.string())),
-    links: v.optional(v.array(v.string())),
+    links: v.optional(
+      v.union(
+        v.array(v.string()),
+        v.object({
+          headerLinks: v.object({
+            linkedin: v.optional(v.string()),
+            github: v.optional(v.string()),
+            portfolio: v.optional(v.string()),
+            other: v.optional(v.array(v.string())),
+          }),
+          projectLinks: v.array(
+            v.object({
+              projectName: v.string(),
+              links: v.array(v.string()),
+            })
+          ),
+          allLinks: v.array(v.string()),
+        })
+      )
+    ),
     customLatexTemplate: v.optional(v.string()),
+    processingStatus: v.optional(v.string()),
+    processingError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const update: any = {
@@ -210,6 +271,7 @@ export const updateMasterResume = mutation({
     // Only include fields that are provided
     if (args.name !== undefined) update.name = args.name;
     if (args.contentHash !== undefined) update.contentHash = args.contentHash;
+    if (args.isActive !== undefined) update.isActive = args.isActive;
     if (args.header !== undefined) update.header = args.header;
     if (args.summary !== undefined) update.summary = args.summary;
     if (args.skills !== undefined) update.skills = args.skills;
@@ -219,8 +281,44 @@ export const updateMasterResume = mutation({
     if (args.links !== undefined) update.links = args.links;
     if (args.customLatexTemplate !== undefined)
       update.customLatexTemplate = args.customLatexTemplate;
+    if (args.processingStatus !== undefined)
+      update.processingStatus = args.processingStatus;
+    if (args.processingError !== undefined)
+      update.processingError = args.processingError;
 
     await ctx.db.patch(args.resumeId, update);
+  },
+});
+
+/**
+ * Create a processing resume placeholder
+ */
+export const createProcessingResume = mutation({
+  args: {
+    userId: v.id("users"),
+    name: v.string(),
+    isActive: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    return await ctx.db.insert("masterResumes", {
+      userId: args.userId,
+      name: args.name,
+      contentHash: `processing:${now}`,
+      isActive: args.isActive,
+      skills: {
+        programming_languages: [],
+        frameworks_libraries: [],
+        tools_cloud_technologies: [],
+        data_science_analytics: [],
+        machine_learning_ai: [],
+        other_skills: [],
+      },
+      education: [],
+      processingStatus: "extracting_structured_resume",
+      createdAt: now,
+      updatedAt: now,
+    });
   },
 });
 
@@ -269,4 +367,3 @@ export const deleteMasterResume = mutation({
     });
   },
 });
-

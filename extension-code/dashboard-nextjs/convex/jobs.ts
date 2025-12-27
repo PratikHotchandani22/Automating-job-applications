@@ -134,6 +134,15 @@ export const updateJob = mutation({
     salary: v.optional(v.string()),
     employmentType: v.optional(v.string()),
     seniority: v.optional(v.string()),
+    extractedText: v.optional(v.string()),
+    structuredDescription: v.optional(
+      v.array(
+        v.object({
+          title: v.string(),
+          content: v.string(),
+        })
+      )
+    ),
     userTags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
     isFavorite: v.optional(v.boolean()),
@@ -150,6 +159,7 @@ export const updateJob = mutation({
     if (args.employmentType !== undefined)
       update.employmentType = args.employmentType;
     if (args.seniority !== undefined) update.seniority = args.seniority;
+    if (args.extractedText !== undefined) update.extractedText = args.extractedText;
     if (args.userTags !== undefined) update.userTags = args.userTags;
     if (args.notes !== undefined) update.notes = args.notes;
     if (args.isFavorite !== undefined) update.isFavorite = args.isFavorite;

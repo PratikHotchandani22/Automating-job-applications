@@ -1,0 +1,20 @@
+Jane Doe
+jane.doe@email.com | (555) 123-4567 | https://linkedin.com/in/janedoe | github.com/janedoe | www.janedoe.dev
+
+SUMMARY
+Full-stack engineer with experience shipping web products and ML demos.
+
+PROJECTS
+Project Alpha | 2023
+- Built a metrics dashboard for real-time analytics.
+GitHub: https://github.com/janedoe/project-alpha
+Demo: www.alpha-demo.com
+
+Project Beta | 2022
+- Published a research demo for LLM evaluation.
+Paper: https://arxiv.org/abs/1234.5678
+App: https://beta-app.example.com
+
+EXPERIENCE
+Acme Corp — Software Engineer | 2021-2024
+- Delivered customer-facing features and improved performance.

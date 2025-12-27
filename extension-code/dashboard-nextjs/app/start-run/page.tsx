@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import UserOnboarding from "@/components/UserOnboarding";
 import Link from "next/link";
@@ -71,8 +71,6 @@ export default function StartRunPage() {
     api.runs.getRuns,
     convexUser ? { userId: convexUser._id } : "skip"
   ) || [];
-
-  const createRun = useMutation(api.runs.createRun);
 
   // Helper to check if we're in an iframe
   const isInIframe = useCallback(() => {
@@ -441,91 +439,12 @@ export default function StartRunPage() {
           // Step 2: Call the Next.js analyze API
           setStatusText(`Analyzing job: ${jobPayload.job.title || "Unknown"}...`);
 
-          // Build the master_resume object from activeResume fields and resumeBullets
-          // Group bullets by parentId to build experience and projects arrays
-          const experienceBullets = (resumeBullets || []).filter((b: any) => b.parentType === "experience");
-          const projectBullets = (resumeBullets || []).filter((b: any) => b.parentType === "project");
-          
-          // Build experience array from bullets
-          const experienceMap = new Map<string, any>();
-          experienceBullets.forEach((bullet: any) => {
-            const key = bullet.parentId;
-            if (!experienceMap.has(key)) {
-              experienceMap.set(key, {
-                role_id: key,
-                company: bullet.company || "",
-                title: bullet.role || "",
-                dates: bullet.dates || "",
-                location: bullet.location || "",
-                bullets: [],
-              });
-            }
-            experienceMap.get(key)!.bullets.push(bullet.text);
-          });
-          const experience = Array.from(experienceMap.values());
-          
-          // Build projects array from bullets
-          const projectsMap = new Map<string, any>();
-          projectBullets.forEach((bullet: any) => {
-            const key = bullet.parentId;
-            if (!projectsMap.has(key)) {
-              projectsMap.set(key, {
-                project_id: key,
-                name: bullet.projectName || key,
-                dates: bullet.dates || "",
-                description: "",
-                bullets: [],
-                technologies: bullet.tags || [],
-              });
-            }
-            projectsMap.get(key)!.bullets.push(bullet.text);
-          });
-          const projects = Array.from(projectsMap.values());
-
-          const masterResumePayload = {
-            contact: {
-              name: activeResume.header?.fullName,
-              email: activeResume.header?.email,
-              phone: activeResume.header?.phone,
-              location: activeResume.header?.address,
-              linkedin: activeResume.header?.linkedin,
-              github: activeResume.header?.github,
-            },
-            summary: activeResume.summary,
-            experience,
-            projects,
-            skills: {
-              languages: activeResume.skills?.programming_languages || [],
-              frameworks: activeResume.skills?.frameworks_libraries || [],
-              tools: activeResume.skills?.tools_cloud_technologies || [],
-              databases: [],
-              cloud: [],
-              other: [
-                ...(activeResume.skills?.data_science_analytics || []),
-                ...(activeResume.skills?.machine_learning_ai || []),
-                ...(activeResume.skills?.other_skills || []),
-              ],
-            },
-            education: (activeResume.education || []).map((edu: any) => ({
-              school: edu.institution,
-              degree: edu.degree,
-              dates: edu.dates,
-              location: edu.location,
-              gpa: edu.gpa,
-            })),
-            certifications: [],
-          };
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:beforeAnalyze',message:'Master resume payload being sent',data:{exp_count:masterResumePayload.experience.length,proj_count:masterResumePayload.projects.length,first_exp_company:masterResumePayload.experience[0]?.company,first_exp_bullets:masterResumePayload.experience[0]?.bullets?.length,resumeBullets_count:resumeBullets?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-fix',hypothesisId:'FIX_VERIFY'})}).catch(()=>{});
-          // #endregion
-
           const analyzeResponse = await fetch("/api/analyze", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               job_payload: jobPayload,
-              master_resume: masterResumePayload,
+              master_resume_id: activeResume._id,
             }),
           });
 
@@ -544,6 +463,17 @@ export default function StartRunPage() {
               title: jobPayload.job.title,
               company: jobPayload.job.company,
             });
+            if (selectedJobIds.length === 1 && analyzeResult.run_id) {
+              window.location.href = `/run/${analyzeResult.run_id}`;
+              return;
+            }
+
+            fetch("/api/analyze", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ phase: "execute", run_id: analyzeResult.run_id }),
+              keepalive: true,
+            }).catch(() => {});
           } else {
             failCount++;
             results.push({ tabId, ok: false, error: analyzeResult.error || "Analysis failed" });

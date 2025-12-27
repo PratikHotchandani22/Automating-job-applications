@@ -73,12 +73,11 @@ export async function POST(request: NextRequest) {
         "Content-Length": pdfBuffer.byteLength.toString(),
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("PDF generation error:", error);
-    return NextResponse.json(
-      { error: error.message || "Internal server error" },
-      { status: 500 }
-    );
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -143,12 +142,13 @@ export async function PUT(request: NextRequest) {
       size: pdfBuffer.byteLength,
       mimeType: "application/pdf",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("PDF generation error:", error);
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json(
-      { error: error.message || "Internal server error", success: false },
+      { error: message, success: false },
       { status: 500 }
     );
   }
 }
-

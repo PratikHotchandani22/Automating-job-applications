@@ -18,6 +18,20 @@ export default function SettingsPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [renamingResumeId, setRenamingResumeId] = useState<Id<"masterResumes"> | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [deletingResumeId, setDeletingResumeId] = useState<Id<"masterResumes"> | null>(null);
+  const [uploadStage, setUploadStage] = useState<
+    | "idle"
+    | "uploading_file"
+    | "extracting_text"
+    | "extracting_structured_resume"
+    | "saving_to_database"
+    | "done"
+    | "failed"
+  >("idle");
+  const [processingResumeId, setProcessingResumeId] = useState<Id<"masterResumes"> | null>(null);
   const [editingResumeId, setEditingResumeId] = useState<Id<"masterResumes"> | null>(null);
   const [newlyCreatedResumeId, setNewlyCreatedResumeId] = useState<Id<"masterResumes"> | null>(null);
   
@@ -40,8 +54,16 @@ export default function SettingsPage() {
   );
 
   const createResume = useMutation(api.masterResumes.createMasterResume);
+  const createProcessingResume = useMutation((api as any).masterResumes.createProcessingResume);
   const setActiveResume = useMutation(api.masterResumes.setActiveMasterResume);
+  const updateResume = useMutation(api.masterResumes.updateMasterResume);
+  const deleteResume = useMutation(api.masterResumes.deleteMasterResume);
   const extractResumeData = useAction(api.resumeExtraction.extractResumeData);
+
+  const processingResume = useQuery(
+    api.masterResumes.getMasterResume,
+    processingResumeId ? { resumeId: processingResumeId } : "skip"
+  );
 
   const handleCreateResume = async () => {
     if (!user || !resumeName.trim() || isCreating) return;
@@ -90,6 +112,52 @@ export default function SettingsPage() {
     }
   };
 
+  const handleRenameStart = (resume: any) => {
+    setRenamingResumeId(resume._id);
+    setRenameValue(resume.name || "");
+  };
+
+  const handleRenameCancel = () => {
+    setRenamingResumeId(null);
+    setRenameValue("");
+  };
+
+  const handleRenameSave = async () => {
+    if (!renamingResumeId || !renameValue.trim()) return;
+    setIsRenaming(true);
+    try {
+      await updateResume({
+        resumeId: renamingResumeId,
+        name: renameValue.trim(),
+      });
+      handleRenameCancel();
+    } catch (error) {
+      console.error("Error renaming resume:", error);
+      alert("Failed to rename resume. Please try again.");
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const handleDeleteResume = async (resumeId: Id<"masterResumes">) => {
+    if (!confirm("Delete this resume? This action cannot be undone.")) return;
+    setDeletingResumeId(resumeId);
+    try {
+      await deleteResume({ resumeId });
+      if (editingResumeId === resumeId) {
+        setEditingResumeId(null);
+      }
+      if (renamingResumeId === resumeId) {
+        handleRenameCancel();
+      }
+    } catch (error) {
+      console.error("Error deleting resume:", error);
+      alert("Failed to delete resume. Please try again.");
+    } finally {
+      setDeletingResumeId(null);
+    }
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !user) return;
@@ -113,12 +181,14 @@ export default function SettingsPage() {
     setIsUploading(true);
     setUploadError(null);
     setUploadSuccess(false);
+    setUploadStage("uploading_file");
 
     try {
       // Step 1: Parse the file using API route
       const formData = new FormData();
       formData.append("file", file);
 
+      setUploadStage("extracting_text");
       const parseResponse = await fetch("/api/parse-resume", {
         method: "POST",
         body: formData,
@@ -131,25 +201,38 @@ export default function SettingsPage() {
 
       const parseResult = await parseResponse.json();
       const extractedText = parseResult.text;
+      const extractedLinks = Array.isArray(parseResult.links) ? parseResult.links : [];
 
       // Step 2: Extract structured data and save to database
       const resumeName = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
       const isActive = resumes && resumes.length === 0; // Make first resume active
+
+      const placeholderResumeId = await createProcessingResume({
+        userId: user._id,
+        name: resumeName,
+        isActive: isActive,
+      });
+      setProcessingResumeId(placeholderResumeId);
+      setUploadStage("extracting_structured_resume");
 
       const result = await extractResumeData({
         userId: user._id,
         resumeText: extractedText,
         resumeName: resumeName,
         isActive: isActive,
+        resumeId: placeholderResumeId,
+        resumeLinks: extractedLinks,
       });
 
       // Open editor with newly created resume
       if (result.resumeId) {
+        setProcessingResumeId(result.resumeId);
         setNewlyCreatedResumeId(result.resumeId);
         setEditingResumeId(result.resumeId);
       }
 
       setUploadSuccess(true);
+      setUploadStage("done");
       // Reset file input
       event.target.value = "";
       
@@ -158,6 +241,7 @@ export default function SettingsPage() {
     } catch (error: any) {
       console.error("Error uploading resume:", error);
       setUploadError(error.message || "Failed to upload resume. Please try again.");
+      setUploadStage("failed");
     } finally {
       setIsUploading(false);
     }
@@ -282,6 +366,78 @@ export default function SettingsPage() {
               Resume uploaded and parsed successfully!
             </div>
           )}
+          {(isUploading || uploadStage !== "idle") && (
+            <div
+              style={{
+                padding: "0.75rem",
+                marginBottom: "1rem",
+                backgroundColor: "rgba(59, 130, 246, 0.08)",
+                border: "1px solid rgba(59, 130, 246, 0.2)",
+                borderRadius: "8px",
+                color: "var(--text)",
+                fontSize: "13px",
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: "0.35rem" }}>
+                Resume Processing
+              </div>
+              {(() => {
+                const steps = [
+                  { key: "uploading_file", label: "Uploading file" },
+                  { key: "extracting_text", label: "Extracting text" },
+                  { key: "extracting_structured_resume", label: "Extracting structured resume" },
+                  { key: "saving_to_database", label: "Saving to database" },
+                  { key: "done", label: "Done" },
+                ];
+                const currentStatus = processingResume?.processingStatus || uploadStage;
+                const currentIndex = steps.findIndex((step) => step.key === currentStatus);
+                return steps.map((step, idx) => {
+                  const isActive = currentStatus === step.key;
+                  const isComplete = currentIndex > idx;
+                  return (
+                    <div
+                      key={step.key}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        opacity: isActive || isComplete ? 1 : 0.6,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "8px",
+                          height: "8px",
+                          borderRadius: "50%",
+                          backgroundColor: isComplete
+                            ? "var(--success)"
+                            : isActive
+                              ? "var(--accent)"
+                              : "var(--border)",
+                          display: "inline-block",
+                        }}
+                      />
+                      <span>{step.label}</span>
+                    </div>
+                  );
+                });
+              })()}
+              {(processingResume?.processingStatus === "failed" || uploadStage === "failed") && (
+                <div style={{ marginTop: "0.5rem", color: "var(--error)" }}>
+                  {processingResume?.processingError || uploadError || "Processing failed."}{" "}
+                  <button
+                    className="ghost tiny"
+                    onClick={() => {
+                      setUploadStage("idle");
+                      setProcessingResumeId(null);
+                    }}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {showCreateResume && (
             <div style={{ 
@@ -330,7 +486,29 @@ export default function SettingsPage() {
                   {resumes.map((resume: any) => (
                     <tr key={resume._id}>
                       <td>
-                        <div className="cell-title">{resume.name}</div>
+                        {renamingResumeId === resume._id ? (
+                          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                            <input
+                              type="text"
+                              className="input"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              style={{ maxWidth: "220px" }}
+                            />
+                            <button
+                              className="primary tiny"
+                              onClick={handleRenameSave}
+                              disabled={isRenaming || !renameValue.trim()}
+                            >
+                              {isRenaming ? "Saving..." : "Save"}
+                            </button>
+                            <button className="ghost tiny" onClick={handleRenameCancel}>
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="cell-title">{resume.name}</div>
+                        )}
                       </td>
                       <td>
                         {resume.isActive ? (
@@ -357,6 +535,19 @@ export default function SettingsPage() {
                             onClick={() => setEditingResumeId(resume._id)}
                           >
                             Edit
+                          </button>
+                          <button
+                            className="ghost small"
+                            onClick={() => handleRenameStart(resume)}
+                          >
+                            Rename
+                          </button>
+                          <button
+                            className="ghost small"
+                            onClick={() => handleDeleteResume(resume._id)}
+                            disabled={deletingResumeId === resume._id}
+                          >
+                            {deletingResumeId === resume._id ? "Deleting..." : "Delete"}
                           </button>
                         </div>
                       </td>

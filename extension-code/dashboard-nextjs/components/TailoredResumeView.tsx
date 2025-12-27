@@ -12,6 +12,9 @@ interface TailoredResume {
   modelKey: string;
   modelName: string;
   summary: string;
+  coverLetter?: string;
+  diagnostics?: string;
+  reasoningSummary?: string;
   workExperience: Array<{
     roleId: string;
     company: string;
@@ -29,6 +32,7 @@ interface TailoredResume {
     projectId: string;
     name: string;
     date?: string;
+    links?: string[];
     bullets: Array<{
       bulletId: string;
       originalText: string;
@@ -115,23 +119,39 @@ export default function TailoredResumeView({
   onArtifactCreated,
   registerGeneratePdf,
 }: TailoredResumeViewProps) {
-  const [activeTab, setActiveTab] = useState<"preview" | "bullets" | "latex">("preview");
+  const [activeTab, setActiveTab] = useState<"preview" | "bullets" | "latex" | "extras">("preview");
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [showDiff, setShowDiff] = useState(true);
+  const hasExtras =
+    Boolean(tailoredResume.coverLetter?.trim()) ||
+    Boolean(tailoredResume.diagnostics?.trim()) ||
+    Boolean(tailoredResume.reasoningSummary?.trim());
 
   const generateUploadUrl = useMutation(api.runDetails.generateUploadUrl);
   const storeArtifact = useMutation(api.runDetails.storeArtifact);
 
   // Generate LaTeX from tailored resume
   const latexContent = useMemo(() => {
+    const resumeLinks = Array.isArray(masterResume?.links)
+      ? { headerLinks: {}, projectLinks: [], allLinks: masterResume?.links }
+      : masterResume?.links;
+
     const resume = {
       header: masterResume?.header,
       summary: tailoredResume.summary,
       skills: tailoredResume.skills,
       education: tailoredResume.education,
       awards: tailoredResume.awards,
+      links: resumeLinks,
     };
+
+    const projectLinks = new Map<string, string[]>();
+    (resumeLinks?.projectLinks || []).forEach((entry) => {
+      if (entry.projectName && entry.links.length > 0) {
+        projectLinks.set(entry.projectName.toLowerCase(), entry.links);
+      }
+    });
 
     const workExperiences = tailoredResume.workExperience.map((exp) => ({
       company: exp.company,
@@ -144,6 +164,7 @@ export default function TailoredResumeView({
     const projects = tailoredResume.projects.map((proj) => ({
       name: proj.name,
       dates: proj.date,
+      links: projectLinks.get((proj.name || "").toLowerCase()),
       bullets: proj.bullets.map((b) => ({ text: b.tailoredText })),
     }));
 
@@ -419,6 +440,14 @@ export default function TailoredResumeView({
         >
           LaTeX Source
         </button>
+        {hasExtras && (
+          <button
+            className={`trv-tab ${activeTab === "extras" ? "active" : ""}`}
+            onClick={() => setActiveTab("extras")}
+          >
+            Extras
+          </button>
+        )}
       </div>
 
       {/* Tab Content */}
@@ -664,6 +693,29 @@ export default function TailoredResumeView({
             <pre className="latex-code">{latexContent}</pre>
           </div>
         )}
+
+        {activeTab === "extras" && hasExtras && (
+          <div className="trv-extras">
+            {tailoredResume.coverLetter?.trim() && (
+              <div className="trv-section">
+                <h4>Cover Letter</h4>
+                <pre className="trv-extra-block">{tailoredResume.coverLetter}</pre>
+              </div>
+            )}
+            {tailoredResume.diagnostics?.trim() && (
+              <div className="trv-section">
+                <h4>Diagnostics</h4>
+                <pre className="trv-extra-block">{tailoredResume.diagnostics}</pre>
+              </div>
+            )}
+            {tailoredResume.reasoningSummary?.trim() && (
+              <div className="trv-section">
+                <h4>Reasoning Summary</h4>
+                <pre className="trv-extra-block">{tailoredResume.reasoningSummary}</pre>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Existing Artifacts */}
@@ -710,6 +762,17 @@ export default function TailoredResumeView({
           display: flex;
           gap: 0.5rem;
           flex-wrap: wrap;
+        }
+
+        .trv-extra-block {
+          white-space: pre-wrap;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 0.75rem;
+          font-family: "SF Mono", SFMono-Regular, ui-monospace, monospace;
+          font-size: 0.85rem;
+          line-height: 1.4;
         }
 
         .badge {

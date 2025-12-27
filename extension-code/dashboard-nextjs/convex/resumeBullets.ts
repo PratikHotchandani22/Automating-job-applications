@@ -19,6 +19,7 @@ export const createResumeBullet = mutation({
     location: v.optional(v.string()),
     text: v.string(),
     tags: v.optional(v.array(v.string())),
+    links: v.optional(v.array(v.string())),
     order: v.number(),
   },
   handler: async (ctx, args) => {
@@ -34,6 +35,7 @@ export const createResumeBullet = mutation({
       location: args.location,
       text: args.text,
       tags: args.tags,
+      links: args.links,
       order: args.order,
       createdAt: Date.now(),
     });
@@ -58,6 +60,7 @@ export const createResumeBullets = mutation({
         location: v.optional(v.string()),
         text: v.string(),
         tags: v.optional(v.array(v.string())),
+        links: v.optional(v.array(v.string())),
         order: v.number(),
       })
     ),
@@ -119,12 +122,14 @@ export const updateResumeBullet = mutation({
     bulletId: v.id("resumeBullets"),
     text: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
+    links: v.optional(v.array(v.string())),
     order: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const update: any = {};
     if (args.text !== undefined) update.text = args.text;
     if (args.tags !== undefined) update.tags = args.tags;
+    if (args.links !== undefined) update.links = args.links;
     if (args.order !== undefined) update.order = args.order;
 
     await ctx.db.patch(args.bulletId, update);
@@ -157,4 +162,3 @@ export const deleteResumeBulletsByResume = mutation({
     }
   },
 });
-
