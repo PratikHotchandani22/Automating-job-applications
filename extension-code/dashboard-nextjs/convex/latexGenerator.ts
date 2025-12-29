@@ -241,7 +241,9 @@ export function generateResumeLatex(
       if (proj.links && proj.links.length > 0) {
         proj.links.forEach((link) => {
           const label = labelProjectLink(link);
-          links.push(`${label}: \\href{${link}}{${escapeLaTeX(link)}}`);
+          // Use compact label as display text, not the full URL
+          // Format: \href{full_url}{Label}
+          links.push(`\\href{${link}}{${escapeLaTeX(label)}}`);
         });
       }
       
@@ -294,17 +296,53 @@ export function generateResumeLatex(
 }
 
 /**
- * Escape special LaTeX characters
+ * Escape special LaTeX characters and convert markdown bold to \textbf{}
+ * 
+ * The approach:
+ * 1. First convert **text** directly to \textbf{text} 
+ * 2. Then escape special chars, but protect the \textbf{} we just created
  */
 function escapeLaTeX(text: string): string {
   if (!text) return "";
+
+  const normalized = text
+    .replace(/\\_\\_MARKDOWN\\_BOLD\\_START\\_\\_/g, "**")
+    .replace(/\\_\\_MARKDOWN\\_BOLD\\_END\\_\\_/g, "**")
+    .replace(/__MARKDOWN_BOLD_START__/g, "**")
+    .replace(/__MARKDOWN_BOLD_END__/g, "**");
+
+  // Step 1: Convert markdown bold **text** to LaTeX \textbf{text}
+  // We do this FIRST before any escaping
+  let result = normalized.replace(/\*\*([^*]+(?:\*(?!\*)[^*]*)*)\*\*/g, (_, content) => {
+    // Escape special chars inside the bold content
+    const escapedContent = escapeLatexChars(content);
+    return `\\textbf{${escapedContent}}`;
+  });
   
+  // Step 2: Escape remaining special chars in non-bold text
+  // Split by \textbf{...} to avoid escaping inside commands
+  const parts = result.split(/(\\textbf\{[^}]*\})/g);
+  result = parts.map((part, i) => {
+    // Odd indices are the \textbf{...} matches - don't escape those
+    if (i % 2 === 1) return part;
+    // Even indices are regular text - escape them
+    return escapeLatexChars(part);
+  }).join('');
+  
+  return result;
+}
+
+/**
+ * Escape LaTeX special characters in plain text
+ */
+function escapeLatexChars(text: string): string {
+  if (!text) return "";
   return text
     .replace(/\\/g, "\\textbackslash{}")
     .replace(/\{/g, "\\{")
     .replace(/\}/g, "\\}")
     .replace(/\$/g, "\\$")
-    .replace(/\&/g, "\\&")
+    .replace(/&/g, "\\&")
     .replace(/%/g, "\\%")
     .replace(/#/g, "\\#")
     .replace(/\^/g, "\\textasciicircum{}")
@@ -313,10 +351,41 @@ function escapeLaTeX(text: string): string {
     .replace(/\n/g, " ");
 }
 
+/**
+ * Generate a display label for a project link based on URL patterns.
+ * 
+ * Examples:
+ *   https://github.com/user/repo → "GitHub"
+ *   https://myapp.streamlit.app → "Demo"
+ *   https://arxiv.org/abs/... → "Paper"
+ *   https://example.com → "Link"
+ */
 function labelProjectLink(link: string): string {
   const lower = link.toLowerCase();
+  
+  // GitHub repository links
   if (lower.includes("github.com")) return "GitHub";
-  if (lower.includes("arxiv.org") || lower.includes("doi.org")) return "Paper";
-  if (lower.includes("demo") || lower.includes("app")) return "Demo";
+  
+  // GitLab repository links
+  if (lower.includes("gitlab.com")) return "GitLab";
+  
+  // Academic paper links
+  if (lower.includes("arxiv.org") || lower.includes("doi.org") || lower.includes("papers.")) return "Paper";
+  
+  // Demo/App hosting platforms
+  if (lower.includes("streamlit.app") || lower.includes("streamlit.io")) return "Demo";
+  if (lower.includes("herokuapp.com") || lower.includes("heroku")) return "Demo";
+  if (lower.includes("vercel.app") || lower.includes("vercel.com")) return "Demo";
+  if (lower.includes("netlify.app") || lower.includes("netlify.com")) return "Demo";
+  if (lower.includes("huggingface.co") || lower.includes("hf.space")) return "Demo";
+  if (lower.includes("gradio.app")) return "Demo";
+  if (lower.includes("replit.com") || lower.includes("repl.co")) return "Demo";
+  
+  // Portfolio/personal site on GitHub Pages
+  if (lower.includes("github.io")) return "Portfolio";
+  
+  // Generic app/demo keywords in URL
+  if (lower.includes("demo") || lower.includes("app") || lower.includes("webapp")) return "Demo";
+  
   return "Link";
 }

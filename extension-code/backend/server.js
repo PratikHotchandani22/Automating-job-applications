@@ -895,14 +895,76 @@ async function callRubricModel(messages) {
   return response.choices[0].message.content || "";
 }
 
+function normalizeJobLocation(value) {
+  const text = (value || "").toString().trim();
+  if (!text) return "";
+  const lowered = text.toLowerCase();
+  if (["n/a", "na", "unknown", "not specified", "tbd", "tba"].includes(lowered)) return "";
+  return text;
+}
+
+function extractJobLocation(tailoredResume) {
+  const candidates = [
+    tailoredResume?.job?.location,
+    tailoredResume?.job?.location_hint,
+    tailoredResume?.job?.job_location,
+    tailoredResume?.job?.jobLocation,
+    tailoredResume?.jd_rubric?.job_meta?.location
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeJobLocation(candidate);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+function updateHeaderLocationBlock(headerBlock, jobLocation) {
+  const normalized = normalizeJobLocation(jobLocation);
+  if (!normalized) return headerBlock;
+  const lines = (headerBlock || "").split("\n");
+  let updated = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line || !line.includes("---")) continue;
+    const parts = line.split("---");
+    if (parts.length < 2) continue;
+    const prefix = parts[0];
+    const indentMatch = prefix.match(/^(\s*)/);
+    const indent = indentMatch ? indentMatch[1] : "";
+    const trailingSpace = /\s$/.test(prefix) ? " " : "";
+    parts[0] = `${indent}${normalized}${trailingSpace}`;
+    lines[i] = parts.join("---");
+    updated = true;
+    break;
+  }
+  return updated ? lines.join("\n") : headerBlock;
+}
+
+function buildTemplateWithJobLocation(template, markers, baseLocks, tailoredResume) {
+  const jobLocation = extractJobLocation(tailoredResume);
+  if (!jobLocation) return { template, locks: baseLocks };
+  const locks = extractLockedBlocks(template, markers);
+  const updatedHeader = updateHeaderLocationBlock(locks.header.blockText, jobLocation);
+  if (updatedHeader === locks.header.blockText) return { template, locks: baseLocks };
+  const updatedTemplate = template.replace(locks.header.blockText, updatedHeader);
+  const updatedLocks = extractLockedBlocks(updatedTemplate, markers);
+  return { template: updatedTemplate, locks: updatedLocks };
+}
+
 async function generateLatex(tailoredResume, options, prompt, appendLog, runDir) {
+  const { template, locks } = buildTemplateWithJobLocation(
+    LATEX_TEMPLATE,
+    LOCK_MARKERS,
+    TEMPLATE_LOCKS,
+    tailoredResume
+  );
   if (CONFIG.mockMode) {
-    return renderMockLatex(tailoredResume, LATEX_TEMPLATE, TEMPLATE_LOCKS);
+    return renderMockLatex(tailoredResume, template, locks);
   }
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new StageError("ANTHROPIC_API_KEY is not set", "latex");
   }
-  const builder = buildLatexPrompt(tailoredResume, options, prompt, LATEX_TEMPLATE, TEMPLATE_LOCKS, runDir);
+  const builder = buildLatexPrompt(tailoredResume, options, prompt, template, locks, runDir);
   const response = await anthropic.messages.create({
     model: CONFIG.latexModel,
     max_tokens: 4000,
@@ -921,7 +983,9 @@ async function generateLatex(tailoredResume, options, prompt, appendLog, runDir)
   if (!content.includes("\\begin{document}")) {
     throw new StageError("Invalid LaTeX: missing \\begin{document}", "latex");
   }
-  content = enforceImmutableBlocks(content, TEMPLATE_LOCKS, appendLog);
+  content = enforceImmutableBlocks(content, locks, appendLog);
+  // Post-process: convert any remaining markdown bold markers to LaTeX \textbf{}
+  content = convertMarkdownBoldToLatex(content);
   ensureLatexSafe(content);
   if (builder.promptText && builder.runDir) {
     await fs.promises.writeFile(path.join(builder.runDir, "prompt_used_latex.txt"), builder.promptText, "utf8");
@@ -4089,6 +4153,30 @@ function stripMarkdownFences(text) {
   return cleaned;
 }
 
+/**
+ * Convert markdown bold markers (**text**) to LaTeX \textbf{text}.
+ * This is a safety net for any ** markers that slip through Claude's LaTeX generation.
+ * 
+ * Handles:
+ * - Multiple bold spans per line
+ * - Bold with punctuation, slashes, hyphens
+ * - Nested content (non-greedy matching)
+ * 
+ * Examples:
+ *   "Built **RAG** pipeline for **200k+** reviews"
+ *   → "Built \textbf{RAG} pipeline for \textbf{200k+} reviews"
+ */
+function convertMarkdownBoldToLatex(latex) {
+  if (!latex) return latex;
+  // Match **text** where text is non-greedy (any chars except **)
+  // This regex handles most cases including punctuation and special chars
+  return latex.replace(/\*\*([^*]+(?:\*(?!\*)[^*]*)*)\*\*/g, (match, content) => {
+    // Don't wrap if already appears to be inside a LaTeX command
+    // (edge case: if someone wrote **\textbf{x}** which is unlikely)
+    return `\\textbf{${content}}`;
+  });
+}
+
 function enforceImmutableBlocks(latex, locks, appendLog) {
   let updated = replaceBlock(latex, locks.header, appendLog);
   updated = replaceBlock(updated, locks.education, appendLog);
@@ -4211,8 +4299,12 @@ function renderUpdates(updates, idKey) {
   return blocks.join("\n\n");
 }
 
-function escapeLatex(str) {
-  return (str || "")
+/**
+ * Escape LaTeX special characters in plain text
+ */
+function escapeLatexChars(text) {
+  if (!text) return "";
+  return (text || "")
     .replace(/\\/g, "\\textbackslash{}")
     .replace(/&/g, "\\&")
     .replace(/%/g, "\\%")
@@ -4223,6 +4315,32 @@ function escapeLatex(str) {
     .replace(/}/g, "\\}")
     .replace(/\^/g, "\\^{}")
     .replace(/~/g, "\\~{}");
+}
+
+/**
+ * Escape special LaTeX characters and convert markdown bold to \textbf{}
+ */
+function escapeLatex(str) {
+  if (!str) return "";
+  
+  // Convert markdown bold **text** to LaTeX \textbf{text} FIRST
+  let result = (str || "").replace(/\*\*([^*]+(?:\*(?!\*)[^*]*)*)\*\*/g, (_, content) => {
+    // Escape special chars inside the bold content
+    const escapedContent = escapeLatexChars(content);
+    return `\\textbf{${escapedContent}}`;
+  });
+  
+  // Escape remaining special chars in non-bold text
+  // Split by \textbf{...} to avoid escaping inside commands
+  const parts = result.split(/(\\textbf\{[^}]*\})/g);
+  result = parts.map((part, i) => {
+    // Odd indices are the \textbf{...} matches - don't escape those
+    if (i % 2 === 1) return part;
+    // Even indices are regular text - escape them
+    return escapeLatexChars(part);
+  }).join('');
+  
+  return result;
 }
 
 function extractLockedBlocks(template, markers) {

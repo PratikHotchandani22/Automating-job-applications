@@ -8,7 +8,7 @@ function labelProjectLink(link) {
 
 function buildProjectLine(name, links) {
   const renderedLinks = (links || []).map(
-    (link) => `${labelProjectLink(link)}: ${link}`
+    (link) => `\\href{${link}}{${labelProjectLink(link)}}`
   );
   return `${name} --- ${renderedLinks.join(" --- ")}`;
 }
@@ -18,8 +18,8 @@ const withLinks = buildProjectLine("Project Alpha", [
   "https://alpha-demo.com",
 ]);
 
-if (!withLinks.includes("GitHub: https://github.com/janedoe/project-alpha")) {
-  console.error("[FAIL] Expected GitHub link label in LaTeX line.");
+if (!withLinks.includes("\\href{https://github.com/janedoe/project-alpha}{GitHub}")) {
+  console.error("[FAIL] Expected GitHub href in LaTeX line.");
   process.exit(1);
 }
 

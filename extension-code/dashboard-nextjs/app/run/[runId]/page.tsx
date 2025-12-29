@@ -6,6 +6,7 @@ import { useQuery, useMutation } from "convex/react";
 import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { api } from "@/convex/_generated/api";
+import { renderRichText } from "@/utils/renderRichText";
 import TailoredResumeView from "@/components/TailoredResumeView";
 import UserOnboarding from "@/components/UserOnboarding";
 
@@ -425,7 +426,7 @@ export default function RunResultsPage() {
                             <span className="job-section-title">{section.title}</span>
                             <span className="job-section-toggle" aria-hidden="true" />
                           </summary>
-                          <div className="section-content">{section.content}</div>
+                          <div className="section-content">{renderRichText(section.content)}</div>
                         </details>
                       ))}
                     </div>
@@ -551,7 +552,7 @@ export default function RunResultsPage() {
                           <span className="job-section-title">{section.title}</span>
                           <span className="job-section-toggle" aria-hidden="true" />
                         </summary>
-                        <div className="section-content">{section.content}</div>
+                        <div className="section-content">{renderRichText(section.content)}</div>
                       </details>
                     ))}
                   </div>
@@ -590,14 +591,16 @@ export default function RunResultsPage() {
                           : "✓ Covered"}
                       </span>
                     </div>
-                    <div className="requirement-text">{req.requirement}</div>
+                    <div className="requirement-text">{renderRichText(req.requirement)}</div>
                     {req.jdEvidence?.length > 0 && (
                       <div className="requirement-evidence">
                         <strong>Evidence from JD:</strong>
                         <div className="evidence-chips">
                           {req.jdEvidence.map((ev: string, idx: number) => (
                             <span key={idx} className="evidence-chip">
-                              "{ev}"
+                              "
+                              {renderRichText(ev)}
+                              "
                             </span>
                           ))}
                         </div>
@@ -683,7 +686,7 @@ export default function RunResultsPage() {
                     <details>
                       <summary className="pipeline-bullet-summary">
                         <div className="pipeline-bullet-left">
-                          <div className="pipeline-bullet-text">{bullet.originalText}</div>
+                          <div className="pipeline-bullet-text">{renderRichText(bullet.originalText)}</div>
                           <div className="pipeline-bullet-sub">
                             <span className="pipeline-mini-tag">{bullet.company}</span>
                             <span className="pipeline-mini-tag">{bullet.role}</span>
@@ -724,7 +727,7 @@ export default function RunResultsPage() {
                     <div key={bullet.bulletId} className="pipeline-bullet">
                       <div className="pipeline-bullet-summary">
                         <div className="pipeline-bullet-left">
-                          <div className="pipeline-bullet-text">{bullet.originalText}</div>
+                          <div className="pipeline-bullet-text">{renderRichText(bullet.originalText)}</div>
                         </div>
                         <div className="pipeline-bullet-right">
                           <span className="pipeline-evidence-pill">

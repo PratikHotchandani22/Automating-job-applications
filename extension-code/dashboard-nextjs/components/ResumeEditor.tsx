@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -29,6 +29,13 @@ type ResumeWarningsInput = {
   workExpGroups: Record<string, ResumeBullet[]>;
   projectGroups: Record<string, ResumeBullet[]>;
   links: string[];
+};
+
+type ProjectLinkForm = {
+  projectName: string;
+  github: string;
+  live: string;
+  other: string[];
 };
 
 const LINK_REQUIREMENTS = [
@@ -210,6 +217,16 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
     Array.isArray(resume?.links) ? resume?.links : resume?.links?.allLinks || []
   );
 
+  const structuredLinks = useMemo(() => {
+    if (Array.isArray(resume?.links)) {
+      return { headerLinks: {}, projectLinks: [], allLinks: resume.links };
+    }
+    return resume?.links || { headerLinks: {}, projectLinks: [], allLinks: [] };
+  }, [resume?.links]);
+  const [projectLinkForms, setProjectLinkForms] = useState<ProjectLinkForm[]>([]);
+  const [initialProjectLinkForms, setInitialProjectLinkForms] = useState<ProjectLinkForm[]>([]);
+  const projectLinksSnapshotRef = useRef<string>("");
+
   // Group work experience bullets by parentId (company/role)
   const [workExpGroups, setWorkExpGroups] = useState<Record<string, any[]>>({});
   const [projectGroups, setProjectGroups] = useState<Record<string, any[]>>({});
@@ -230,6 +247,36 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
       }),
     [header, summary, skills, education, workExpGroups, projectGroups, links]
   );
+
+  useEffect(() => {
+    const snapshot = JSON.stringify(structuredLinks);
+    if (projectLinksSnapshotRef.current === snapshot && projectLinkForms.length > 0) {
+      return;
+    }
+    projectLinksSnapshotRef.current = snapshot;
+    const projectNames = new Set<string>();
+    (structuredLinks.projectLinks || []).forEach((entry) => {
+      const trimmed = entry?.projectName?.trim();
+      if (trimmed) projectNames.add(trimmed);
+    });
+    Object.entries(projectGroups).forEach(([_, bullets], idx) => {
+      const firstBullet = bullets[0];
+      const projectName = (firstBullet?.projectName || `Project ${idx + 1}`).trim();
+      if (projectName) {
+        projectNames.add(projectName);
+      }
+    });
+    const forms = Array.from(projectNames).map((projectName) => {
+      const entry =
+        (structuredLinks.projectLinks || []).find(
+          (linkEntry) =>
+            linkEntry?.projectName?.trim().toLowerCase() === projectName.toLowerCase()
+        ) || undefined;
+      return buildProjectLinkForm(projectName, entry);
+    });
+    setProjectLinkForms(forms);
+    setInitialProjectLinkForms(forms);
+  }, [structuredLinks, projectGroups, projectLinkForms.length]);
 
   // Group bullets when they're loaded
   useEffect(() => {
@@ -297,6 +344,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
     const hasMentorshipChanges = JSON.stringify(mentorship) !== JSON.stringify(resume?.mentorship || []);
     const existingAllLinks = Array.isArray(resume?.links) ? resume?.links : resume?.links?.allLinks || [];
     const hasLinksChanges = JSON.stringify(links) !== JSON.stringify(existingAllLinks);
+    const projectLinksChanged = !areProjectLinkFormsEqual(projectLinkForms, initialProjectLinkForms);
 
     setHasChanges(
       hasHeaderChanges ||
@@ -306,9 +354,22 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
       hasAwardsChanges ||
       hasMentorshipChanges ||
       hasLinksChanges ||
+      projectLinksChanged ||
       workExpPendingChanges
     );
-  }, [header, summary, skills, education, awards, mentorship, links, workExpPendingChanges, resume]);
+  }, [
+    header,
+    summary,
+    skills,
+    education,
+    awards,
+    mentorship,
+    links,
+    projectLinkForms,
+    initialProjectLinkForms,
+    workExpPendingChanges,
+    resume,
+  ]);
 
   useEffect(() => {
     if (warnings.length === 0 && ignoredWarnings) {
@@ -331,6 +392,28 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
       const existingLinks = Array.isArray(resume?.links)
         ? { headerLinks: {}, projectLinks: [], allLinks: resume.links }
         : resume?.links || { headerLinks: {}, projectLinks: [], allLinks: [] };
+      const normalizedProjectLinkForms = projectLinkForms.map(normalizeProjectLinkForm);
+      const sanitizedProjectLinks = normalizedProjectLinkForms
+        .map((form) => ({
+          projectName: form.projectName,
+          links: Array.from(
+            new Set(
+              [
+                ...(form.github ? [form.github] : []),
+                ...(form.live ? [form.live] : []),
+                ...form.other,
+              ].filter(Boolean)
+            )
+          ),
+        }))
+        .filter((entry) => entry.projectName && entry.links.length > 0);
+      const combinedAllLinks = Array.from(
+        new Set([
+          ...(existingLinks.allLinks || []),
+          ...links,
+          ...sanitizedProjectLinks.flatMap((entry) => entry.links),
+        ])
+      );
       await updateResume({
         resumeId: resume._id,
         header: Object.keys(header).length > 0 ? header : undefined,
@@ -341,10 +424,13 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
         mentorship: mentorship.length > 0 ? mentorship : undefined,
         links: {
           headerLinks: existingLinks.headerLinks || {},
-          projectLinks: existingLinks.projectLinks || [],
-          allLinks: links,
+          projectLinks: sanitizedProjectLinks,
+          allLinks: combinedAllLinks,
         },
       });
+      setLinks(combinedAllLinks);
+      setProjectLinkForms(normalizedProjectLinkForms);
+      setInitialProjectLinkForms(normalizedProjectLinkForms);
 
       const warningsAfterSave = computeResumeWarnings({
         header,
@@ -371,6 +457,66 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const updateProjectLinkForm = (
+    projectName: string,
+    patch: Partial<Omit<ProjectLinkForm, "projectName">>
+  ) => {
+    setProjectLinkForms((current) => {
+      const normalized = projectName.trim().toLowerCase();
+      const idx = current.findIndex(
+        (form) => form.projectName.trim().toLowerCase() === normalized
+      );
+      if (idx === -1) {
+        const entry = (structuredLinks.projectLinks || []).find(
+          (linkEntry) =>
+            (linkEntry?.projectName || "").trim().toLowerCase() === normalized
+        );
+        const newForm = buildProjectLinkForm(projectName, entry);
+        return [...current, { ...newForm, ...patch }];
+      }
+      const updated = { ...current[idx], ...patch };
+      const next = [...current];
+      next[idx] = updated;
+      return next;
+    });
+  };
+
+  const getProjectLinkFormFor = (projectName: string): ProjectLinkForm => {
+    const normalized = projectName.trim().toLowerCase();
+    const existing = projectLinkForms.find(
+      (form) => form.projectName.trim().toLowerCase() === normalized
+    );
+    if (existing) return existing;
+    const entry = (structuredLinks.projectLinks || []).find(
+      (linkEntry) =>
+        (linkEntry?.projectName || "").trim().toLowerCase() === normalized
+    );
+    return buildProjectLinkForm(projectName, entry);
+  };
+
+  const handleProjectLinkOtherAdd = (projectName: string) => {
+    const form = getProjectLinkFormFor(projectName);
+    updateProjectLinkForm(projectName, { other: [...form.other, ""] });
+  };
+
+  const handleProjectLinkOtherUpdate = (
+    projectName: string,
+    index: number,
+    value: string
+  ) => {
+    const form = getProjectLinkFormFor(projectName);
+    const other = [...form.other];
+    other[index] = value;
+    updateProjectLinkForm(projectName, { other });
+  };
+
+  const handleProjectLinkOtherRemove = (projectName: string, index: number) => {
+    const form = getProjectLinkFormFor(projectName);
+    const other = [...form.other];
+    other.splice(index, 1);
+    updateProjectLinkForm(projectName, { other });
   };
 
   // Handle work experience bullet updates
@@ -910,9 +1056,11 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
                 No projects found. Project sections will appear here after uploading a resume with project content.
               </p>
             )}
-            {Object.entries(projectGroups).map(([parentId, bullets]) => {
+            {Object.entries(projectGroups).map(([parentId, bullets], idx) => {
               const firstBullet = bullets[0];
               const projectName = firstBullet?.projectName || "";
+              const projectNameForForm = projectName || `Project ${idx + 1}`;
+              const projectLinkForm = getProjectLinkFormFor(projectNameForForm);
               const dates = firstBullet?.dates || "";
               const tags = firstBullet?.tags || [];
               const links = firstBullet?.links || [];
@@ -1029,6 +1177,46 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
                         </div>
                       </div>
                     )}
+                    <div style={{ marginBottom: "1rem" }}>
+                      <label
+                        style={{
+                          display: "block",
+                          marginBottom: "0.5rem",
+                          fontSize: "13px",
+                          color: "var(--muted)",
+                        }}
+                      >
+                        GitHub & Demo Links
+                      </label>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "0.75rem" }}>
+                        <InputField
+                          label="GitHub link"
+                          value={projectLinkForm.github}
+                          onChange={(e) =>
+                            updateProjectLinkForm(projectNameForForm, { github: e.target.value })
+                          }
+                          type="url"
+                        />
+                        <InputField
+                          label="Live / Web app link"
+                          value={projectLinkForm.live}
+                          onChange={(e) =>
+                            updateProjectLinkForm(projectNameForForm, { live: e.target.value })
+                          }
+                          type="url"
+                        />
+                      </div>
+                      <ArrayEditor
+                        items={projectLinkForm.other}
+                        onAdd={() => handleProjectLinkOtherAdd(projectNameForForm)}
+                        onUpdate={(index, value) =>
+                          handleProjectLinkOtherUpdate(projectNameForForm, index, value)
+                        }
+                        onRemove={(index) => handleProjectLinkOtherRemove(projectNameForForm, index)}
+                        placeholder="Add other project link"
+                        type="url"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label
@@ -1259,6 +1447,60 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
       </div>
     </div>
   );
+}
+
+function buildProjectLinkForm(projectName: string, entry?: { links?: string[] }): ProjectLinkForm {
+  const sanitizedLinks = (entry?.links || []).map((link) => (link || "").trim()).filter(Boolean);
+  const github = sanitizedLinks.find((link) => link.toLowerCase().includes("github.com")) || "";
+  const liveLinkCandidate =
+    sanitizedLinks.find((link) => /(demo|live|webapp|app)/i.test(link.toLowerCase())) ||
+    sanitizedLinks.find((link) => !link.toLowerCase().includes("github.com"));
+  const live = liveLinkCandidate || "";
+  const other = sanitizedLinks.filter((link) => link !== github && link !== live);
+  return {
+    projectName: projectName.trim(),
+    github,
+    live,
+    other,
+  };
+}
+
+function normalizeProjectLinkForm(form: ProjectLinkForm): ProjectLinkForm {
+  return {
+    projectName: form.projectName.trim(),
+    github: (form.github || "").trim(),
+    live: (form.live || "").trim(),
+    other: (form.other || []).map((link) => link.trim()).filter(Boolean),
+  };
+}
+
+function areProjectLinkFormsEqual(a: ProjectLinkForm[], b: ProjectLinkForm[]): boolean {
+  const mapify = (list: ProjectLinkForm[]) => {
+    const map = new Map<string, ProjectLinkForm>();
+    list.forEach((entry) => {
+      const normalizedName = entry.projectName.trim().toLowerCase();
+      if (!normalizedName) return;
+      map.set(normalizedName, normalizeProjectLinkForm(entry));
+    });
+    return map;
+  };
+  const mapA = mapify(a);
+  const mapB = mapify(b);
+  if (mapA.size !== mapB.size) return false;
+  for (const [key, entryA] of mapA.entries()) {
+    const entryB = mapB.get(key);
+    if (!entryB) return false;
+    if (entryA.github !== entryB.github || entryA.live !== entryB.live) {
+      return false;
+    }
+    if (entryA.other.length !== entryB.other.length) return false;
+    const sortedA = [...entryA.other].sort();
+    const sortedB = [...entryB.other].sort();
+    for (let i = 0; i < sortedA.length; i += 1) {
+      if (sortedA[i] !== sortedB[i]) return false;
+    }
+  }
+  return true;
 }
 
 // Helper Components

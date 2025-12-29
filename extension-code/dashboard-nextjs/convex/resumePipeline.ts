@@ -583,23 +583,41 @@ export const syncArtifactsFromBackend = action({
                     };
                   }),
                 })),
-                projects: (finalResume.projects || []).map((project: any) => ({
-                  projectId: project.id || project.project_id || "",
-                  name: project.name || "",
-                  date: project.date || project.dates,
-                  bullets: (project.bullets || []).map((bullet: any, idx: number) => {
-                    const bulletId = `${project.id || project.project_id}_b${idx + 1}`;
-                    const change = jsonData.changes?.projects
-                      ?.find((c: any) => c.project_id === (project.id || project.project_id))
-                      ?.updated_bullets?.find((b: any) => b.bullet_id === bulletId);
-                    return {
-                      bulletId,
-                      originalText: change?.before_text || bullet || "",
-                      tailoredText: change?.after_text || bullet || "",
-                      wasRewritten: !!change && change.before_text !== change.after_text,
-                    };
-                  }),
-                })),
+                projects: (finalResume.projects || []).map((project: any) => {
+                  const linkValues: string[] = [];
+                  if (project.links) {
+                    if (Array.isArray(project.links)) {
+                      linkValues.push(...project.links);
+                    } else if (typeof project.links === "object") {
+                      linkValues.push(...Object.values(project.links));
+                    }
+                  }
+                  const cleanedLinks = Array.from(
+                    new Set(
+                      linkValues
+                        .map((link) => (typeof link === "string" ? link.trim() : ""))
+                        .filter(Boolean)
+                    )
+                  );
+                  return {
+                    projectId: project.id || project.project_id || "",
+                    name: project.name || "",
+                    date: project.date || project.dates,
+                    links: cleanedLinks.length ? cleanedLinks : undefined,
+                    bullets: (project.bullets || []).map((bullet: any, idx: number) => {
+                      const bulletId = `${project.id || project.project_id}_b${idx + 1}`;
+                      const change = jsonData.changes?.projects
+                        ?.find((c: any) => c.project_id === (project.id || project.project_id))
+                        ?.updated_bullets?.find((b: any) => b.bullet_id === bulletId);
+                      return {
+                        bulletId,
+                        originalText: change?.before_text || bullet || "",
+                        tailoredText: change?.after_text || bullet || "",
+                        wasRewritten: !!change && change.before_text !== change.after_text,
+                      };
+                    }),
+                  };
+                }),
                 education: finalResume.education || [],
                 skills: finalResume.skills || {
                   programming_languages: [],

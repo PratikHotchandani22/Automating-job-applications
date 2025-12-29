@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { renderRichText } from "@/utils/renderRichText";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { generateResumeLatex } from "@/lib/latexGenerator";
@@ -161,12 +162,18 @@ export default function TailoredResumeView({
       bullets: exp.bullets.map((b) => ({ text: b.tailoredText })),
     }));
 
-    const projects = tailoredResume.projects.map((proj) => ({
-      name: proj.name,
-      dates: proj.date,
-      links: projectLinks.get((proj.name || "").toLowerCase()),
-      bullets: proj.bullets.map((b) => ({ text: b.tailoredText })),
-    }));
+    const projects = tailoredResume.projects.map((proj) => {
+      const normalizedProjectName = (proj.name || "").toLowerCase();
+      const fallbackLinks = projectLinks.get(normalizedProjectName);
+      const resolvedLinks =
+        Array.isArray(proj.links) && proj.links.length > 0 ? proj.links : fallbackLinks;
+      return {
+        name: proj.name,
+        dates: proj.date || proj.dates,
+        links: resolvedLinks,
+        bullets: proj.bullets.map((b) => ({ text: b.tailoredText })),
+      };
+    });
 
     return generateResumeLatex(resume, workExperiences, projects);
   }, [tailoredResume, masterResume]);
@@ -457,7 +464,7 @@ export default function TailoredResumeView({
             {/* Summary */}
             <div className="trv-section">
               <h4>Summary</h4>
-              <p className="trv-summary">{tailoredResume.summary}</p>
+              <p className="trv-summary">{renderRichText(tailoredResume.summary)}</p>
             </div>
 
             {/* Skills */}
@@ -516,14 +523,14 @@ export default function TailoredResumeView({
                     {exp.title}
                     {exp.location && <span className="exp-location"> • {exp.location}</span>}
                   </div>
-                  <ul className="exp-bullets">
-                    {exp.bullets.map((bullet, bIdx) => (
-                      <li key={bullet.bulletId || bIdx} className={bullet.wasRewritten ? "rewritten" : ""}>
-                        {bullet.tailoredText}
-                        {bullet.wasRewritten && <span className="rewrite-badge">modified</span>}
-                      </li>
-                    ))}
-                  </ul>
+                      <ul className="exp-bullets">
+                        {exp.bullets.map((bullet, bIdx) => (
+                          <li key={bullet.bulletId || bIdx} className={bullet.wasRewritten ? "rewritten" : ""}>
+                            {renderRichText(bullet.tailoredText)}
+                            {bullet.wasRewritten && <span className="rewrite-badge">modified</span>}
+                          </li>
+                        ))}
+                      </ul>
                 </div>
               ))}
             </div>
@@ -541,7 +548,7 @@ export default function TailoredResumeView({
                     <ul className="proj-bullets">
                       {proj.bullets.map((bullet, bIdx) => (
                         <li key={bullet.bulletId || bIdx} className={bullet.wasRewritten ? "rewritten" : ""}>
-                          {bullet.tailoredText}
+                          {renderRichText(bullet.tailoredText)}
                           {bullet.wasRewritten && <span className="rewrite-badge">modified</span>}
                         </li>
                       ))}
@@ -617,18 +624,18 @@ export default function TailoredResumeView({
                       <div className="bullet-comparison">
                         <div className="bullet-version before">
                           <label>Original</label>
-                          <div className="bullet-text">{bullet.originalText}</div>
+                          <div className="bullet-text">{renderRichText(bullet.originalText)}</div>
                         </div>
                         <div className="change-arrow">→</div>
                         <div className="bullet-version after">
                           <label>Tailored</label>
-                          <div className="bullet-text">{bullet.tailoredText}</div>
+                          <div className="bullet-text">{renderRichText(bullet.tailoredText)}</div>
                         </div>
                       </div>
                     ) : (
-                      <div className="bullet-unchanged">
-                        <div className="bullet-text">{bullet.tailoredText}</div>
-                      </div>
+                        <div className="bullet-unchanged">
+                          <div className="bullet-text">{renderRichText(bullet.tailoredText)}</div>
+                        </div>
                     )}
                   </div>
                 ))
@@ -653,18 +660,18 @@ export default function TailoredResumeView({
                       <div className="bullet-comparison">
                         <div className="bullet-version before">
                           <label>Original</label>
-                          <div className="bullet-text">{bullet.originalText}</div>
+                          <div className="bullet-text">{renderRichText(bullet.originalText)}</div>
                         </div>
                         <div className="change-arrow">→</div>
                         <div className="bullet-version after">
                           <label>Tailored</label>
-                          <div className="bullet-text">{bullet.tailoredText}</div>
+                          <div className="bullet-text">{renderRichText(bullet.tailoredText)}</div>
                         </div>
                       </div>
                     ) : (
-                      <div className="bullet-unchanged">
-                        <div className="bullet-text">{bullet.tailoredText}</div>
-                      </div>
+                        <div className="bullet-unchanged">
+                          <div className="bullet-text">{renderRichText(bullet.tailoredText)}</div>
+                        </div>
                     )}
                   </div>
                 ))
