@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { renderRichText } from "@/utils/renderRichText";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { generateResumeLatex } from "@/lib/latexGenerator";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -126,6 +126,15 @@ export default function TailoredResumeView({
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [showDiff, setShowDiff] = useState(true);
+  const [latex, setLatex] = useState("");
+  const [loadingLatex, setLoadingLatex] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [savingLatex, setSavingLatex] = useState(false);
+  const [saveOkAt, setSaveOkAt] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [compilingLatex, setCompilingLatex] = useState(false);
+  const [compileError, setCompileError] = useState<string | null>(null);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const hasExtras =
     Boolean(tailoredResume.coverLetter?.trim()) ||
     Boolean(tailoredResume.diagnostics?.trim()) ||
@@ -204,7 +213,18 @@ export default function TailoredResumeView({
 
   // Check if artifacts already exist
   const existingPdf = artifacts.find((a) => a.artifactType === "pdf");
-  const existingTex = artifacts.find((a) => a.artifactType === "tex");
+  const latestTex = useMemo(() => {
+    const texArtifacts = artifacts.filter((a) => a.artifactType === "tex");
+    if (texArtifacts.length === 0) return null;
+    return texArtifacts.reduce((latest, current) =>
+      current.createdAt > latest.createdAt ? current : latest
+    );
+  }, [artifacts]);
+  const texUrl = useQuery(
+    api.runDetails.getArtifactUrl,
+    latestTex ? { storageId: latestTex.storageId } : "skip"
+  );
+  const lastLoadedLatex = useRef<string>("");
 
   // Helper function to generate filename in format: fullname_jobtitle_companyname
   const generateFilename = useCallback(() => {
@@ -239,7 +259,7 @@ export default function TailoredResumeView({
         method: download ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          latex: latexContent,
+          latex,
           filename: generatedFilename,
         }),
       });
@@ -272,7 +292,7 @@ export default function TailoredResumeView({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            latex: latexContent,
+            latex,
             filename: generatedFilename,
           }),
         });
@@ -321,15 +341,18 @@ export default function TailoredResumeView({
     } finally {
       setGeneratingPdf(false);
     }
-  }, [latexContent, job, masterResume, runId, tailoredResume.modelKey, generateUploadUrl, storeArtifact, onArtifactCreated, generateFilename]);
+  }, [latex, job, masterResume, runId, tailoredResume.modelKey, generateUploadUrl, storeArtifact, onArtifactCreated, generateFilename]);
 
   // Handle LaTeX download
   const handleDownloadLatex = useCallback(async () => {
-    const blob = new Blob([latexContent], { type: "text/plain" });
+    const blob = new Blob([latex], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${job?.company || "company"}_${job?.title || "resume"}_tailored.tex`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    link.download = `${job?.company || "company"}_${job?.title || "resume"}_tailored.tex`.replace(
+      /[^a-zA-Z0-9_.-]/g,
+      "_"
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -338,7 +361,7 @@ export default function TailoredResumeView({
     // Store to Convex
     try {
       const uploadUrl = await generateUploadUrl();
-      const texBlob = new Blob([latexContent], { type: "application/x-tex" });
+      const texBlob = new Blob([latex], { type: "application/x-tex" });
 
       const uploadResponse = await fetch(uploadUrl, {
         method: "POST",
@@ -355,19 +378,135 @@ export default function TailoredResumeView({
           fileName: `${job?.company || "company"}_${job?.title || "resume"}_tailored.tex`.replace(/[^a-zA-Z0-9_.-]/g, "_"),
           storageId,
           mimeType: "application/x-tex",
-          sizeBytes: latexContent.length,
+          sizeBytes: texBlob.size,
         });
         onArtifactCreated?.();
       }
     } catch (error) {
       console.error("Failed to store LaTeX:", error);
     }
-  }, [latexContent, job, runId, tailoredResume.modelKey, generateUploadUrl, storeArtifact, onArtifactCreated]);
+  }, [latex, job, runId, tailoredResume.modelKey, generateUploadUrl, storeArtifact, onArtifactCreated]);
 
   // Copy LaTeX to clipboard
   const handleCopyLatex = useCallback(() => {
-    navigator.clipboard.writeText(latexContent);
-  }, [latexContent]);
+    navigator.clipboard.writeText(latex);
+  }, [latex]);
+
+  const isLatexDirty = latex !== lastLoadedLatex.current;
+
+  const loadLatexSource = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      if (!force && isLatexDirty) return;
+      if (latestTex && texUrl === undefined) return;
+      setLoadError(null);
+      if (force) {
+        setSaveError(null);
+        setSaveOkAt(null);
+        setCompileError(null);
+        if (pdfPreviewUrl) {
+          URL.revokeObjectURL(pdfPreviewUrl);
+          setPdfPreviewUrl(null);
+        }
+      }
+      if (!texUrl) {
+        setLatex(latexContent);
+        lastLoadedLatex.current = latexContent;
+        return;
+      }
+      setLoadingLatex(true);
+      try {
+        const res = await fetch(texUrl);
+        if (!res.ok) {
+          throw new Error(`Failed to load LaTeX (HTTP ${res.status})`);
+        }
+        const text = await res.text();
+        setLatex(text);
+        lastLoadedLatex.current = text;
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : "Failed to load LaTeX");
+        setLatex(latexContent);
+        lastLoadedLatex.current = latexContent;
+      } finally {
+        setLoadingLatex(false);
+      }
+    },
+    [isLatexDirty, latexContent, latestTex, pdfPreviewUrl, texUrl]
+  );
+
+  const handleSaveLatex = useCallback(async () => {
+    setSaveError(null);
+    setSaveOkAt(null);
+    setCompileError(null);
+    setSavingLatex(true);
+    try {
+      const uploadUrl = await generateUploadUrl();
+      const texBlob = new Blob([latex], { type: "application/x-tex" });
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-tex" },
+        body: texBlob,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload LaTeX");
+      }
+
+      const { storageId } = await uploadResponse.json();
+      const fileName = `${generateFilename()}.tex`;
+      await storeArtifact({
+        runId,
+        modelKey: tailoredResume.modelKey,
+        artifactType: "tex",
+        fileName,
+        storageId,
+        mimeType: "application/x-tex",
+        sizeBytes: texBlob.size,
+      });
+      lastLoadedLatex.current = latex;
+      setSaveOkAt(new Date().toISOString());
+      onArtifactCreated?.();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Failed to save LaTeX");
+    } finally {
+      setSavingLatex(false);
+    }
+  }, [generateUploadUrl, generateFilename, latex, onArtifactCreated, runId, storeArtifact, tailoredResume.modelKey]);
+
+  const handleCompilePreview = useCallback(async () => {
+    setCompileError(null);
+    setCompilingLatex(true);
+    try {
+      const response = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          latex,
+          filename: generateFilename(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || "Failed to compile PDF");
+      }
+
+      const blob = await response.blob();
+      if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+      const nextUrl = URL.createObjectURL(blob);
+      setPdfPreviewUrl(nextUrl);
+    } catch (error) {
+      setCompileError(error instanceof Error ? error.message : "Failed to compile PDF");
+    } finally {
+      setCompilingLatex(false);
+    }
+  }, [generateFilename, latex, pdfPreviewUrl]);
+
+  const handleResetLatex = useCallback(() => {
+    setLatex(lastLoadedLatex.current);
+    setSaveError(null);
+    setSaveOkAt(null);
+    setCompileError(null);
+  }, []);
 
   const pdfContext = useMemo(() => {
     return {
@@ -381,6 +520,26 @@ export default function TailoredResumeView({
     registerGeneratePdf(pdfContext);
     return () => registerGeneratePdf(null);
   }, [registerGeneratePdf, pdfContext]);
+
+  useEffect(() => {
+    loadLatexSource().catch(() => undefined);
+  }, [loadLatexSource]);
+
+  useEffect(() => {
+    return () => {
+      if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    };
+  }, [pdfPreviewUrl]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isLatexDirty) return;
+      event.preventDefault();
+      event.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isLatexDirty]);
 
   return (
     <div className="tailored-resume-view">
@@ -664,15 +823,113 @@ export default function TailoredResumeView({
 
         {activeTab === "latex" && (
           <div className="trv-latex">
-            <div className="latex-actions" style={{ marginBottom: "1rem" }}>
-              <button className="ghost small" onClick={handleCopyLatex}>
-                Copy to Clipboard
-              </button>
-              <button className="ghost small" onClick={handleDownloadLatex}>
-                Download .tex
-              </button>
+            <div className="panel" style={{ marginBottom: "12px" }}>
+              <div className="panel-head" style={{ alignItems: "center" }}>
+                <div>
+                  <h4>LaTeX Editor</h4>
+                  <p className="hint">
+                    Edit the LaTeX source, save your changes, and compile to preview the PDF.
+                  </p>
+                </div>
+                <div className="latex-actions">
+                  <button className="ghost" onClick={() => loadLatexSource({ force: true })} disabled={loadingLatex}>
+                    Reload source
+                  </button>
+                  <button className="ghost" onClick={handleResetLatex} disabled={!isLatexDirty}>
+                    Reset edits
+                  </button>
+                  <button className="ghost" onClick={handleCopyLatex} disabled={!latex}>
+                    Copy
+                  </button>
+                  <button className="ghost" onClick={handleDownloadLatex} disabled={!latex}>
+                    Download .tex
+                  </button>
+                  <button className="ghost" onClick={handleSaveLatex} disabled={savingLatex || !isLatexDirty}>
+                    {savingLatex ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    className="primary"
+                    onClick={handleCompilePreview}
+                    disabled={compilingLatex || !latex}
+                  >
+                    {compilingLatex ? "Compiling..." : "Compile PDF"}
+                  </button>
+                </div>
+              </div>
+
+              {loadError && <div className="warning-box" style={{ marginTop: 10 }}>{loadError}</div>}
+              {saveError && <div className="warning-box" style={{ marginTop: 10 }}>{saveError}</div>}
+              {compileError && <div className="warning-box" style={{ marginTop: 10 }}>{compileError}</div>}
+              {saveOkAt ? (
+                <div className="meta" style={{ marginTop: 10 }}>
+                  Saved at {new Date(saveOkAt).toLocaleString()}
+                  {isLatexDirty ? " (unsaved edits present)" : ""}
+                </div>
+              ) : (
+                <div className="meta" style={{ marginTop: 10 }}>
+                  {isLatexDirty ? "Unsaved edits present" : latestTex ? "Loaded saved LaTeX" : "Using generated LaTeX"}
+                </div>
+              )}
             </div>
-            <pre className="latex-code">{latexContent}</pre>
+
+            <div className="latex-split">
+              <div className="latex-pane">
+                <div className="latex-pane-head">
+                  <strong>resume.tex</strong>
+                  <span className="hint">{loadingLatex ? "Loading..." : isLatexDirty ? "● Unsaved" : "Edit LaTeX"}</span>
+                </div>
+                <div className="latex-textarea-wrap">
+                  <textarea
+                    className="latex-textarea"
+                    value={latex}
+                    onChange={(e) => setLatex(e.target.value)}
+                    spellCheck={false}
+                    placeholder={loadingLatex ? "Loading LaTeX..." : "LaTeX source will appear here."}
+                    disabled={loadingLatex}
+                  />
+                </div>
+              </div>
+
+              <div className="latex-pane">
+                <div className="latex-pane-head">
+                  <strong>PDF Preview</strong>
+                  <span className="hint">
+                    {pdfPreviewUrl ? "✓ Compiled" : compilingLatex ? "Compiling..." : "Ready"}
+                  </span>
+                </div>
+                <div className="latex-preview">
+                  {pdfPreviewUrl ? (
+                    <iframe title="PDF preview" src={pdfPreviewUrl} />
+                  ) : (
+                    <div className="pdf-empty-state">
+                      <div className="pdf-empty-icon">
+                        {compilingLatex ? "⏳" : "📄"}
+                      </div>
+                      <div className="pdf-empty-title">
+                        {compilingLatex ? "Compiling PDF..." : "No Preview Yet"}
+                      </div>
+                      <div className="pdf-empty-hint">
+                        {compilingLatex ? "This may take a few seconds" : "Click 'Compile PDF' to generate preview"}
+                      </div>
+                      {!compilingLatex && latex && (
+                        <button className="primary" onClick={handleCompilePreview} style={{ marginTop: 16 }}>
+                          Compile PDF
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {isLatexDirty && (
+              <div className="unsaved-banner">
+                <span>⚠️ You have unsaved changes</span>
+                <button className="ghost small" onClick={handleSaveLatex} disabled={savingLatex}>
+                  {savingLatex ? "Saving..." : "Save Now"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -699,27 +956,6 @@ export default function TailoredResumeView({
           </div>
         )}
       </div>
-
-      {/* Existing Artifacts */}
-      {artifacts.length > 0 && (
-        <div className="trv-artifacts">
-          <h4>Generated Artifacts</h4>
-          <div className="downloads-grid">
-            {artifacts.map((artifact) => (
-              <div key={artifact._id} className="download-item">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>
-                    {artifact.artifactType.toUpperCase()} - {artifact.fileName}
-                  </span>
-                  <span className="hint">
-                    {(artifact.sizeBytes / 1024).toFixed(1)} KB
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <style jsx>{`
         .tailored-resume-view {
@@ -992,19 +1228,6 @@ export default function TailoredResumeView({
           overflow-y: auto;
         }
 
-        .trv-artifacts {
-          margin-top: 1rem;
-          padding: 1rem;
-          background: var(--bg);
-          border-radius: 10px;
-          border: 1px solid var(--border);
-        }
-
-        .trv-artifacts h4 {
-          margin: 0 0 0.5rem 0;
-          font-size: 14px;
-          color: var(--muted);
-        }
       `}</style>
     </div>
   );
