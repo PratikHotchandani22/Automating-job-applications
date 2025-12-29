@@ -29,6 +29,9 @@ HARD RULES (must follow)
 * Keyword usage:
     * Use JD keywords naturally; do not keyword-stuff
     * Bold keywords only if your downstream renderer supports it; otherwise omit bolding
+* Skills curation:
+    * Classify skills into the correct categories (programming_languages, data_analysis_statistics, machine_learning, data_viz_engineering, big_data_software)
+    * Avoid dumping too many skills into a single category; keep lists concise (target 3-6 per category) and prioritize JD-relevant skills from the master resume
 * Explainability must match:
     * For each rewritten bullet, provide: original_text, rewritten_text, keywords_inserted[], mapped_requirements[]
 * Do not quote large chunks of the JD. Use rubric terms and short evidence only.

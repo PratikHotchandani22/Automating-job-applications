@@ -472,9 +472,21 @@ async function buildMasterResumePayload(
         description: "",
         bullets: [],
         technologies: bullet.tags || [],
+        links: [],
       });
     }
-    projectsMap.get(key)!.bullets.push(bullet.text);
+    const projectEntry = projectsMap.get(key)!;
+    projectEntry.bullets.push(bullet.text);
+    if (Array.isArray(bullet.links)) {
+      bullet.links
+        .map((link: any) => (typeof link === "string" ? link.trim() : ""))
+        .filter(Boolean)
+        .forEach((link: string) => {
+          if (!projectEntry.links.includes(link)) {
+            projectEntry.links.push(link);
+          }
+        });
+    }
   });
 
   return {
@@ -840,6 +852,21 @@ CRITICAL REMINDERS:
         ["project_id", "projectId"],
         "proj"
       );
+      const masterProjectMetadata = new Map<string, any>();
+      (masterResume?.projects || []).forEach((proj: any) => {
+        const identifiers = [
+          proj?.project_id,
+          proj?.projectId,
+          proj?.name
+        ]
+          .filter((value) => typeof value === "string" && value.trim().length > 0)
+          .map((value) => value.trim().toLowerCase());
+        identifiers.forEach((identifier) => {
+          if (!masterProjectMetadata.has(identifier)) {
+            masterProjectMetadata.set(identifier, proj);
+          }
+        });
+      });
       const workExperience = (tailored.experience || []).map((exp: any, idx: number) => {
         const roleKey = exp.role_id || exp.roleId || `role_${idx}`;
         const masterBullets = masterExperienceBullets.get(roleKey) || [];
@@ -864,10 +891,31 @@ CRITICAL REMINDERS:
       const projects = (tailored.projects || []).map((proj: any, idx: number) => {
         const projectKey = proj.project_id || proj.projectId || `proj_${idx}`;
         const masterBullets = masterProjectBullets.get(projectKey) || [];
+        const lookupKey = (projectKey || proj.name || "").toLowerCase();
+        const masterMetadata = masterProjectMetadata.get(lookupKey);
+        const fallbackDate = (masterMetadata?.dates || masterMetadata?.date || "").trim();
+        const fallbackLinks = Array.isArray(masterMetadata?.links)
+          ? masterMetadata.links.filter((link: string) => typeof link === "string" && link.trim().length > 0)
+          : [];
+        const suppliedLinks = Array.isArray(proj.links)
+          ? proj.links.filter((link: string) => typeof link === "string" && link.trim().length > 0)
+          : [];
+        const finalLinks = suppliedLinks.length ? suppliedLinks : fallbackLinks;
+        const finalDate = (proj.date || proj.dates || fallbackDate || "").trim();
+
+        if (tailored.projects && tailored.projects[idx]) {
+          tailored.projects[idx] = {
+            ...tailored.projects[idx],
+            date: finalDate || undefined,
+            links: finalLinks.length ? finalLinks : undefined,
+          };
+        }
+
         return {
           projectId: projectKey,
           name: proj.name || "Unknown Project",
-          date: proj.date,
+          date: finalDate,
+          links: finalLinks.length ? finalLinks : undefined,
           bullets: (proj.bullets || []).map((bullet: string, bIdx: number) => {
             const originalText = masterBullets[bIdx] || bullet;
             return {
@@ -1095,11 +1143,13 @@ ${bullets}
       const bullets = (proj.bullets || [])
         .map((b: string) => `    \\item ${escapeLatex(b)}`)
         .join("\n");
-      const links =
-        projectLinkMap.get((proj.name || "").toLowerCase()) || [];
+      const candidateLinks =
+        (Array.isArray(proj.links) && proj.links.length
+          ? proj.links
+          : projectLinkMap.get((proj.name || "").toLowerCase())) || [];
       const linkText =
-        links.length > 0
-          ? ` $|$ ${links
+        candidateLinks.length > 0
+          ? ` $|$ ${candidateLinks
               .map((link: string) => `${labelProjectLink(link)}: ${escapeLatex(link)}`)
               .join(" $|$ ")}`
           : "";
@@ -1229,9 +1279,12 @@ ${educationLatex}
 `;
 }
 
-function escapeLatex(str: string): string {
-  if (!str) return "";
-  return str
+/**
+ * Escape LaTeX special characters in plain text
+ */
+function escapeLatexChars(text: string): string {
+  if (!text) return "";
+  return text
     .replace(/\\/g, "\\textbackslash{}")
     .replace(/&/g, "\\&")
     .replace(/%/g, "\\%")
@@ -1242,6 +1295,32 @@ function escapeLatex(str: string): string {
     .replace(/\}/g, "\\}")
     .replace(/~/g, "\\textasciitilde{}")
     .replace(/\^/g, "\\textasciicircum{}");
+}
+
+/**
+ * Escape special LaTeX characters and convert markdown bold to \textbf{}
+ */
+function escapeLatex(str: string): string {
+  if (!str) return "";
+  
+  // Convert markdown bold **text** to LaTeX \textbf{text} FIRST
+  let result = str.replace(/\*\*([^*]+(?:\*(?!\*)[^*]*)*)\*\*/g, (_: string, content: string) => {
+    // Escape special chars inside the bold content
+    const escapedContent = escapeLatexChars(content);
+    return `\\textbf{${escapedContent}}`;
+  });
+  
+  // Escape remaining special chars in non-bold text
+  // Split by \textbf{...} to avoid escaping inside commands
+  const parts = result.split(/(\\textbf\{[^}]*\})/g);
+  result = parts.map((part, i) => {
+    // Odd indices are the \textbf{...} matches - don't escape those
+    if (i % 2 === 1) return part;
+    // Even indices are regular text - escape them
+    return escapeLatexChars(part);
+  }).join('');
+  
+  return result;
 }
 
 function labelProjectLink(link: string): string {

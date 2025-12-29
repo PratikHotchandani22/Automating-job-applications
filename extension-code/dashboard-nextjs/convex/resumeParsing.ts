@@ -1,7 +1,25 @@
 // convex/resumeParsing.ts
 
-const URL_REGEX = /((https?:\/\/|www\.)[^\s<>()\[\]{}"']+)/gi;
+/**
+ * URL extraction regex patterns.
+ * 
+ * Pattern 1: Full URLs with scheme (https:// or http://)
+ * Pattern 2: www. prefixed URLs
+ * Pattern 3: Common domain patterns without scheme (linkedin.com, github.com, etc.)
+ * 
+ * This handles:
+ * - Full URLs: https://github.com/user/repo
+ * - www URLs: www.example.com/path
+ * - Bare domains: linkedin.com/in/username, github.com/user
+ */
+const URL_WITH_SCHEME_REGEX = /https?:\/\/[^\s<>()\[\]{}"']+/gi;
+const WWW_URL_REGEX = /www\.[^\s<>()\[\]{}"']+/gi;
+const BARE_DOMAIN_REGEX = /(linkedin\.com|github\.com|gitlab\.com|bitbucket\.org|medium\.com|dev\.to|stackoverflow\.com|kaggle\.com|huggingface\.co)[^\s<>()\[\]{}"']*/gi;
+const GITHUB_IO_REGEX = /[a-z0-9-]+\.github\.io[^\s<>()\[\]{}"']*/gi;
+
 const TRAILING_PUNCT_REGEX = /[)\].,;:!?]+$/;
+// Matches URL fragments broken across lines (e.g., "https://github" + "\n" + ".com/user")
+const BROKEN_URL_PATTERN = /(https?:\/\/[^\s]+)\s*\n\s*([^\s<>()\[\]{}"']+)/gi;
 
 export type HeaderLinks = {
   linkedin?: string;
@@ -21,12 +39,41 @@ export type ResumeLinkData = {
   allLinks: string[];
 };
 
+/**
+ * Normalize a URL:
+ * - Remove trailing punctuation
+ * - Prepend https:// if missing scheme
+ * - Clean up whitespace artifacts from PDF extraction
+ */
 function normalizeUrl(raw: string): string {
-  const trimmed = raw.replace(TRAILING_PUNCT_REGEX, "");
-  if (trimmed.startsWith("www.")) {
-    return `https://${trimmed}`;
+  // Remove trailing punctuation
+  let cleaned = raw.replace(TRAILING_PUNCT_REGEX, "");
+  
+  // Remove any internal whitespace (PDF extraction artifact)
+  cleaned = cleaned.replace(/\s+/g, "");
+  
+  // Prepend https:// if missing scheme
+  if (!cleaned.match(/^https?:\/\//i)) {
+    if (cleaned.startsWith("www.")) {
+      cleaned = `https://${cleaned}`;
+    } else {
+      // For bare domains like linkedin.com/in/...
+      cleaned = `https://${cleaned}`;
+    }
   }
-  return trimmed;
+  
+  return cleaned;
+}
+
+/**
+ * Attempt to rejoin URLs that were split across lines during PDF extraction.
+ * Common patterns:
+ * - "https://github" + ".com/user/repo"
+ * - "linkedin.com/in/user" + "name"
+ */
+function rejoinBrokenUrls(text: string): string {
+  // Replace line breaks that appear to be in the middle of URLs
+  return text.replace(BROKEN_URL_PATTERN, "$1$2");
 }
 
 function normalizeWhitespace(text: string): string {
@@ -37,17 +84,58 @@ function normalizeProjectName(name: string): string {
   return normalizeWhitespace(name).toLowerCase();
 }
 
+/**
+ * Extract all URLs from text using multiple patterns to catch:
+ * - Full URLs with scheme
+ * - www. prefixed URLs
+ * - Bare domain URLs (linkedin.com/..., github.com/..., etc.)
+ * - github.io portfolio URLs
+ * 
+ * Handles PDF extraction quirks:
+ * - URLs split across lines
+ * - Extra whitespace within URLs
+ * - Missing schemes
+ * 
+ * Examples:
+ *   "linkedin.com/in/john-doe" → "https://linkedin.com/in/john-doe"
+ *   "github . com / user" → "https://github.com/user" (whitespace cleaned)
+ *   "https://github\n.com/user" → "https://github.com/user" (rejoined)
+ */
 export function extractAllLinks(text: string): string[] {
-  const matches = text.match(URL_REGEX) || [];
   const seen = new Set<string>();
   const ordered: string[] = [];
-  for (const match of matches) {
+  
+  // First, try to rejoin URLs broken across lines
+  const processedText = rejoinBrokenUrls(text);
+  
+  // Collect all matches from different regex patterns
+  const allMatches: string[] = [];
+  
+  // Pattern 1: URLs with scheme
+  const schemeMatches = processedText.match(URL_WITH_SCHEME_REGEX) || [];
+  allMatches.push(...schemeMatches);
+  
+  // Pattern 2: www. prefixed URLs
+  const wwwMatches = processedText.match(WWW_URL_REGEX) || [];
+  allMatches.push(...wwwMatches);
+  
+  // Pattern 3: Bare domain URLs (linkedin.com, github.com, etc.)
+  const bareMatches = processedText.match(BARE_DOMAIN_REGEX) || [];
+  allMatches.push(...bareMatches);
+  
+  // Pattern 4: GitHub.io portfolio URLs
+  const githubIoMatches = processedText.match(GITHUB_IO_REGEX) || [];
+  allMatches.push(...githubIoMatches);
+  
+  // Normalize and deduplicate
+  for (const match of allMatches) {
     const normalized = normalizeUrl(match);
-    if (!normalized) continue;
+    if (!normalized || normalized.length < 10) continue; // Skip too-short URLs
     if (seen.has(normalized)) continue;
     seen.add(normalized);
     ordered.push(normalized);
   }
+  
   return ordered;
 }
 
@@ -74,8 +162,13 @@ export function extractProjectNamesFromText(text: string): string[] {
     if (sectionStopRegex.test(line)) break;
     if (line.startsWith("-") || line.startsWith("•")) continue;
 
-    URL_REGEX.lastIndex = 0;
-    let normalizedLine = line.replace(URL_REGEX, "").trim();
+    // Remove URLs from the line for project name extraction
+    let normalizedLine = line
+      .replace(URL_WITH_SCHEME_REGEX, "")
+      .replace(WWW_URL_REGEX, "")
+      .replace(BARE_DOMAIN_REGEX, "")
+      .replace(GITHUB_IO_REGEX, "")
+      .trim();
     normalizedLine = normalizedLine.replace(/\b(GitHub|WebApp|Demo|Paper)\b/gi, "").trim();
     if (!normalizedLine) continue;
     if (normalizedLine.length > 180) continue;
