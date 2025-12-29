@@ -142,14 +142,7 @@ export default defineSchema({
       website: v.optional(v.string()),
     })),
     summary: v.optional(v.string()),
-    skills: v.object({
-      programming_languages: v.array(v.string()),
-      frameworks_libraries: v.array(v.string()),
-      tools_cloud_technologies: v.array(v.string()),
-      data_science_analytics: v.array(v.string()),
-      machine_learning_ai: v.array(v.string()),
-      other_skills: v.array(v.string()),
-    }),
+    skills: v.record(v.string(), v.array(v.string())),
     education: v.array(v.object({
       institution: v.string(),
       degree: v.string(),
@@ -524,14 +517,7 @@ export default defineSchema({
       location: v.optional(v.string()),
       gpa: v.optional(v.string()),
     })),
-    skills: v.object({
-      programming_languages: v.array(v.string()),
-      frameworks_libraries: v.array(v.string()),
-      tools_cloud_technologies: v.array(v.string()),
-      data_science_analytics: v.array(v.string()),
-      machine_learning_ai: v.array(v.string()),
-      other_skills: v.array(v.string()),
-    }),
+    skills: v.record(v.string(), v.array(v.string())),
     awards: v.optional(v.array(v.object({
       name: v.string(),
       issuer: v.string(),

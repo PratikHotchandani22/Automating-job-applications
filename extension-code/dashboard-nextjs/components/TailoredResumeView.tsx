@@ -48,14 +48,7 @@ interface TailoredResume {
     location?: string;
     gpa?: string;
   }>;
-  skills: {
-    programming_languages: string[];
-    frameworks_libraries: string[];
-    tools_cloud_technologies: string[];
-    data_science_analytics: string[];
-    machine_learning_ai: string[];
-    other_skills: string[];
-  };
+  skills: Record<string, string[]>;
   awards?: Array<{
     name: string;
     issuer: string;
@@ -109,6 +102,15 @@ interface TailoredResumeViewProps {
   artifacts: Artifact[];
   onArtifactCreated?: () => void;
   registerGeneratePdf?: (context: { trigger: () => Promise<void>; loading: boolean } | null) => void;
+}
+
+function formatSkillLabel(key: string): string {
+  if (key === "other_skills") return "Other Skills";
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 export default function TailoredResumeView({
@@ -471,42 +473,15 @@ export default function TailoredResumeView({
             <div className="trv-section">
               <h4>Skills</h4>
               <div className="trv-skills">
-                {tailoredResume.skills.programming_languages.length > 0 && (
-                  <div className="skill-row">
-                    <span className="skill-label">Languages:</span>
-                    <span className="skill-list">{tailoredResume.skills.programming_languages.join(", ")}</span>
-                  </div>
-                )}
-                {tailoredResume.skills.frameworks_libraries.length > 0 && (
-                  <div className="skill-row">
-                    <span className="skill-label">Frameworks:</span>
-                    <span className="skill-list">{tailoredResume.skills.frameworks_libraries.join(", ")}</span>
-                  </div>
-                )}
-                {tailoredResume.skills.tools_cloud_technologies.length > 0 && (
-                  <div className="skill-row">
-                    <span className="skill-label">Tools & Cloud:</span>
-                    <span className="skill-list">{tailoredResume.skills.tools_cloud_technologies.join(", ")}</span>
-                  </div>
-                )}
-                {tailoredResume.skills.data_science_analytics.length > 0 && (
-                  <div className="skill-row">
-                    <span className="skill-label">Data Science:</span>
-                    <span className="skill-list">{tailoredResume.skills.data_science_analytics.join(", ")}</span>
-                  </div>
-                )}
-                {tailoredResume.skills.machine_learning_ai.length > 0 && (
-                  <div className="skill-row">
-                    <span className="skill-label">ML/AI:</span>
-                    <span className="skill-list">{tailoredResume.skills.machine_learning_ai.join(", ")}</span>
-                  </div>
-                )}
-                {tailoredResume.skills.other_skills.length > 0 && (
-                  <div className="skill-row">
-                    <span className="skill-label">Other:</span>
-                    <span className="skill-list">{tailoredResume.skills.other_skills.join(", ")}</span>
-                  </div>
-                )}
+                {Object.entries(tailoredResume.skills || {}).map(([category, items]) => {
+                  if (!Array.isArray(items) || items.length === 0) return null;
+                  return (
+                    <div className="skill-row" key={category}>
+                      <span className="skill-label">{formatSkillLabel(category)}:</span>
+                      <span className="skill-list">{items.join(", ")}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

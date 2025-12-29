@@ -202,14 +202,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
   // Local state for all resume sections
   const [header, setHeader] = useState(resume?.header || {});
   const [summary, setSummary] = useState(resume?.summary || "");
-  const [skills, setSkills] = useState(resume?.skills || {
-    programming_languages: [],
-    frameworks_libraries: [],
-    tools_cloud_technologies: [],
-    data_science_analytics: [],
-    machine_learning_ai: [],
-    other_skills: [],
-  });
+  const [skills, setSkills] = useState(resume?.skills || {});
   const [education, setEducation] = useState(resume?.education || []);
   const [awards, setAwards] = useState(resume?.awards || []);
   const [mentorship, setMentorship] = useState(resume?.mentorship || []);
@@ -319,14 +312,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
     if (resume) {
       setHeader(resume.header || {});
       setSummary(resume.summary || "");
-      setSkills(resume.skills || {
-        programming_languages: [],
-        frameworks_libraries: [],
-        tools_cloud_technologies: [],
-        data_science_analytics: [],
-        machine_learning_ai: [],
-        other_skills: [],
-      });
+      setSkills(resume.skills || {});
       setEducation(resume.education || []);
       setAwards(resume.awards || []);
       setMentorship(resume.mentorship || []);

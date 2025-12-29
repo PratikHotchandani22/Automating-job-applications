@@ -53,11 +53,7 @@ Strict output schema (must match exactly, including explainability and final_res
   "final_resume": {
     "summary": "string",
     "skills": {
-      "programming_languages": ["string"],
-      "data_analysis_statistics": ["string"],
-      "machine_learning": ["string"],
-      "data_viz_engineering": ["string"],
-      "big_data_software": ["string"]
+      "category_key": ["string"]
     },
     "work_experience": [
       {

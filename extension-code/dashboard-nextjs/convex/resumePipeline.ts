@@ -84,14 +84,7 @@ async function convertResumeToBackendFormat(
   return {
     id: masterResume._id,
     summary: masterResume.summary || "",
-    skills: masterResume.skills || {
-      programming_languages: [],
-      frameworks_libraries: [],
-      tools_cloud_technologies: [],
-      data_science_analytics: [],
-      machine_learning_ai: [],
-      other_skills: [],
-    },
+    skills: masterResume.skills || {},
     work_experience: workExperience,
     projects: projects,
     education: (masterResume.education || []).map((edu: any) => ({
@@ -619,14 +612,7 @@ export const syncArtifactsFromBackend = action({
                   };
                 }),
                 education: finalResume.education || [],
-                skills: finalResume.skills || {
-                  programming_languages: [],
-                  frameworks_libraries: [],
-                  tools_cloud_technologies: [],
-                  data_science_analytics: [],
-                  machine_learning_ai: [],
-                  other_skills: [],
-                },
+                skills: finalResume.skills || {},
                 awards: finalResume.awards,
                 selectionEnforcement: {
                   strippedUnselected: jsonData.explainability?.selection_enforcement?.stripped_unselected || 0,

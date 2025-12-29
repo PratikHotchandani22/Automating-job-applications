@@ -1083,11 +1083,7 @@ const TAILORED_SCHEMA_EXAMPLE_V2 = {
   final_resume: {
     summary: "",
     skills: {
-      programming_languages: [],
-      data_analysis_statistics: [],
-      machine_learning: [],
-      data_viz_engineering: [],
-      big_data_software: []
+      programming_languages: []
     },
     work_experience: [
       {
@@ -1224,11 +1220,7 @@ const TAILORED_SCHEMA_EXAMPLE_V3 = {
   final_resume: {
     summary: "",
     skills: {
-      programming_languages: [],
-      data_analysis_statistics: [],
-      machine_learning: [],
-      data_viz_engineering: [],
-      big_data_software: []
+      programming_languages: []
     },
     work_experience: [
       {
@@ -1295,6 +1287,30 @@ const TAILORED_SCHEMA_EXAMPLE_V4 = {
   }
 };
 
+function buildSkillsSchemaExample(masterResume = {}) {
+  const skills = masterResume?.skills;
+  if (!skills || typeof skills !== "object") {
+    return { programming_languages: ["string"] };
+  }
+  const keys = Object.keys(skills).filter((key) => Array.isArray(skills[key]));
+  if (!keys.length) return { programming_languages: ["string"] };
+  return keys.reduce((acc, key) => {
+    acc[key] = ["string"];
+    return acc;
+  }, {});
+}
+
+function applyDynamicSkillsSchema(schema, masterResume) {
+  const skillsExample = buildSkillsSchemaExample(masterResume);
+  return {
+    ...schema,
+    final_resume: {
+      ...schema.final_resume,
+      skills: skillsExample
+    }
+  };
+}
+
 function isV3Version(version) {
   return (version || "").toLowerCase().includes("v3");
 }
@@ -1303,27 +1319,27 @@ function isV4Version(version) {
   return (version || "").toLowerCase().includes("v4");
 }
 
-function getTailoredSchemaExample(version) {
+function getTailoredSchemaExample(version, masterResume) {
   if (isV4Version(version)) {
-    return {
+    return applyDynamicSkillsSchema({
       ...TAILORED_SCHEMA_EXAMPLE_V4,
       version: version || TAILORED_SCHEMA_EXAMPLE_V4.version
-    };
+    }, masterResume);
   }
   if (isV3Version(version)) {
-    return {
+    return applyDynamicSkillsSchema({
       ...TAILORED_SCHEMA_EXAMPLE_V3,
       version: version || TAILORED_SCHEMA_EXAMPLE_V3.version
-    };
+    }, masterResume);
   }
-  return {
+  return applyDynamicSkillsSchema({
     ...TAILORED_SCHEMA_EXAMPLE_V2,
     version: version || TAILORED_SCHEMA_EXAMPLE_V2.version
-  };
+  }, masterResume);
 }
 
 function buildTailorPrompt(jobPayload, masterResume, options, prompt, runDir, extras = {}) {
-  const schemaExample = getTailoredSchemaExample(prompt.version || CONFIG.promptsVersion);
+  const schemaExample = getTailoredSchemaExample(prompt.version || CONFIG.promptsVersion, masterResume);
   const isV4 = isV4Version(schemaExample.version);
   const isV3 = isV3Version(schemaExample.version);
   const rawJobText = jobPayload?.job?.description_text || "";
@@ -1367,7 +1383,8 @@ function buildTailorPrompt(jobPayload, masterResume, options, prompt, runDir, ex
       user,
       promptText,
       runDir,
-      schemaVersion: schemaExample.version
+      schemaVersion: schemaExample.version,
+      masterResume
     };
   }
 
@@ -1388,7 +1405,8 @@ function buildTailorPrompt(jobPayload, masterResume, options, prompt, runDir, ex
     user: userLines.join("\n\n"),
     promptText,
     runDir,
-    schemaVersion: schemaExample.version
+    schemaVersion: schemaExample.version,
+    masterResume
   };
 }
 
@@ -3149,13 +3167,7 @@ function ensureFinalResume(parsed, masterResume) {
 function buildFinalResumeFromPlan(parsed, masterResume) {
   const plan = parsed?.resume_plan || {};
   const summary = plan.summary || masterResume.summary || "";
-  const skills = {
-    programming_languages: masterResume.skills?.programming_languages || [],
-    data_analysis_statistics: masterResume.skills?.data_science_analytics || [],
-    machine_learning: masterResume.skills?.machine_learning_ai || [],
-    data_viz_engineering: masterResume.skills?.frameworks_libraries || [],
-    big_data_software: masterResume.skills?.tools_cloud_technologies || []
-  };
+  const skills = buildSkillsFromMaster(masterResume);
   const work = (masterResume.work_experience || []).map((r, idx) => ({
     company: r.company || "",
     role: r.role || "",
@@ -3197,18 +3209,44 @@ function attachStableIds(finalResume, masterResume) {
   return { ...finalResume, work_experience: work, projects };
 }
 
+function normalizeSkillList(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
+function buildSkillsFromMaster(masterResume = {}) {
+  const skills = masterResume?.skills;
+  if (!skills || typeof skills !== "object") return {};
+  return Object.keys(skills).reduce((acc, key) => {
+    acc[key] = normalizeSkillList(skills[key]);
+    return acc;
+  }, {});
+}
+
+function normalizeFinalSkills(finalSkills = {}, masterResume = {}) {
+  const masterSkills = buildSkillsFromMaster(masterResume);
+  const masterKeys = Object.keys(masterSkills);
+  if (!masterKeys.length) {
+    return Object.keys(finalSkills || {}).reduce((acc, key) => {
+      acc[key] = normalizeSkillList(finalSkills[key]);
+      return acc;
+    }, {});
+  }
+  return masterKeys.reduce((acc, key) => {
+    const allowed = masterSkills[key] || [];
+    const provided = normalizeSkillList(finalSkills[key]);
+    if (provided.length) {
+      acc[key] = allowed.length ? provided.filter((item) => allowed.includes(item)) : provided;
+    } else {
+      acc[key] = allowed;
+    }
+    return acc;
+  }, {});
+}
+
 function sanitizeFinalResume(finalResume = {}, masterResume = {}) {
-  const safeSkills = finalResume.skills || {};
-  const skills = {
-    programming_languages: safeSkills.programming_languages || masterResume.skills?.programming_languages || [],
-    data_analysis_statistics: safeSkills.data_analysis_statistics || masterResume.skills?.data_science_analytics || [],
-    machine_learning: safeSkills.machine_learning || masterResume.skills?.machine_learning_ai || [],
-    data_viz_engineering: safeSkills.data_viz_engineering || masterResume.skills?.frameworks_libraries || [],
-    big_data_software: safeSkills.big_data_software || masterResume.skills?.tools_cloud_technologies || []
-  };
-  Object.keys(skills).forEach((k) => {
-    if (!Array.isArray(skills[k])) skills[k] = [];
-  });
+  const skills = normalizeFinalSkills(finalResume.skills || {}, masterResume);
 
   const normalizeBullets = (list) => (Array.isArray(list) ? list : []).map((b) => (typeof b === "string" ? b : ""));
 
@@ -3594,14 +3632,11 @@ function validateFinalResume(finalResume, errors) {
   }
   if (typeof finalResume.summary !== "string") errors.push("final_resume.summary must be string");
   const skills = finalResume.skills || {};
-  const skillKeys = [
-    "programming_languages",
-    "data_analysis_statistics",
-    "machine_learning",
-    "data_viz_engineering",
-    "big_data_software"
-  ];
-  skillKeys.forEach((k) => ensureArrayOfStrings(skills[k], `final_resume.skills.${k}`, errors));
+  if (!skills || typeof skills !== "object" || Array.isArray(skills)) {
+    errors.push("final_resume.skills must be object");
+  } else {
+    Object.keys(skills).forEach((k) => ensureArrayOfStrings(skills[k], `final_resume.skills.${k}`, errors));
+  }
 
   const work = finalResume.work_experience || [];
   if (!Array.isArray(work)) {
@@ -3683,7 +3718,7 @@ async function repairTailoredJson(originalText, builder, errors) {
     "Prior response was invalid JSON for the required schema.",
     "Return corrected JSON only; do not add new claims, employers, titles, dates, or tools beyond what was already provided.",
     "Schema:",
-    JSON.stringify(getTailoredSchemaExample(builder?.schemaVersion), null, 2),
+    JSON.stringify(getTailoredSchemaExample(builder?.schemaVersion, builder?.masterResume), null, 2),
     "Errors:",
     (errors || []).join("; "),
     "Original output:",
@@ -3873,24 +3908,18 @@ function classifyRewriteStrength(originalText = "", rewrittenText = "") {
 }
 
 function clampSkillsToMaster(finalSkills = {}, masterResume = {}) {
-  const allowed = {
-    programming_languages: masterResume.skills?.programming_languages || [],
-    data_analysis_statistics: masterResume.skills?.data_analysis_statistics || masterResume.skills?.data_science_analytics || [],
-    machine_learning: masterResume.skills?.machine_learning || masterResume.skills?.machine_learning_ai || [],
-    data_viz_engineering: masterResume.skills?.data_viz_engineering || masterResume.skills?.frameworks_libraries || [],
-    big_data_software: masterResume.skills?.big_data_software || masterResume.skills?.tools_cloud_technologies || []
-  };
+  const allowed = buildSkillsFromMaster(masterResume);
+  const normalized = normalizeFinalSkills(finalSkills || {}, masterResume);
   const intersect = (list, allowedList) => {
     if (!Array.isArray(allowedList) || !allowedList.length) return Array.isArray(list) ? list : [];
     return (Array.isArray(list) ? list : []).filter((item) => allowedList.includes(item));
   };
-  return {
-    programming_languages: intersect(finalSkills.programming_languages, allowed.programming_languages),
-    data_analysis_statistics: intersect(finalSkills.data_analysis_statistics, allowed.data_analysis_statistics),
-    machine_learning: intersect(finalSkills.machine_learning, allowed.machine_learning),
-    data_viz_engineering: intersect(finalSkills.data_viz_engineering, allowed.data_viz_engineering),
-    big_data_software: intersect(finalSkills.big_data_software, allowed.big_data_software)
-  };
+  const allowedKeys = Object.keys(allowed);
+  if (!allowedKeys.length) return normalized;
+  return allowedKeys.reduce((acc, key) => {
+    acc[key] = intersect(normalized[key], allowed[key]);
+    return acc;
+  }, {});
 }
 
 function buildAwardsFromPlan(planAwards = [], masterAwards = []) {
@@ -4214,14 +4243,22 @@ function containsDangerousLatex(text) {
   return badPatterns.some((regex) => regex.test(text || ""));
 }
 
+function formatSkillLabel(key = "") {
+  return (key || "")
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function renderMockLatex(plan, template, locks) {
   const finalResume = plan?.final_resume || {};
   const { preamble, closing } = extractPreambleAndClosing(template);
   const summary = finalResume.summary || plan?.resume_plan?.summary || "Summary not provided.";
-  const skills =
-    finalResume.skills?.programming_languages ||
-    plan?.resume_plan?.core_skills ||
-    [];
+  const skills = finalResume.skills || {};
+  const skillLines = Object.entries(skills)
+    .filter(([, list]) => Array.isArray(list) && list.length)
+    .map(([key, list]) => `\\textbf{${escapeLatex(formatSkillLabel(key))}:} ${escapeLatex(list.join(", "))}`);
   const expUpdates =
     finalResume.work_experience ||
     (plan?.resume_plan?.experience_updates || []).map((u) => ({
@@ -4248,7 +4285,7 @@ function renderMockLatex(plan, template, locks) {
     "\\vspace{3 pt}",
     "\\section{SKILLS}",
     "\\vspace{3 pt}",
-    `\\noindent\\textbf{Core Skills:} ${escapeLatex(skills.join(", ") || "N/A")}`,
+    `\\noindent${skillLines.length ? skillLines.join(" \\\\\n") : "\\textbf{Skills:} N/A"}`,
     "",
     locks.education.blockText,
     "",
@@ -4441,13 +4478,7 @@ function buildMockTailored(jobPayload, masterResume) {
     },
     final_resume: {
       summary: masterResume.summary || "",
-      skills: {
-        programming_languages: masterResume.skills?.programming_languages || [],
-        data_analysis_statistics: masterResume.skills?.data_science_analytics || [],
-        machine_learning: masterResume.skills?.machine_learning_ai || [],
-        data_viz_engineering: masterResume.skills?.frameworks_libraries || [],
-        big_data_software: masterResume.skills?.tools_cloud_technologies || []
-      },
+      skills: buildSkillsFromMaster(masterResume),
       work_experience: roles.slice(0, 3).map((r) => ({
         company: r.company || "",
         role: r.role || "",

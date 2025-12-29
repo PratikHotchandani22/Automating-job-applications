@@ -60,14 +60,7 @@ export const extractResumeData = action({
         name: args.resumeName,
         contentHash: contentHashValue,
         isActive: args.isActive,
-        skills: {
-          programming_languages: [],
-          frameworks_libraries: [],
-          tools_cloud_technologies: [],
-          data_science_analytics: [],
-          machine_learning_ai: [],
-          other_skills: [],
-        },
+        skills: {},
         education: [],
         processingStatus: "extracting_structured_resume",
       });
@@ -103,14 +96,10 @@ Return every project entry found in the resume. Do not stop at the first project
 Return valid JSON only. No markdown, no explanations, no comments.
 
 Skills Classification Rules
-Categorize skills conservatively:
-Use programming_languages only for actual languages (e.g., Python, R, Java).
-Use frameworks_libraries for libraries, frameworks, platforms, SDKs.
-Use tools_cloud_technologies for software tools, cloud platforms, databases, operating systems.
-Use data_science_analytics only for analytics/statistics/data methods.
-Use machine_learning_ai only for ML/AI concepts, models, or subfields.
-Place everything else (regulatory, writing, management, compliance, operations, soft skills) in other_skills.
-If the resume is non-technical, most skills may belong in other_skills.
+Preserve the resume's own skill categories when they are labeled (e.g., "Technical Skills", "Tools", "Certifications", "Regulatory", "Finance").
+If the resume provides a plain list without subcategories, use a single "skills" category.
+Normalize category keys to snake_case (e.g., "Core Competencies" -> "core_competencies").
+Do not invent categories that are not present in the resume.
 
 Output JSON Schema
 Return exactly this JSON structure:
@@ -127,12 +116,7 @@ Return exactly this JSON structure:
   },
   "summary": "Professional summary or objective",
   "skills": {
-    "programming_languages": [],
-    "frameworks_libraries": [],
-    "tools_cloud_technologies": [],
-    "data_science_analytics": [],
-    "machine_learning_ai": [],
-    "other_skills": []
+    "category_key": []
   },
   "work_experience": [
     {
@@ -264,30 +248,19 @@ Return only valid JSON that strictly conforms to the schema above.`;
       : undefined;
 
     // Clean skills: filter out null values from arrays
-    let cleanedSkills: {
-      programming_languages: string[];
-      frameworks_libraries: string[];
-      tools_cloud_technologies: string[];
-      data_science_analytics: string[];
-      machine_learning_ai: string[];
-      other_skills: string[];
-    } = {
-      programming_languages: [],
-      frameworks_libraries: [],
-      tools_cloud_technologies: [],
-      data_science_analytics: [],
-      machine_learning_ai: [],
-      other_skills: [],
-    };
+    let cleanedSkills: Record<string, string[]> = {};
     if (extractedContent.skills && typeof extractedContent.skills === "object") {
-      const skillCategories: Array<keyof typeof cleanedSkills> = ['programming_languages', 'frameworks_libraries', 'tools_cloud_technologies', 'data_science_analytics', 'machine_learning_ai', 'other_skills'];
-      for (const category of skillCategories) {
-        if (Array.isArray(extractedContent.skills[category])) {
-          cleanedSkills[category] = extractedContent.skills[category].filter(
-            (skill: any) => skill !== null && skill !== undefined && typeof skill === 'string' && skill.trim() !== ''
+      Object.entries(extractedContent.skills).forEach(([category, values]) => {
+        if (Array.isArray(values)) {
+          const cleaned = values.filter(
+            (skill: any) => skill !== null && skill !== undefined && typeof skill === "string" && skill.trim() !== ""
           );
+          cleanedSkills[category] = cleaned;
         }
-      }
+      });
+    }
+    if (!Object.keys(cleanedSkills).length) {
+      cleanedSkills = { skills: [] };
     }
 
     // Clean education array: convert null values to undefined

@@ -30,8 +30,12 @@ HARD RULES (must follow)
     * Use JD keywords naturally; do not keyword-stuff
     * Bold keywords only if your downstream renderer supports it; otherwise omit bolding
 * Skills curation:
-    * Classify skills into the correct categories (programming_languages, data_analysis_statistics, machine_learning, data_viz_engineering, big_data_software)
-    * Avoid dumping too many skills into a single category; keep lists concise (target 3-6 per category) and prioritize JD-relevant skills from the master resume
+    * Use ONLY the skill categories/keys present in the master resume skills object. Do not invent new categories.
+    * Deterministic classification: every skill must appear in exactly ONE bucket.
+    * Preserve master resume skills first; add JD keywords only if they already exist in the master resume and place them in the correct bucket.
+    * Caps for readability: target 6-10 items per category; hard cap 14.
+    * Spillover rule: other_skills is last-resort only (if present in master resume); keep it short (<= 6 items) and never dump uncategorized lists there.
+    * Do not leave a category empty if the master resume has items for that category.
 * Explainability must match:
     * For each rewritten bullet, provide: original_text, rewritten_text, keywords_inserted[], mapped_requirements[]
 * Do not quote large chunks of the JD. Use rubric terms and short evidence only.

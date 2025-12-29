@@ -46,6 +46,26 @@ Example transformations:
 
 ---
 
+Skills Rendering Rules
+
+The tailored resume JSON skills object is dynamic. Use ONLY the categories present in final_resume.skills.
+
+Render each non-empty category as its own line in this exact format:
+\textbf{Category Name:} item1, item2, item3
+
+Category display name:
+- Convert the category key from snake_case to Title Case (e.g., "tools_cloud_technologies" -> "Tools Cloud Technologies").
+- If the key is "other_skills", render as "Other Skills".
+
+Ordering and caps:
+- Preserve the order of the skills categories as provided in the JSON object.
+- Preserve the order of each skills array as provided (assume it is already sorted by JD relevance, then master resume).
+- If a category has more than 12 items, keep only the first 12.
+- If "other_skills" exists, keep at most 6 items.
+- Do NOT merge categories and do NOT collapse into a single "Other Skills" line.
+
+---
+
 Project Links Rendering Rules
 
 For each project, if links (GitHub, WebApp, Demo, Paper) are provided in the JSON:

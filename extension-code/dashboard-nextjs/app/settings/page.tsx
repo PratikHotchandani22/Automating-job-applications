@@ -15,7 +15,6 @@ export default function SettingsPage() {
   const [showCreateResume, setShowCreateResume] = useState(false);
   const [resumeName, setResumeName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [renamingResumeId, setRenamingResumeId] = useState<Id<"masterResumes"> | null>(null);
@@ -64,6 +63,17 @@ export default function SettingsPage() {
     api.masterResumes.getMasterResume,
     processingResumeId ? { resumeId: processingResumeId } : "skip"
   );
+  const currentProcessingStatus = processingResume?.processingStatus || uploadStage;
+  const isProcessing =
+    currentProcessingStatus === "uploading_file" ||
+    currentProcessingStatus === "extracting_text" ||
+    currentProcessingStatus === "extracting_structured_resume" ||
+    currentProcessingStatus === "saving_to_database";
+  const hasProcessingFailed =
+    uploadStage === "failed" || processingResume?.processingStatus === "failed";
+  const processingFailureMessage =
+    processingResume?.processingError || uploadError || "Processing failed.";
+  const showUploadError = Boolean(uploadError) || hasProcessingFailed;
 
   const handleCreateResume = async () => {
     if (!user || !resumeName.trim() || isCreating) return;
@@ -79,14 +89,7 @@ export default function SettingsPage() {
         name: resumeName,
         contentHash,
         isActive: resumes && resumes.length === 0, // Make first resume active
-        skills: {
-          programming_languages: [],
-          frameworks_libraries: [],
-          tools_cloud_technologies: [],
-          data_science_analytics: [],
-          machine_learning_ai: [],
-          other_skills: [],
-        },
+        skills: {},
         education: [],
       });
 
@@ -178,7 +181,6 @@ export default function SettingsPage() {
       return;
     }
 
-    setIsUploading(true);
     setUploadError(null);
     setUploadSuccess(false);
     setUploadStage("uploading_file");
@@ -242,8 +244,6 @@ export default function SettingsPage() {
       console.error("Error uploading resume:", error);
       setUploadError(error.message || "Failed to upload resume. Please try again.");
       setUploadStage("failed");
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -312,23 +312,28 @@ export default function SettingsPage() {
               <label
                 className="primary small"
                 style={{
-                  cursor: isUploading ? "not-allowed" : "pointer",
-                  opacity: isUploading ? 0.6 : 1,
+                  cursor: isProcessing ? "not-allowed" : "pointer",
+                  opacity: isProcessing ? 0.6 : 1,
                   display: "inline-block",
                 }}
               >
-                {isUploading ? "Uploading..." : "📄 Upload Resume"}
+                {isProcessing ? "Uploading..." : "📄 Upload Resume"}
                 <input
                   type="file"
                   accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"
                   onChange={handleFileUpload}
-                  disabled={isUploading || !user}
+                  disabled={isProcessing || !user}
                   style={{ display: "none" }}
                 />
               </label>
               <button
                 className="primary small"
                 onClick={() => setShowCreateResume(!showCreateResume)}
+                disabled={isProcessing}
+                style={{
+                  cursor: isProcessing ? "not-allowed" : "pointer",
+                  opacity: isProcessing ? 0.6 : 1,
+                }}
               >
                 {showCreateResume ? "Cancel" : "+ New Resume"}
               </button>
@@ -336,7 +341,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Upload Status Messages */}
-          {uploadError && (
+          {showUploadError && (
             <div
               style={{
                 padding: "0.75rem",
@@ -348,7 +353,20 @@ export default function SettingsPage() {
                 fontSize: "14px",
               }}
             >
-              {uploadError}
+              {hasProcessingFailed ? processingFailureMessage : uploadError}
+              {hasProcessingFailed && (
+                <button
+                  className="ghost tiny"
+                  onClick={() => {
+                    setUploadStage("idle");
+                    setProcessingResumeId(null);
+                    setUploadError(null);
+                  }}
+                  style={{ marginLeft: "0.5rem" }}
+                >
+                  Try again
+                </button>
+              )}
             </div>
           )}
           {uploadSuccess && (
@@ -366,76 +384,73 @@ export default function SettingsPage() {
               Resume uploaded and parsed successfully!
             </div>
           )}
-          {(isUploading || uploadStage !== "idle") && (
+          {isProcessing && (
             <div
+              className="loading-state"
               style={{
-                padding: "0.75rem",
                 marginBottom: "1rem",
                 backgroundColor: "rgba(59, 130, 246, 0.08)",
                 border: "1px solid rgba(59, 130, 246, 0.2)",
-                borderRadius: "8px",
+                borderRadius: "10px",
                 color: "var(--text)",
-                fontSize: "13px",
               }}
             >
-              <div style={{ fontWeight: 600, marginBottom: "0.35rem" }}>
-                Resume Processing
-              </div>
+              <div className="spinner" />
+              <div style={{ fontWeight: 600 }}>Processing your master resume</div>
               {(() => {
                 const steps = [
                   { key: "uploading_file", label: "Uploading file" },
                   { key: "extracting_text", label: "Extracting text" },
                   { key: "extracting_structured_resume", label: "Extracting structured resume" },
                   { key: "saving_to_database", label: "Saving to database" },
-                  { key: "done", label: "Done" },
                 ];
-                const currentStatus = processingResume?.processingStatus || uploadStage;
-                const currentIndex = steps.findIndex((step) => step.key === currentStatus);
-                return steps.map((step, idx) => {
-                  const isActive = currentStatus === step.key;
-                  const isComplete = currentIndex > idx;
-                  return (
-                    <div
-                      key={step.key}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        opacity: isActive || isComplete ? 1 : 0.6,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: "8px",
-                          height: "8px",
-                          borderRadius: "50%",
-                          backgroundColor: isComplete
-                            ? "var(--success)"
-                            : isActive
-                              ? "var(--accent)"
-                              : "var(--border)",
-                          display: "inline-block",
-                        }}
-                      />
-                      <span>{step.label}</span>
+                const currentIndex = steps.findIndex(
+                  (step) => step.key === currentProcessingStatus
+                );
+                const currentLabel =
+                  steps.find((step) => step.key === currentProcessingStatus)?.label ||
+                  "Processing";
+                return (
+                  <>
+                    <div style={{ fontSize: "13px", color: "var(--muted)" }}>
+                      {currentLabel}
                     </div>
-                  );
-                });
+                    <div style={{ display: "grid", gap: "0.35rem", width: "100%" }}>
+                      {steps.map((step, idx) => {
+                        const isActive = currentProcessingStatus === step.key;
+                        const isComplete = currentIndex > idx;
+                        return (
+                          <div
+                            key={step.key}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              opacity: isActive || isComplete ? 1 : 0.5,
+                              fontSize: "12px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: "8px",
+                                height: "8px",
+                                borderRadius: "50%",
+                                backgroundColor: isComplete
+                                  ? "var(--success)"
+                                  : isActive
+                                    ? "var(--accent)"
+                                    : "var(--border)",
+                                display: "inline-block",
+                              }}
+                            />
+                            <span>{step.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
               })()}
-              {(processingResume?.processingStatus === "failed" || uploadStage === "failed") && (
-                <div style={{ marginTop: "0.5rem", color: "var(--error)" }}>
-                  {processingResume?.processingError || uploadError || "Processing failed."}{" "}
-                  <button
-                    className="ghost tiny"
-                    onClick={() => {
-                      setUploadStage("idle");
-                      setProcessingResumeId(null);
-                    }}
-                  >
-                    Try again
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
@@ -471,7 +486,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {resumes && resumes.length > 0 ? (
+          {!isProcessing && resumes && resumes.length > 0 ? (
             <div className="table-wrapper">
               <table className="runs-table">
                 <thead>
@@ -556,11 +571,11 @@ export default function SettingsPage() {
                 </tbody>
               </table>
             </div>
-          ) : (
+          ) : !isProcessing ? (
             <div className="empty-state-container small">
               <p className="hint">No master resumes yet. Create one to get started.</p>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

@@ -110,10 +110,10 @@ const tailorInput = {
     summary: "Backend engineer",
     skills: {
       programming_languages: ["Python", "Go"],
-      data_analysis_statistics: ["SQL"],
-      machine_learning: ["ML"],
-      data_viz_engineering: ["React"],
-      big_data_software: ["AWS"]
+      data_science_analytics: ["SQL"],
+      machine_learning_ai: ["ML"],
+      frameworks_libraries: ["React"],
+      tools_cloud_technologies: ["AWS"]
     },
     work_experience: [
       {

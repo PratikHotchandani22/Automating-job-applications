@@ -16,14 +16,7 @@ export function generateResumeLatex(
       website?: string;
     };
     summary?: string;
-    skills: {
-      programming_languages: string[];
-      frameworks_libraries: string[];
-      tools_cloud_technologies: string[];
-      data_science_analytics: string[];
-      machine_learning_ai: string[];
-      other_skills: string[];
-    };
+    skills: Record<string, string[]>;
     education: Array<{
       institution: string;
       degree: string;
@@ -144,26 +137,12 @@ export function generateResumeLatex(
 
   // Skills section
   latex += `\\vspace{3 pt}\n\\section{SKILLS}\n\\vspace{3 pt}\n\\noindent`;
-  const skillParts: string[] = [];
-  
-  if (resume.skills.programming_languages.length > 0) {
-    skillParts.push(`\\textbf{Programming Languages:} ${resume.skills.programming_languages.map(s => escapeLaTeX(s)).join(", ")}`);
-  }
-  if (resume.skills.data_science_analytics.length > 0) {
-    skillParts.push(`\\textbf{Data Analysis \\& Statistics:} ${resume.skills.data_science_analytics.map(s => escapeLaTeX(s)).join(", ")}`);
-  }
-  if (resume.skills.machine_learning_ai.length > 0 || resume.skills.frameworks_libraries.length > 0) {
-    const mlSkills = [...resume.skills.machine_learning_ai, ...resume.skills.frameworks_libraries];
-    if (mlSkills.length > 0) {
-      skillParts.push(`\\textbf{Machine Learning:} ${mlSkills.map(s => escapeLaTeX(s)).join(", ")}`);
-    }
-  }
-  if (resume.skills.tools_cloud_technologies.length > 0) {
-    skillParts.push(`\\textbf{Tools \\& Cloud Technologies:} ${resume.skills.tools_cloud_technologies.map(s => escapeLaTeX(s)).join(", ")}`);
-  }
-  if (resume.skills.other_skills.length > 0) {
-    skillParts.push(`\\textbf{Other Skills:} ${resume.skills.other_skills.map(s => escapeLaTeX(s)).join(", ")}`);
-  }
+  const skillParts = Object.entries(resume.skills || {})
+    .filter(([_, values]) => Array.isArray(values) && values.length > 0)
+    .map(([category, values]) => {
+      const label = formatSkillLabel(category);
+      return `\\textbf{${escapeLaTeX(label)}:} ${values.map(s => escapeLaTeX(s)).join(", ")}`;
+    });
 
   latex += skillParts.join(" \\\\\n");
   latex += "\n\n";
@@ -330,6 +309,15 @@ function escapeLaTeX(text: string): string {
   }).join('');
   
   return result;
+}
+
+function formatSkillLabel(key: string): string {
+  if (key === "other_skills") return "Other Skills";
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 /**

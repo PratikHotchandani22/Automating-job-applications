@@ -405,14 +405,7 @@ interface MasterResume {
     technologies?: string[];
     links?: string[];
   }>;
-  skills?: {
-    languages?: string[];
-    frameworks?: string[];
-    tools?: string[];
-    databases?: string[];
-    cloud?: string[];
-    other?: string[];
-  };
+  skills?: Record<string, string[]>;
   education?: Array<{
     school?: string;
     degree?: string;
@@ -499,18 +492,7 @@ async function buildMasterResumePayload(
     summary: masterResume.summary || "",
     experience: Array.from(experienceMap.values()),
     projects: Array.from(projectsMap.values()),
-    skills: {
-      languages: masterResume.skills?.programming_languages || [],
-      frameworks: masterResume.skills?.frameworks_libraries || [],
-      tools: masterResume.skills?.tools_cloud_technologies || [],
-      databases: [],
-      cloud: [],
-      other: [
-        ...(masterResume.skills?.data_science_analytics || []),
-        ...(masterResume.skills?.machine_learning_ai || []),
-        ...(masterResume.skills?.other_skills || []),
-      ],
-    },
+    skills: normalizeSkillsMap(masterResume.skills || {}),
     education: (masterResume.education || []).map((edu: any) => ({
       school: edu.institution,
       degree: edu.degree,
@@ -537,6 +519,13 @@ function stripLinksFromMasterResume(masterResume: MasterResume): MasterResume {
       links: undefined,
     })),
   };
+}
+
+function normalizeSkillsMap(skills: Record<string, string[]>): Record<string, string[]> {
+  return Object.entries(skills || {}).reduce((acc, [key, values]) => {
+    acc[key] = Array.isArray(values) ? values.filter((v) => typeof v === "string" && v.trim().length) : [];
+    return acc;
+  }, {} as Record<string, string[]>);
 }
 
 async function resolveTailoringStrategy(
@@ -936,14 +925,7 @@ CRITICAL REMINDERS:
         gpa: edu.gpa,
       }));
 
-      const skills = {
-        programming_languages: masterResume.skills?.languages || [],
-        frameworks_libraries: masterResume.skills?.frameworks || [],
-        tools_cloud_technologies: masterResume.skills?.tools || [],
-        data_science_analytics: masterResume.skills?.databases || [],
-        machine_learning_ai: masterResume.skills?.cloud || [],
-        other_skills: masterResume.skills?.other || [],
-      };
+      const skills = normalizeSkillsMap(masterResume.skills || {});
 
       await convex.mutation(api.tailoredResumes.createTailoredResume, {
         runId: run._id,
@@ -1161,12 +1143,13 @@ ${bullets}
     })
     .join("\n\n");
 
-  const skills = masterResume.skills || {};
+  const skills = normalizeSkillsMap(masterResume.skills || {});
   const skillsLatex = Object.entries(skills)
     .filter(([_, values]) => Array.isArray(values) && values.length > 0)
-    .map(([category, values]) => 
-      `\\textbf{${escapeLatex(category)}:} ${(values as string[]).map(escapeLatex).join(", ")}`
-    )
+    .map(([category, values]) => {
+      const label = formatSkillLabel(category);
+      return `\\textbf{${escapeLatex(label)}:} ${(values as string[]).map(escapeLatex).join(", ")}`;
+    })
     .join(" \\\\\n     ");
 
   const educationLatex = (masterResume.education || [])
@@ -1295,6 +1278,15 @@ function escapeLatexChars(text: string): string {
     .replace(/\}/g, "\\}")
     .replace(/~/g, "\\textasciitilde{}")
     .replace(/\^/g, "\\textasciicircum{}");
+}
+
+function formatSkillLabel(key: string): string {
+  if (key === "other_skills") return "Other Skills";
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 /**
