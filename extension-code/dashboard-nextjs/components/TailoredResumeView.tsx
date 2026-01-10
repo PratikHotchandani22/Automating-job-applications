@@ -6,6 +6,13 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { generateResumeLatex } from "@/lib/latexGenerator";
 import type { Id } from "@/convex/_generated/dataModel";
+import {
+  AdvancedAccordion,
+  DensityToggle,
+  DiffCard,
+  DiffExplorerToolbar,
+  SectionCard,
+} from "@/components/RunDetailsComponents";
 
 interface TailoredResume {
   _id: Id<"tailoredResumes">;
@@ -102,7 +109,11 @@ interface TailoredResumeViewProps {
   artifacts: Artifact[];
   onArtifactCreated?: () => void;
   registerGeneratePdf?: (context: { trigger: () => Promise<void>; loading: boolean } | null) => void;
+  activeTab?: "preview" | "bullets" | "latex" | "extras";
+  onActiveTabChange?: (tab: "preview" | "bullets" | "latex" | "extras") => void;
 }
+
+type DensityMode = "comfortable" | "compact";
 
 function formatSkillLabel(key: string): string {
   if (key === "other_skills") return "Other Skills";
@@ -113,6 +124,44 @@ function formatSkillLabel(key: string): string {
     .join(" ");
 }
 
+function truncateText(text: string, maxLength: number) {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength).trim()}…`;
+}
+
+function extractKeywordChips(text: string, count = 3) {
+  const words = text
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 3)
+    .slice(0, 20);
+  const unique = Array.from(new Set(words.map((word) => word.toLowerCase())));
+  return unique.slice(0, count);
+}
+
+function estimateImpact(original: string, tailored: string, wasRewritten: boolean) {
+  if (!wasRewritten) return "Low";
+  const delta = Math.abs(tailored.length - original.length);
+  if (delta > 60) return "High";
+  if (delta > 20) return "Medium";
+  return "Low";
+}
+
+function tokenDiff(base: string, compare: string, mode: "add" | "remove") {
+  const baseTokens = base.split(/(\s+)/);
+  const compareTokens = compare.split(/(\s+)/);
+  return baseTokens.map((token, index) => {
+    if (!token.trim()) return token;
+    const compareToken = compareTokens[index] || "";
+    const isDiff = compareToken.trim() && compareToken !== token;
+    return (
+      <span key={`${token}-${index}`} className={isDiff ? `diff-${mode}` : undefined}>
+        {token}
+      </span>
+    );
+  });
+}
+
 export default function TailoredResumeView({
   tailoredResume,
   masterResume,
@@ -121,11 +170,29 @@ export default function TailoredResumeView({
   artifacts,
   onArtifactCreated,
   registerGeneratePdf,
+  activeTab: controlledActiveTab,
+  onActiveTabChange,
 }: TailoredResumeViewProps) {
-  const [activeTab, setActiveTab] = useState<"preview" | "bullets" | "latex" | "extras">("preview");
+  const [internalTab, setInternalTab] =
+    useState<"preview" | "bullets" | "latex" | "extras">("preview");
+  const activeTab = controlledActiveTab ?? internalTab;
+  const setActiveTab = useCallback(
+    (tab: "preview" | "bullets" | "latex" | "extras") => {
+      onActiveTabChange?.(tab);
+      if (!controlledActiveTab) {
+        setInternalTab(tab);
+      }
+    },
+    [controlledActiveTab, onActiveTabChange]
+  );
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
-  const [showDiff, setShowDiff] = useState(true);
+  const [showDifferences, setShowDifferences] = useState(true);
+  const [onlyModified, setOnlyModified] = useState(true);
+  const [searchValue, setSearchValue] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("All sections");
+  const [companyFilter, setCompanyFilter] = useState("All companies");
+  const [density, setDensity] = useState<DensityMode>("comfortable");
   const [latex, setLatex] = useState("");
   const [loadingLatex, setLoadingLatex] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -135,6 +202,8 @@ export default function TailoredResumeView({
   const [compilingLatex, setCompilingLatex] = useState(false);
   const [compileError, setCompileError] = useState<string | null>(null);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [skillsExpanded, setSkillsExpanded] = useState(false);
+  const latexTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const hasExtras =
     Boolean(tailoredResume.coverLetter?.trim()) ||
     Boolean(tailoredResume.diagnostics?.trim()) ||
@@ -211,8 +280,73 @@ export default function TailoredResumeView({
     return { totalBullets, rewrittenBullets };
   }, [tailoredResume]);
 
-  // Check if artifacts already exist
-  const existingPdf = artifacts.find((a) => a.artifactType === "pdf");
+  const bulletItems = useMemo(() => {
+    type BulletItem = {
+      id: string;
+      section: "Work Experience" | "Projects";
+      company: string;
+      role: string;
+      wasRewritten: boolean;
+      originalText: string;
+      tailoredText: string;
+    };
+
+    const items: BulletItem[] = [];
+    tailoredResume.workExperience.forEach((exp, expIndex) => {
+      exp.bullets.forEach((bullet, bulletIndex) => {
+        items.push({
+          id: `${exp.roleId || expIndex}-${bullet.bulletId || bulletIndex}`,
+          section: "Work Experience",
+          company: exp.company,
+          role: exp.title,
+          wasRewritten: bullet.wasRewritten,
+          originalText: bullet.originalText,
+          tailoredText: bullet.tailoredText,
+        });
+      });
+    });
+
+    tailoredResume.projects.forEach((proj, projIndex) => {
+      proj.bullets.forEach((bullet, bulletIndex) => {
+        items.push({
+          id: `${proj.projectId || projIndex}-${bullet.bulletId || bulletIndex}`,
+          section: "Projects",
+          company: proj.name,
+          role: "Project",
+          wasRewritten: bullet.wasRewritten,
+          originalText: bullet.originalText,
+          tailoredText: bullet.tailoredText,
+        });
+      });
+    });
+
+    return items;
+  }, [tailoredResume]);
+
+  const sectionOptions = useMemo(() => {
+    const sections = new Set(bulletItems.map((item) => item.section));
+    return ["All sections", ...Array.from(sections)];
+  }, [bulletItems]);
+
+  const companyOptions = useMemo(() => {
+    const companies = new Set(bulletItems.map((item) => item.company).filter(Boolean));
+    return ["All companies", ...Array.from(companies)];
+  }, [bulletItems]);
+
+  const filteredBullets = useMemo(() => {
+    return bulletItems.filter((bullet) => {
+      if (onlyModified && !bullet.wasRewritten) return false;
+      if (sectionFilter !== "All sections" && bullet.section !== sectionFilter) return false;
+      if (companyFilter !== "All companies" && bullet.company !== companyFilter) return false;
+      if (searchValue.trim()) {
+        const haystack = `${bullet.originalText} ${bullet.tailoredText}`.toLowerCase();
+        if (!haystack.includes(searchValue.trim().toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [bulletItems, companyFilter, onlyModified, searchValue, sectionFilter]);
+
+  // Check if a saved LaTeX artifact already exists
   const latestTex = useMemo(() => {
     const texArtifacts = artifacts.filter((a) => a.artifactType === "tex");
     if (texArtifacts.length === 0) return null;
@@ -541,23 +675,70 @@ export default function TailoredResumeView({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isLatexDirty]);
 
+  const compileState = useMemo(() => {
+    if (compilingLatex) return "Compiling";
+    if (compileError) return "Failed";
+    if (pdfPreviewUrl) return "Success";
+    return "Idle";
+  }, [compileError, compilingLatex, pdfPreviewUrl]);
+
+  const jumpToLatexSection = useCallback(
+    (label: string) => {
+      if (!latexTextareaRef.current) return;
+      const patterns = [`\\\\section{${label}}`, `\\\\section*{${label}}`];
+      const match = patterns.find((pattern) => latex.includes(pattern));
+      if (!match) return;
+      const index = latex.indexOf(match);
+      latexTextareaRef.current.focus();
+      latexTextareaRef.current.setSelectionRange(index, index + match.length);
+      const lineIndex = latex.slice(0, index).split("\n").length - 1;
+      latexTextareaRef.current.scrollTop = lineIndex * 18;
+    },
+    [latex]
+  );
+
+  const handleCopyCoverLetter = useCallback(() => {
+    if (tailoredResume.coverLetter) {
+      navigator.clipboard.writeText(tailoredResume.coverLetter);
+    }
+  }, [tailoredResume.coverLetter]);
+
+  const handleDownloadCoverLetter = useCallback(() => {
+    if (!tailoredResume.coverLetter) return;
+    const blob = new Blob([tailoredResume.coverLetter], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${generateFilename()}_cover-letter.txt`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [generateFilename, tailoredResume.coverLetter]);
+
+  const handleRegenerateCoverLetter = useCallback(() => {
+    console.info("Regenerate cover letter clicked.");
+  }, []);
+
+  const handleBulletAction = useCallback((action: string, bulletId: string) => {
+    console.info(`Bullet action: ${action}`, bulletId);
+  }, []);
+
   return (
     <div className="tailored-resume-view">
-      {/* Header */}
       <div className="trv-header">
         <div className="trv-meta">
-          <h3>Tailored Resume</h3>
-          <div className="trv-badges">
-            <span className="badge subtle">
-              {tailoredResume.modelName}
-            </span>
-            <span className="badge subtle">
-              ~{tailoredResume.wordCountEstimate} words
-            </span>
+          <div className="trv-title-row">
+            <h2>Tailored Resume</h2>
+            <span className="badge subtle">{tailoredResume.modelName}</span>
+            <span className="badge subtle">~{tailoredResume.wordCountEstimate} words</span>
             <span className={`badge ${modificationStats.rewrittenBullets > 0 ? "modified" : "subtle"}`}>
-              {modificationStats.rewrittenBullets}/{modificationStats.totalBullets} bullets rewritten
+              {modificationStats.rewrittenBullets}/{modificationStats.totalBullets} rewritten
             </span>
           </div>
+          <p className="trv-subtitle">
+            Generated {new Date(tailoredResume.createdAt).toLocaleString()}
+          </p>
         </div>
         <div className="trv-actions">
           <button
@@ -568,12 +749,10 @@ export default function TailoredResumeView({
             {generatingPdf ? (
               <>
                 <span className="btn-spinner" />
-                Generating...
+                Exporting...
               </>
-            ) : existingPdf ? (
-              "Regenerate PDF"
             ) : (
-              "Generate PDF"
+              "Download PDF"
             )}
           </button>
           <button className="ghost" onClick={handleDownloadLatex}>
@@ -588,8 +767,7 @@ export default function TailoredResumeView({
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="trv-tabs">
+      <div className="trv-tabs subtle-tabs">
         <button
           className={`trv-tab ${activeTab === "preview" ? "active" : ""}`}
           onClick={() => setActiveTab("preview")}
@@ -618,204 +796,200 @@ export default function TailoredResumeView({
         )}
       </div>
 
-      {/* Tab Content */}
       <div className="trv-content">
         {activeTab === "preview" && (
-          <div className="trv-preview">
-            {/* Summary */}
-            <div className="trv-section">
-              <h4>Summary</h4>
-              <p className="trv-summary">{renderRichText(tailoredResume.summary)}</p>
+          <div className={`trv-preview density-${density}`}>
+            <div className="trv-toolbar">
+              <DensityToggle value={density} onChange={setDensity} label="Preview density" />
             </div>
 
-            {/* Skills */}
-            <div className="trv-section">
-              <h4>Skills</h4>
-              <div className="trv-skills">
+            <SectionCard title="Summary" collapsible defaultOpen>
+              <div className="trv-summary">{renderRichText(tailoredResume.summary)}</div>
+            </SectionCard>
+
+            <SectionCard
+              title="Skills"
+              collapsible
+              defaultOpen
+              actions={
+                <button
+                  className="ghost small"
+                  type="button"
+                  onClick={() => setSkillsExpanded((prev) => !prev)}
+                >
+                  {skillsExpanded ? "Show less" : "Show all"}
+                </button>
+              }
+            >
+              <div className="skills-grid">
                 {Object.entries(tailoredResume.skills || {}).map(([category, items]) => {
                   if (!Array.isArray(items) || items.length === 0) return null;
+                  const visibleItems = skillsExpanded ? items : items.slice(0, 6);
                   return (
-                    <div className="skill-row" key={category}>
-                      <span className="skill-label">{formatSkillLabel(category)}:</span>
-                      <span className="skill-list">{items.join(", ")}</span>
+                    <div className="skill-card" key={category}>
+                      <span className="skill-label">{formatSkillLabel(category)}</span>
+                      <div className="skill-chips">
+                        {visibleItems.map((item) => (
+                          <span key={item} className="skill-chip">
+                            {item}
+                          </span>
+                        ))}
+                        {!skillsExpanded && items.length > visibleItems.length && (
+                          <span className="skill-chip muted">+{items.length - visibleItems.length} more</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
+            </SectionCard>
 
-            {/* Work Experience */}
-            <div className="trv-section">
-              <h4>Work Experience</h4>
-              {tailoredResume.workExperience.map((exp, idx) => (
-                <div key={exp.roleId || idx} className="trv-experience">
-                  <div className="exp-header">
-                    <strong>{exp.company}</strong>
-                    <span className="exp-dates">{exp.dateRange}</span>
-                  </div>
-                  <div className="exp-title">
-                    {exp.title}
-                    {exp.location && <span className="exp-location"> • {exp.location}</span>}
-                  </div>
-                      <ul className="exp-bullets">
-                        {exp.bullets.map((bullet, bIdx) => (
-                          <li key={bullet.bulletId || bIdx} className={bullet.wasRewritten ? "rewritten" : ""}>
-                            {renderRichText(bullet.tailoredText)}
-                            {bullet.wasRewritten && <span className="rewrite-badge">modified</span>}
-                          </li>
-                        ))}
-                      </ul>
-                </div>
-              ))}
-            </div>
-
-            {/* Projects */}
-            {tailoredResume.projects.length > 0 && (
-              <div className="trv-section">
-                <h4>Projects</h4>
-                {tailoredResume.projects.map((proj, idx) => (
-                  <div key={proj.projectId || idx} className="trv-project">
-                    <div className="proj-header">
-                      <strong>{proj.name}</strong>
-                      {proj.date && <span className="proj-date">{proj.date}</span>}
+            <SectionCard title="Work Experience" collapsible defaultOpen>
+              <div className="experience-stack">
+                {tailoredResume.workExperience.map((exp, idx) => (
+                  <div key={exp.roleId || idx} className="experience-card">
+                    <div className="experience-head">
+                      <div>
+                        <strong>{exp.company}</strong>
+                        <div className="experience-title">
+                          {exp.title}
+                          {exp.location && <span> • {exp.location}</span>}
+                        </div>
+                      </div>
+                      <span className="experience-dates">{exp.dateRange}</span>
                     </div>
-                    <ul className="proj-bullets">
-                      {proj.bullets.map((bullet, bIdx) => (
-                        <li key={bullet.bulletId || bIdx} className={bullet.wasRewritten ? "rewritten" : ""}>
+                    <ul className="experience-bullets">
+                      {exp.bullets.map((bullet, bIdx) => (
+                        <li key={bullet.bulletId || bIdx}>
                           {renderRichText(bullet.tailoredText)}
-                          {bullet.wasRewritten && <span className="rewrite-badge">modified</span>}
+                          {bullet.wasRewritten && <span className="rewrite-pill">modified</span>}
                         </li>
                       ))}
                     </ul>
                   </div>
                 ))}
               </div>
+            </SectionCard>
+
+            {tailoredResume.projects.length > 0 && (
+              <SectionCard title="Projects" collapsible defaultOpen>
+                <div className="experience-stack">
+                  {tailoredResume.projects.map((proj, idx) => (
+                    <div key={proj.projectId || idx} className="experience-card">
+                      <div className="experience-head">
+                        <div>
+                          <strong>{proj.name}</strong>
+                          <div className="experience-title">Project</div>
+                        </div>
+                        {proj.date && <span className="experience-dates">{proj.date}</span>}
+                      </div>
+                      <ul className="experience-bullets">
+                        {proj.bullets.map((bullet, bIdx) => (
+                          <li key={bullet.bulletId || bIdx}>
+                            {renderRichText(bullet.tailoredText)}
+                            {bullet.wasRewritten && <span className="rewrite-pill">modified</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
             )}
 
-            {/* Education */}
-            <div className="trv-section">
-              <h4>Education</h4>
-              {tailoredResume.education.map((edu, idx) => (
-                <div key={idx} className="trv-education">
-                  <div className="edu-header">
-                    <strong>{edu.institution}</strong>
-                    <span className="edu-dates">{edu.dates}</span>
+            <SectionCard title="Education" collapsible defaultOpen={false}>
+              <div className="education-grid">
+                {tailoredResume.education.map((edu, idx) => (
+                  <div key={idx} className="education-card">
+                    <div className="education-head">
+                      <strong>{edu.institution}</strong>
+                      <span className="education-dates">{edu.dates}</span>
+                    </div>
+                    <div className="education-degree">
+                      {edu.degree}
+                      {edu.gpa && <span> • GPA: {edu.gpa}</span>}
+                    </div>
                   </div>
-                  <div className="edu-degree">
-                    {edu.degree}
-                    {edu.gpa && <span className="edu-gpa"> • GPA: {edu.gpa}</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </SectionCard>
 
-            {/* Awards */}
             {tailoredResume.awards && tailoredResume.awards.length > 0 && (
-              <div className="trv-section">
-                <h4>Awards & Achievements</h4>
-                <ul className="trv-awards">
+              <SectionCard title="Awards & Achievements" collapsible defaultOpen={false}>
+                <ul className="awards-list">
                   {tailoredResume.awards.map((award, idx) => (
                     <li key={idx}>
-                      <strong>{award.name}</strong> - {award.issuer} ({award.year})
-                      {award.details && <span className="award-details"> - {award.details}</span>}
+                      <strong>{award.name}</strong> — {award.issuer} ({award.year})
+                      {award.details && <span className="muted"> — {award.details}</span>}
                     </li>
                   ))}
                 </ul>
-              </div>
+              </SectionCard>
             )}
           </div>
         )}
 
         {activeTab === "bullets" && (
-          <div className="trv-bullets">
-            <div className="bullets-header">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={showDiff}
-                  onChange={(e) => setShowDiff(e.target.checked)}
-                />
-                <span>Show differences</span>
-              </label>
+          <div className={`trv-bullets density-${density}`}>
+            <DiffExplorerToolbar
+              searchValue={searchValue}
+              onSearchChange={setSearchValue}
+              sectionFilter={sectionFilter}
+              onSectionFilterChange={setSectionFilter}
+              companyFilter={companyFilter}
+              onCompanyFilterChange={setCompanyFilter}
+              onlyModified={onlyModified}
+              onOnlyModifiedChange={setOnlyModified}
+              showDifferences={showDifferences}
+              onShowDifferencesChange={setShowDifferences}
+              density={density}
+              onDensityChange={setDensity}
+              sectionOptions={sectionOptions}
+              companyOptions={companyOptions}
+            />
+
+            <div className="diff-list">
+              {filteredBullets.map((bullet) => {
+                const summary = truncateText(bullet.tailoredText || bullet.originalText, 140);
+                const chips = [
+                  bullet.section,
+                  bullet.company,
+                  ...extractKeywordChips(bullet.tailoredText),
+                ].filter(Boolean);
+                const impact = estimateImpact(
+                  bullet.originalText,
+                  bullet.tailoredText,
+                  bullet.wasRewritten
+                );
+                const originalNode = showDifferences
+                  ? tokenDiff(bullet.originalText, bullet.tailoredText, "remove")
+                  : renderRichText(bullet.originalText);
+                const tailoredNode = showDifferences
+                  ? tokenDiff(bullet.tailoredText, bullet.originalText, "add")
+                  : renderRichText(bullet.tailoredText);
+
+                return (
+                  <DiffCard
+                    key={bullet.id}
+                    summary={summary}
+                    chips={chips}
+                    impact={impact}
+                    wasRewritten={bullet.wasRewritten}
+                    original={originalNode}
+                    tailored={tailoredNode}
+                    onEdit={() => handleBulletAction("edit", bullet.id)}
+                    onRevert={() => handleBulletAction("revert", bullet.id)}
+                    onAccept={() => handleBulletAction("accept", bullet.id)}
+                  />
+                );
+              })}
             </div>
 
-            {/* Work Experience Bullets */}
-            {tailoredResume.workExperience.map((exp) =>
-              exp.bullets
-                .filter((b) => showDiff ? b.wasRewritten : true)
-                .map((bullet, idx) => (
-                  <div key={`${exp.roleId}-${bullet.bulletId || idx}`} className="bullet-change-card">
-                    <div className="bullet-change-header">
-                      <div className="bullet-role-info">
-                        <strong>{exp.company}</strong> <span>- {exp.title}</span>
-                      </div>
-                      <span className={`change-badge ${bullet.wasRewritten ? "modified" : "unchanged"}`}>
-                        {bullet.wasRewritten ? "Modified" : "Unchanged"}
-                      </span>
-                    </div>
-
-                    {bullet.wasRewritten ? (
-                      <div className="bullet-comparison">
-                        <div className="bullet-version before">
-                          <label>Original</label>
-                          <div className="bullet-text">{renderRichText(bullet.originalText)}</div>
-                        </div>
-                        <div className="change-arrow">→</div>
-                        <div className="bullet-version after">
-                          <label>Tailored</label>
-                          <div className="bullet-text">{renderRichText(bullet.tailoredText)}</div>
-                        </div>
-                      </div>
-                    ) : (
-                        <div className="bullet-unchanged">
-                          <div className="bullet-text">{renderRichText(bullet.tailoredText)}</div>
-                        </div>
-                    )}
-                  </div>
-                ))
-            )}
-
-            {/* Project Bullets */}
-            {tailoredResume.projects.map((proj) =>
-              proj.bullets
-                .filter((b) => showDiff ? b.wasRewritten : true)
-                .map((bullet, idx) => (
-                  <div key={`${proj.projectId}-${bullet.bulletId || idx}`} className="bullet-change-card">
-                    <div className="bullet-change-header">
-                      <div className="bullet-role-info">
-                        <strong>{proj.name}</strong> <span>- Project</span>
-                      </div>
-                      <span className={`change-badge ${bullet.wasRewritten ? "modified" : "unchanged"}`}>
-                        {bullet.wasRewritten ? "Modified" : "Unchanged"}
-                      </span>
-                    </div>
-
-                    {bullet.wasRewritten ? (
-                      <div className="bullet-comparison">
-                        <div className="bullet-version before">
-                          <label>Original</label>
-                          <div className="bullet-text">{renderRichText(bullet.originalText)}</div>
-                        </div>
-                        <div className="change-arrow">→</div>
-                        <div className="bullet-version after">
-                          <label>Tailored</label>
-                          <div className="bullet-text">{renderRichText(bullet.tailoredText)}</div>
-                        </div>
-                      </div>
-                    ) : (
-                        <div className="bullet-unchanged">
-                          <div className="bullet-text">{renderRichText(bullet.tailoredText)}</div>
-                        </div>
-                    )}
-                  </div>
-                ))
-            )}
-
-            {modificationStats.rewrittenBullets === 0 && showDiff && (
+            {filteredBullets.length === 0 && (
               <div className="empty-state-container">
-                <div className="empty-state-icon">📝</div>
-                <h3>No Modified Bullets</h3>
-                <p className="hint">No bullets were rewritten for this job. Uncheck "Show differences" to see all bullets.</p>
+                <div className="empty-state-icon">🧭</div>
+                <h3>No Bullet Changes Found</h3>
+                <p className="hint">Try clearing filters or switching off “Only modified”.</p>
               </div>
             )}
           </div>
@@ -823,54 +997,74 @@ export default function TailoredResumeView({
 
         {activeTab === "latex" && (
           <div className="trv-latex">
-            <div className="panel" style={{ marginBottom: "12px" }}>
-              <div className="panel-head" style={{ alignItems: "center" }}>
-                <div>
-                  <h4>LaTeX Editor</h4>
-                  <p className="hint">
-                    Edit the LaTeX source, save your changes, and compile to preview the PDF.
-                  </p>
-                </div>
-                <div className="latex-actions">
-                  <button className="ghost" onClick={() => loadLatexSource({ force: true })} disabled={loadingLatex}>
-                    Reload source
-                  </button>
-                  <button className="ghost" onClick={handleResetLatex} disabled={!isLatexDirty}>
-                    Reset edits
-                  </button>
-                  <button className="ghost" onClick={handleCopyLatex} disabled={!latex}>
-                    Copy
-                  </button>
-                  <button className="ghost" onClick={handleDownloadLatex} disabled={!latex}>
-                    Download .tex
-                  </button>
-                  <button className="ghost" onClick={handleSaveLatex} disabled={savingLatex || !isLatexDirty}>
-                    {savingLatex ? "Saving..." : "Save"}
-                  </button>
-                  <button
-                    className="primary"
-                    onClick={handleCompilePreview}
-                    disabled={compilingLatex || !latex}
-                  >
-                    {compilingLatex ? "Compiling..." : "Compile PDF"}
-                  </button>
-                </div>
+            <div className="latex-header">
+              <div>
+                <h3>LaTeX Source</h3>
+                <p className="hint">
+                  Edit the LaTeX source, save your changes, and compile to preview the PDF.
+                </p>
               </div>
-
-              {loadError && <div className="warning-box" style={{ marginTop: 10 }}>{loadError}</div>}
-              {saveError && <div className="warning-box" style={{ marginTop: 10 }}>{saveError}</div>}
-              {compileError && <div className="warning-box" style={{ marginTop: 10 }}>{compileError}</div>}
-              {saveOkAt ? (
-                <div className="meta" style={{ marginTop: 10 }}>
-                  Saved at {new Date(saveOkAt).toLocaleString()}
-                  {isLatexDirty ? " (unsaved edits present)" : ""}
-                </div>
-              ) : (
-                <div className="meta" style={{ marginTop: 10 }}>
-                  {isLatexDirty ? "Unsaved edits present" : latestTex ? "Loaded saved LaTeX" : "Using generated LaTeX"}
-                </div>
-              )}
+              <div className={`compile-pill ${compileState.toLowerCase()}`}>
+                {compileState}
+              </div>
+              <div className="latex-actions">
+                <button className="ghost" onClick={() => loadLatexSource({ force: true })} disabled={loadingLatex}>
+                  Reload source
+                </button>
+                <button className="ghost" onClick={handleResetLatex} disabled={!isLatexDirty}>
+                  Reset edits
+                </button>
+                <button className="ghost" onClick={handleCopyLatex} disabled={!latex}>
+                  Copy
+                </button>
+                <button className="ghost" onClick={handleDownloadLatex} disabled={!latex}>
+                  Download .tex
+                </button>
+                <button className="ghost" onClick={handleSaveLatex} disabled={savingLatex || !isLatexDirty}>
+                  {savingLatex ? "Saving..." : "Save"}
+                </button>
+                <button
+                  className="primary"
+                  onClick={handleCompilePreview}
+                  disabled={compilingLatex || !latex}
+                >
+                  {compilingLatex ? "Compiling..." : "Compile PDF"}
+                </button>
+              </div>
+              <div className="latex-outline">
+                <span className="muted">Jump to:</span>
+                {["Summary", "Skills", "Experience", "Projects", "Education", "Awards"].map((label) => (
+                  <button key={label} className="ghost small" type="button" onClick={() => jumpToLatexSection(label)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {(loadError || saveError) && (
+              <div className="warning-box" style={{ marginBottom: "12px" }}>
+                {loadError && <div>Load error: {loadError}</div>}
+                {saveError && <div>Save error: {saveError}</div>}
+              </div>
+            )}
+
+            {compileError && (
+              <details className="latex-error-panel" open>
+                <summary>Compile errors</summary>
+                <pre>{compileError}</pre>
+              </details>
+            )}
+
+            {saveOkAt ? (
+              <div className="meta" style={{ marginBottom: "12px" }}>
+                Saved at {new Date(saveOkAt).toLocaleString()}
+                {isLatexDirty ? " (unsaved edits present)" : ""}
+              </div>
+            ) : (
+              <div className="meta" style={{ marginBottom: "12px" }}>
+                {isLatexDirty ? "Unsaved edits present" : latestTex ? "Loaded saved LaTeX" : "Using generated LaTeX"}
+              </div>
+            )}
 
             <div className="latex-split">
               <div className="latex-pane">
@@ -880,6 +1074,7 @@ export default function TailoredResumeView({
                 </div>
                 <div className="latex-textarea-wrap">
                   <textarea
+                    ref={latexTextareaRef}
                     className="latex-textarea"
                     value={latex}
                     onChange={(e) => setLatex(e.target.value)}
@@ -897,7 +1092,7 @@ export default function TailoredResumeView({
                     {pdfPreviewUrl ? "✓ Compiled" : compilingLatex ? "Compiling..." : "Ready"}
                   </span>
                 </div>
-                <div className="latex-preview">
+                <div className="latex-preview" aria-busy={compilingLatex}>
                   {pdfPreviewUrl ? (
                     <iframe title="PDF preview" src={pdfPreviewUrl} />
                   ) : (
@@ -936,299 +1131,45 @@ export default function TailoredResumeView({
         {activeTab === "extras" && hasExtras && (
           <div className="trv-extras">
             {tailoredResume.coverLetter?.trim() && (
-              <div className="trv-section">
-                <h4>Cover Letter</h4>
-                <pre className="trv-extra-block">{tailoredResume.coverLetter}</pre>
-              </div>
+              <SectionCard
+                title="Cover Letter"
+                actions={
+                  <div className="inline-actions">
+                    <button className="ghost small" type="button" onClick={handleCopyCoverLetter}>
+                      Copy
+                    </button>
+                    <button className="ghost small" type="button" onClick={handleDownloadCoverLetter}>
+                      Download
+                    </button>
+                    <button className="ghost small" type="button" onClick={handleRegenerateCoverLetter}>
+                      Regenerate
+                    </button>
+                  </div>
+                }
+              >
+                <div className="document-viewer">{renderRichText(tailoredResume.coverLetter)}</div>
+              </SectionCard>
             )}
-            {tailoredResume.diagnostics?.trim() && (
-              <div className="trv-section">
-                <h4>Diagnostics</h4>
-                <pre className="trv-extra-block">{tailoredResume.diagnostics}</pre>
-              </div>
-            )}
-            {tailoredResume.reasoningSummary?.trim() && (
-              <div className="trv-section">
-                <h4>Reasoning Summary</h4>
-                <pre className="trv-extra-block">{tailoredResume.reasoningSummary}</pre>
-              </div>
+
+            {(tailoredResume.diagnostics?.trim() || tailoredResume.reasoningSummary?.trim()) && (
+              <AdvancedAccordion title="Advanced details">
+                {tailoredResume.diagnostics?.trim() && (
+                  <div className="advanced-block">
+                    <h4>Diagnostics</h4>
+                    <pre>{tailoredResume.diagnostics}</pre>
+                  </div>
+                )}
+                {tailoredResume.reasoningSummary?.trim() && (
+                  <div className="advanced-block">
+                    <h4>Reasoning Summary</h4>
+                    <pre>{tailoredResume.reasoningSummary}</pre>
+                  </div>
+                )}
+              </AdvancedAccordion>
             )}
           </div>
         )}
       </div>
-
-      <style jsx>{`
-        .tailored-resume-view {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-
-        .trv-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 1rem;
-          flex-wrap: wrap;
-        }
-
-        .trv-meta h3 {
-          margin: 0 0 0.5rem 0;
-        }
-
-        .trv-badges {
-          display: flex;
-          gap: 0.5rem;
-          flex-wrap: wrap;
-        }
-
-        .trv-extra-block {
-          white-space: pre-wrap;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border);
-          border-radius: 8px;
-          padding: 0.75rem;
-          font-family: "SF Mono", SFMono-Regular, ui-monospace, monospace;
-          font-size: 0.85rem;
-          line-height: 1.4;
-        }
-
-        .badge {
-          padding: 4px 10px;
-          border-radius: 12px;
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: uppercase;
-        }
-
-        .badge.subtle {
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid var(--border);
-          color: var(--muted);
-        }
-
-        .badge.modified {
-          background: rgba(96, 165, 250, 0.2);
-          color: var(--primary);
-        }
-
-        .trv-actions {
-          display: flex;
-          gap: 0.5rem;
-        }
-
-        .trv-tabs {
-          display: flex;
-          gap: 4px;
-          border-bottom: 1px solid var(--border);
-        }
-
-        .trv-tab {
-          padding: 10px 16px;
-          background: transparent;
-          border: none;
-          color: var(--muted);
-          cursor: pointer;
-          border-radius: 6px 6px 0 0;
-          font-size: 14px;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-
-        .trv-tab:hover {
-          background: rgba(96, 165, 250, 0.1);
-          color: #e2e8f0;
-        }
-
-        .trv-tab.active {
-          background: var(--bg);
-          color: var(--primary);
-          border-bottom: 2px solid var(--primary);
-          margin-bottom: -1px;
-        }
-
-        .trv-content {
-          min-height: 400px;
-        }
-
-        .trv-preview {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-
-        .trv-section {
-          padding: 1rem;
-          background: var(--bg);
-          border-radius: 10px;
-          border: 1px solid var(--border);
-        }
-
-        .trv-section h4 {
-          margin: 0 0 1rem 0;
-          font-size: 14px;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--primary);
-        }
-
-        .trv-summary {
-          line-height: 1.6;
-          color: #e2e8f0;
-          margin: 0;
-        }
-
-        .trv-skills {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-
-        .skill-row {
-          display: flex;
-          gap: 0.5rem;
-          font-size: 13px;
-        }
-
-        .skill-label {
-          color: var(--muted);
-          min-width: 100px;
-          flex-shrink: 0;
-        }
-
-        .skill-list {
-          color: #e2e8f0;
-        }
-
-        .trv-experience,
-        .trv-project,
-        .trv-education {
-          margin-bottom: 1rem;
-          padding-bottom: 1rem;
-          border-bottom: 1px solid var(--border);
-        }
-
-        .trv-experience:last-child,
-        .trv-project:last-child,
-        .trv-education:last-child {
-          margin-bottom: 0;
-          padding-bottom: 0;
-          border-bottom: none;
-        }
-
-        .exp-header,
-        .proj-header,
-        .edu-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 0.25rem;
-        }
-
-        .exp-dates,
-        .proj-date,
-        .edu-dates {
-          color: var(--muted);
-          font-size: 13px;
-        }
-
-        .exp-title,
-        .edu-degree {
-          color: #e2e8f0;
-          font-size: 14px;
-          margin-bottom: 0.5rem;
-        }
-
-        .exp-location,
-        .edu-gpa {
-          color: var(--muted);
-        }
-
-        .exp-bullets,
-        .proj-bullets {
-          margin: 0.5rem 0 0 1rem;
-          padding: 0;
-          list-style: disc;
-        }
-
-        .exp-bullets li,
-        .proj-bullets li {
-          margin-bottom: 0.5rem;
-          line-height: 1.5;
-          color: #e2e8f0;
-          font-size: 13px;
-        }
-
-        .exp-bullets li.rewritten,
-        .proj-bullets li.rewritten {
-          position: relative;
-        }
-
-        .rewrite-badge {
-          display: inline-block;
-          margin-left: 0.5rem;
-          padding: 2px 6px;
-          background: rgba(96, 165, 250, 0.2);
-          color: var(--primary);
-          border-radius: 4px;
-          font-size: 10px;
-          text-transform: uppercase;
-        }
-
-        .trv-awards {
-          margin: 0;
-          padding: 0 0 0 1rem;
-          list-style: disc;
-        }
-
-        .trv-awards li {
-          margin-bottom: 0.5rem;
-          color: #e2e8f0;
-          font-size: 13px;
-        }
-
-        .award-details {
-          color: var(--muted);
-        }
-
-        .trv-bullets {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-
-        .bullets-header {
-          padding: 0.5rem;
-          border-bottom: 1px solid var(--border);
-          margin-bottom: 0.5rem;
-        }
-
-        .bullet-unchanged {
-          padding: 1rem;
-          background: var(--bg);
-          border-radius: 8px;
-        }
-
-        .trv-latex {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .latex-code {
-          background: var(--bg);
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          padding: 1rem;
-          overflow-x: auto;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-size: 12px;
-          line-height: 1.5;
-          color: #e2e8f0;
-          max-height: 500px;
-          overflow-y: auto;
-        }
-
-      `}</style>
     </div>
   );
 }

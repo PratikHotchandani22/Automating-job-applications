@@ -9,6 +9,11 @@ import { api } from "@/convex/_generated/api";
 import { renderRichText } from "@/utils/renderRichText";
 import TailoredResumeView from "@/components/TailoredResumeView";
 import UserOnboarding from "@/components/UserOnboarding";
+import {
+  PageHeader,
+  SectionCard,
+  StickySummaryRail,
+} from "@/components/RunDetailsComponents";
 
 const STAGE_ORDER = [
   "queued",
@@ -135,7 +140,9 @@ export default function RunResultsPage() {
   const executeTriggeredRef = useRef(false);
   
   const [activeTab, setActiveTab] = useState<"overview" | "tailored" | "rubric" | "selection">("overview");
-  const [copyToast, setCopyToast] = useState(false);
+  const [tailoredSubTab, setTailoredSubTab] =
+    useState<"preview" | "bullets" | "latex" | "extras">("preview");
+  const [copyToast, setCopyToast] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Get user from Convex
@@ -200,11 +207,71 @@ export default function RunResultsPage() {
     return runDetails.tailoredResumes[0];
   }, [runDetails?.tailoredResumes]);
 
+  const readyScore = useMemo(() => {
+    if (!runDetails?.run) return 0;
+    let score = 0;
+    if (runDetails.run.status === "success") score += 45;
+    if (primaryTailoredResume) score += 25;
+    if (runDetails?.selectionPlan?.coverage) {
+      const total =
+        runDetails.selectionPlan.coverage.mustTotal + runDetails.selectionPlan.coverage.niceTotal;
+      if (total > 0) {
+        const covered =
+          runDetails.selectionPlan.coverage.mustCovered +
+          runDetails.selectionPlan.coverage.niceCovered;
+        score += Math.round((covered / total) * 30);
+      }
+    }
+    return Math.min(score, 100);
+  }, [primaryTailoredResume, runDetails?.run, runDetails?.selectionPlan?.coverage]);
+
+  const nextActions = useMemo(() => {
+    const actions: { label: string; onClick?: () => void; done?: boolean }[] = [];
+    if (runDetails?.run.status !== "success") {
+      actions.push({ label: "Tailoring in progress", done: false });
+    } else {
+      actions.push({
+        label: "Review bullet changes",
+        onClick: () => {
+          setActiveTab("tailored");
+          setTailoredSubTab("bullets");
+        },
+        done: false,
+      });
+      actions.push({
+        label: "Scan JD rubric coverage",
+        onClick: () => setActiveTab("rubric"),
+        done: Boolean(runDetails?.selectionPlan?.coverage),
+      });
+      actions.push({
+        label: "Export final PDF",
+        onClick: () => generatePdfContext?.trigger(),
+        done: Boolean(
+          runDetails?.artifacts?.some((artifact: any) => artifact.artifactType === "pdf")
+        ),
+      });
+    }
+    return actions;
+  }, [generatePdfContext, runDetails?.artifacts, runDetails?.run.status, runDetails?.selectionPlan?.coverage]);
+
   const handleCopyRunId = useCallback(() => {
     navigator.clipboard.writeText(runIdParam);
-    setCopyToast(true);
-    setTimeout(() => setCopyToast(false), 2000);
+    setCopyToast("Run ID copied");
+    setTimeout(() => setCopyToast(null), 2000);
   }, [runIdParam]);
+
+  const handleCopyRawJson = useCallback(() => {
+    if (!runDetails) return;
+    navigator.clipboard.writeText(JSON.stringify(runDetails, null, 2));
+    setCopyToast("Run data copied");
+    setTimeout(() => setCopyToast(null), 2000);
+  }, [runDetails]);
+
+  const handleCopyShareLink = useCallback(() => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopyToast("Share link copied");
+    setTimeout(() => setCopyToast(null), 2000);
+  }, []);
 
   const handleRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -251,10 +318,113 @@ export default function RunResultsPage() {
   const generatePdfLoading = Boolean(generatePdfContext?.loading);
   const generatePdfDisabled =
     !generatePdfContext || generatePdfLoading || run.status !== "success";
+  const readyLabel = run.status === "success" && readyScore >= 85 ? "Ready to submit" : "Needs review";
+  const stageLabel = STAGE_LABELS[run.stage] || run.stage;
+
+  // Reusable summary rail body shared between sticky rail and mobile drawer.
+  const SummaryRailContent = () => (
+    <div className="rail-stack">
+      <div className="rail-card">
+        <div className="rail-card-head">
+          <h3>Run Health</h3>
+          <span className={`status-pill ${run.status}`}>{run.status.toUpperCase()}</span>
+        </div>
+        <div className="rail-metrics">
+          <div className="rail-metric">
+            <span className="label">Stage</span>
+            <span>{stageLabel}</span>
+          </div>
+          <div className="rail-metric">
+            <span className="label">Started</span>
+            <span>{formatDate(run.createdAt)}</span>
+          </div>
+          {run.completedAt && (
+            <div className="rail-metric">
+              <span className="label">Completed</span>
+              <span>{formatDate(run.completedAt)}</span>
+            </div>
+          )}
+        </div>
+        {run.status === "running" && (
+          <div className="pipeline-progress">
+            <div className="pipeline-progress-fill" style={{ width: `${runProgress}%` }} />
+          </div>
+        )}
+      </div>
+
+      <div className="rail-card">
+        <div className="rail-card-head">
+          <h3>Ready to Submit</h3>
+          <span className="score-pill">{readyScore}%</span>
+        </div>
+        <p className="rail-summary">{readyLabel}</p>
+        <div className="score-bar">
+          <div className="score-fill" style={{ width: `${readyScore}%` }} />
+        </div>
+        {selectionPlan?.coverage && (
+          <div className="rail-metrics">
+            <div className="rail-metric">
+              <span className="label">Must-have</span>
+              <span>
+                {selectionPlan.coverage.mustCovered}/{selectionPlan.coverage.mustTotal}
+              </span>
+            </div>
+            <div className="rail-metric">
+              <span className="label">Nice-to-have</span>
+              <span>
+                {selectionPlan.coverage.niceCovered}/{selectionPlan.coverage.niceTotal}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="rail-card">
+        <div className="rail-card-head">
+          <h3>Next Best Actions</h3>
+        </div>
+        <div className="next-actions">
+          {nextActions.map((action, index) => (
+            <button
+              key={`${action.label}-${index}`}
+              type="button"
+              className={`next-action ${action.done ? "done" : ""}`}
+              onClick={action.onClick}
+              disabled={!action.onClick}
+            >
+              <span className="next-action-icon">{action.done ? "✓" : "•"}</span>
+              <span>{action.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="rail-card">
+        <div className="rail-card-head">
+          <h3>Export & Share</h3>
+        </div>
+        <div className="rail-actions">
+          <button
+            className="primary"
+            type="button"
+            disabled={generatePdfDisabled}
+            onClick={() => generatePdfContext?.trigger()}
+          >
+            {generatePdfLoading ? "Exporting..." : "Download PDF"}
+          </button>
+          <button className="ghost" type="button" onClick={handleCopyShareLink}>
+            Copy share link
+          </button>
+          <button className="ghost" type="button" onClick={() => setActiveTab("tailored")}>
+            View tailored resume
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="run-detail-page">
-      {/* Breadcrumb */}
       <div className="breadcrumb">
         <Link href="/runs" className="breadcrumb-link">
           Runs
@@ -263,524 +433,483 @@ export default function RunResultsPage() {
         <span className="breadcrumb-current">{job?.title || run.runId}</span>
       </div>
 
-      {/* Header Panel */}
-      <div className="panel">
-          <div className="run-detail-head">
-            <div>
-              <div className="run-id-row">
-                <button className="run-id-pill status-pill subtle" onClick={handleCopyRunId}>
-                  <code>{run.runId.slice(0, 12)}...</code>
-                  <span className="copy-icon">📋</span>
-                </button>
-                {copyToast && <span className="copy-toast">Copied!</span>}
-              </div>
-              <h2>{job?.title || "Untitled Job"}</h2>
-              <p className="hint">
-                {job?.company || "Unknown Company"}
-                {job?.location && ` • ${job.location}`}
-              </p>
-            </div>
-            <div className="actions-inline">
-              {job?.jobUrl && (
-                <a
-                  href={job.jobUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="primary"
-                >
-                  View Job
-                </a>
-              )}
+      <div className="panel run-header-panel">
+        <PageHeader
+          title={job?.title || "Untitled Job"}
+          subtitle={`${job?.company || "Unknown Company"}${job?.location ? ` • ${job.location}` : ""}`}
+          statusBadge={
+            <span className={`status-pill ${run.status}`}>{run.status.toUpperCase()}</span>
+          }
+          timestamps={
+            <span className="hint">
+              Started {formatDate(run.createdAt)}
+              {run.completedAt && ` • Completed ${formatDate(run.completedAt)}`}
+              {` • ${stageLabel}`}
+            </span>
+          }
+          actions={
+            <div className="header-cta-group">
               <button
                 className="primary"
                 type="button"
                 disabled={generatePdfDisabled}
                 onClick={() => generatePdfContext?.trigger()}
               >
-                {generatePdfLoading ? "Generating..." : "Generate PDF"}
+                {generatePdfLoading ? "Exporting..." : "Download PDF"}
               </button>
-              <button className="ghost small refresh-btn" onClick={handleRefresh} title="Refresh">
-                🔄
+              <button className="ghost" type="button" onClick={handleRefresh}>
+                Regenerate
               </button>
-              <Link href="/runs" className="ghost small">
-                ← All Runs
-              </Link>
+              <button className="ghost" type="button" onClick={() => setActiveTab("rubric")}>
+                View JD
+              </button>
+              <button
+                className="ghost"
+                type="button"
+                onClick={() => {
+                  setActiveTab("tailored");
+                  setTailoredSubTab("bullets");
+                }}
+              >
+                Compare
+              </button>
             </div>
-          </div>
+          }
+          overflow={
+            <details className="overflow-menu">
+              <summary className="ghost small" aria-label="More actions">
+                ⋯
+              </summary>
+              <div className="overflow-menu-panel">
+                <button type="button" className="overflow-menu-item" onClick={handleCopyRunId}>
+                  Copy run ID
+                </button>
+                <button type="button" className="overflow-menu-item" onClick={handleCopyRawJson}>
+                  Copy raw JSON
+                </button>
+                <Link href="/runs" className="overflow-menu-item">
+                  Back to runs
+                </Link>
+              </div>
+            </details>
+          }
+        />
+        {copyToast && <div className="copy-toast">{copyToast}</div>}
+      </div>
 
-        {/* Status Row */}
-        <div className="run-status-row">
-          <div className={`status-indicator ${run.status}`}>
-            <span className="status-icon">
-              {run.status === "success" ? "✓" : run.status === "error" ? "✕" : "●"}
-            </span>
-            {run.status.toUpperCase()}
-          </div>
-          <span className="stage-badge">
-            {STAGE_LABELS[run.stage] || run.stage}
-          </span>
-          <span className="hint">
-            Started {formatDate(run.createdAt)}
-            {run.completedAt && ` • Completed ${formatDate(run.completedAt)}`}
-          </span>
+      {run.status === "error" && run.errorMessage && (
+        <div className="warning-box">
+          <strong>Error:</strong> {run.errorMessage}
         </div>
+      )}
 
-        {/* Progress Bar (for running runs) */}
-        {run.status === "running" && (
-          <div className="pipeline-progress" style={{ marginTop: "1rem" }}>
-            <div
-              className="pipeline-progress-fill"
-              style={{ width: `${runProgress}%` }}
-            />
-          </div>
-        )}
-
-        {/* Error Message */}
-        {run.status === "error" && run.errorMessage && (
-          <div className="warning-box" style={{ marginTop: "1rem" }}>
-            <strong>Error:</strong> {run.errorMessage}
-          </div>
-        )}
-
-        {/* Timing Stats */}
-        {run.timing && (
-          <div className="metrics-grid" style={{ marginTop: "1rem" }}>
-            {run.timing.rubricMs && (
-              <div className="metric-item">
-                <label>Rubric</label>
-                <div>{formatDuration(run.timing.rubricMs)}</div>
-              </div>
-            )}
-            {run.timing.embeddingMs && (
-              <div className="metric-item">
-                <label>Embedding</label>
-                <div>{formatDuration(run.timing.embeddingMs)}</div>
-              </div>
-            )}
-            {run.timing.selectionMs && (
-              <div className="metric-item">
-                <label>Selection</label>
-                <div>{formatDuration(run.timing.selectionMs)}</div>
-              </div>
-            )}
-            {run.timing.tailorMs && (
-              <div className="metric-item">
-                <label>Tailoring</label>
-                <div>{formatDuration(run.timing.tailorMs)}</div>
-              </div>
-            )}
-            {run.timing.totalMs && (
-              <div className="metric-item">
-                <label>Total</label>
-                <div>{formatDuration(run.timing.totalMs)}</div>
-              </div>
-            )}
-          </div>
-        )}
+      <div className="summary-drawer">
+        <details>
+          <summary>Run summary</summary>
+          <SummaryRailContent />
+        </details>
       </div>
 
-      {/* Main Tabs */}
-      <div className="tabs">
-        <button
-          className={`tab ${activeTab === "overview" ? "active" : ""}`}
-          onClick={() => setActiveTab("overview")}
-        >
-          Overview
-        </button>
-        <button
-          className={`tab ${activeTab === "tailored" ? "active" : ""}`}
-          onClick={() => setActiveTab("tailored")}
-          disabled={!tailoredResumes?.length}
-        >
-          Tailored Resume
-          {tailoredResumes?.length ? ` (${tailoredResumes.length})` : ""}
-        </button>
-        <button
-          className={`tab ${activeTab === "rubric" ? "active" : ""}`}
-          onClick={() => setActiveTab("rubric")}
-          disabled={!jdRubric}
-        >
-          JD Rubric
-        </button>
-        <button
-          className={`tab ${activeTab === "selection" ? "active" : ""}`}
-          onClick={() => setActiveTab("selection")}
-          disabled={!selectionPlan}
-        >
-          Selection Plan
-        </button>
-      </div>
+      <div className="run-command-center">
+        <StickySummaryRail>
+          <SummaryRailContent />
+        </StickySummaryRail>
 
-      {/* Tab Content */}
-      <div className="panel">
-        {activeTab === "overview" && (
-          <div className="tab-pane">
-            {job && (
-              <div className="job-detail-shell">
-                {jobDescriptionText ? (
-                  <section className="explain-section job-description-panel">
-                    <div className="job-description-accordion">
-                      {jobSections.map((section, idx) => (
-                        <details key={`${section.title}-${idx}`} open={idx === 0}>
-                          <summary>
-                            <span className="job-section-title">{section.title}</span>
-                            <span className="job-section-toggle" aria-hidden="true" />
-                          </summary>
-                          <div className="section-content">{renderRichText(section.content)}</div>
-                        </details>
-                      ))}
+        <div className="run-main">
+          <div className="tabs subtle-tabs">
+            <button
+              className={`tab ${activeTab === "overview" ? "active" : ""}`}
+              onClick={() => setActiveTab("overview")}
+            >
+              Overview
+            </button>
+            <button
+              className={`tab ${activeTab === "tailored" ? "active" : ""}`}
+              onClick={() => setActiveTab("tailored")}
+              disabled={!tailoredResumes?.length}
+            >
+              Tailored Resume
+              {tailoredResumes?.length ? ` (${tailoredResumes.length})` : ""}
+            </button>
+            <button
+              className={`tab ${activeTab === "rubric" ? "active" : ""}`}
+              onClick={() => setActiveTab("rubric")}
+              disabled={!jdRubric}
+            >
+              JD Rubric
+            </button>
+            <button
+              className={`tab ${activeTab === "selection" ? "active" : ""}`}
+              onClick={() => setActiveTab("selection")}
+              disabled={!selectionPlan}
+            >
+              Selection Plan
+            </button>
+          </div>
+
+          <div className="panel">
+            {activeTab === "overview" && (
+              <div className="tab-pane">
+                {job && (
+                  <SectionCard title="Job Description" subtitle="Tailoring input" collapsible defaultOpen>
+                    {jobDescriptionText ? (
+                      <div className="job-description-accordion">
+                        {jobSections.map((section, idx) => (
+                          <details key={`${section.title}-${idx}`} open={idx === 0}>
+                            <summary>
+                              <span className="job-section-title">{section.title}</span>
+                              <span className="job-section-toggle" aria-hidden="true" />
+                            </summary>
+                            <div className="section-content">{renderRichText(section.content)}</div>
+                          </details>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="hint">No job description was captured for this posting.</p>
+                    )}
+                  </SectionCard>
+                )}
+
+                {selectionPlan?.coverage && (
+                  <SectionCard title="Requirement Coverage">
+                    <div className="coverage-visual">
+                      <div className="coverage-circle">
+                        <svg viewBox="0 0 120 120">
+                          <circle
+                            cx="60"
+                            cy="60"
+                            r="54"
+                            fill="none"
+                            stroke="var(--border)"
+                            strokeWidth="8"
+                          />
+                          <circle
+                            cx="60"
+                            cy="60"
+                            r="54"
+                            fill="none"
+                            stroke="var(--success)"
+                            strokeWidth="8"
+                            strokeDasharray={`${((selectionPlan.coverage.mustCovered + selectionPlan.coverage.niceCovered) / (selectionPlan.coverage.mustTotal + selectionPlan.coverage.niceTotal)) * 339} 339`}
+                            strokeLinecap="round"
+                            transform="rotate(-90 60 60)"
+                          />
+                        </svg>
+                        <span className="coverage-percent">
+                          {Math.round(
+                            ((selectionPlan.coverage.mustCovered + selectionPlan.coverage.niceCovered) /
+                              (selectionPlan.coverage.mustTotal + selectionPlan.coverage.niceTotal)) *
+                              100
+                          )}%
+                        </span>
+                      </div>
+                      <div className="coverage-breakdown">
+                        <div className="coverage-row">
+                          <span className="coverage-label">Must-have requirements</span>
+                          <span className="coverage-value">
+                            {selectionPlan.coverage.mustCovered}/{selectionPlan.coverage.mustTotal}
+                          </span>
+                        </div>
+                        <div className="coverage-row">
+                          <span className="coverage-label">Nice-to-have requirements</span>
+                          <span className="coverage-value">
+                            {selectionPlan.coverage.niceCovered}/{selectionPlan.coverage.niceTotal}
+                          </span>
+                        </div>
+                        <div className="coverage-row total">
+                          <span className="coverage-label">Total covered</span>
+                          <span className="coverage-value">
+                            {selectionPlan.coverage.mustCovered + selectionPlan.coverage.niceCovered}/
+                            {selectionPlan.coverage.mustTotal + selectionPlan.coverage.niceTotal}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </section>
-                ) : (
-                  <section className="explain-section job-description-panel">
-                    <p className="hint">No job description was captured for this posting.</p>
-                  </section>
+                  </SectionCard>
                 )}
               </div>
             )}
 
-            {/* Coverage Stats */}
-            {selectionPlan?.coverage && (
-              <div className="explain-section">
-                <h3>Requirement Coverage</h3>
-                <div className="coverage-visual">
-                  <div className="coverage-circle">
-                    <svg viewBox="0 0 120 120">
-                      <circle
-                        cx="60"
-                        cy="60"
-                        r="54"
-                        fill="none"
-                        stroke="var(--border)"
-                        strokeWidth="8"
-                      />
-                      <circle
-                        cx="60"
-                        cy="60"
-                        r="54"
-                        fill="none"
-                        stroke="var(--success)"
-                        strokeWidth="8"
-                        strokeDasharray={`${((selectionPlan.coverage.mustCovered + selectionPlan.coverage.niceCovered) / (selectionPlan.coverage.mustTotal + selectionPlan.coverage.niceTotal)) * 339} 339`}
-                        strokeLinecap="round"
-                        transform="rotate(-90 60 60)"
-                      />
-                    </svg>
-                    <span className="coverage-percent">
-                      {Math.round(
-                        ((selectionPlan.coverage.mustCovered + selectionPlan.coverage.niceCovered) /
-                          (selectionPlan.coverage.mustTotal + selectionPlan.coverage.niceTotal)) *
-                          100
-                      )}%
-                    </span>
-                  </div>
-                  <div className="coverage-breakdown">
-                    <div className="coverage-row">
-                      <span className="coverage-label">Must-have requirements</span>
-                      <span className="coverage-value">
-                        {selectionPlan.coverage.mustCovered}/{selectionPlan.coverage.mustTotal}
-                      </span>
-                    </div>
-                    <div className="coverage-row">
-                      <span className="coverage-label">Nice-to-have requirements</span>
-                      <span className="coverage-value">
-                        {selectionPlan.coverage.niceCovered}/{selectionPlan.coverage.niceTotal}
-                      </span>
-                    </div>
-                    <div className="coverage-row total">
-                      <span className="coverage-label">Total covered</span>
-                      <span className="coverage-value">
-                        {selectionPlan.coverage.mustCovered + selectionPlan.coverage.niceCovered}/
-                        {selectionPlan.coverage.mustTotal + selectionPlan.coverage.niceTotal}
-                      </span>
-                    </div>
-                  </div>
+            {primaryTailoredResume && (
+              <div
+                className="tab-pane"
+                aria-hidden={activeTab !== "tailored"}
+                style={{ display: activeTab === "tailored" ? undefined : "none" }}
+              >
+                <TailoredResumeView
+                  tailoredResume={primaryTailoredResume}
+                  masterResume={masterResume}
+                  job={job}
+                  runId={run._id}
+                  artifacts={artifacts || []}
+                  onArtifactCreated={handleRefresh}
+                  registerGeneratePdf={registerGeneratePdf}
+                  activeTab={tailoredSubTab}
+                  onActiveTabChange={setTailoredSubTab}
+                />
+              </div>
+            )}
+
+            {activeTab === "tailored" && !primaryTailoredResume && (
+              <div className="tab-pane">
+                <div className="empty-state-container">
+                  <div className="empty-state-icon">📄</div>
+                  <h3>No Tailored Resume Yet</h3>
+                  <p className="hint">
+                    {run.status === "running"
+                      ? "The tailored resume is being generated..."
+                      : run.status === "error"
+                        ? "An error occurred before the resume could be generated."
+                        : "No tailored resume was generated for this run."}
+                  </p>
                 </div>
               </div>
             )}
 
-          </div>
-        )}
-
-        {primaryTailoredResume && (
-          <div
-            className="tab-pane"
-            aria-hidden={activeTab !== "tailored"}
-            style={{ display: activeTab === "tailored" ? undefined : "none" }}
-          >
-            <TailoredResumeView
-              tailoredResume={primaryTailoredResume}
-              masterResume={masterResume}
-              job={job}
-              runId={run._id}
-              artifacts={artifacts || []}
-              onArtifactCreated={handleRefresh}
-              registerGeneratePdf={registerGeneratePdf}
-            />
-          </div>
-        )}
-
-        {activeTab === "tailored" && !primaryTailoredResume && (
-          <div className="tab-pane">
-            <div className="empty-state-container">
-              <div className="empty-state-icon">📄</div>
-              <h3>No Tailored Resume Yet</h3>
-              <p className="hint">
-                {run.status === "running"
-                  ? "The tailored resume is being generated..."
-                  : run.status === "error"
-                    ? "An error occurred before the resume could be generated."
-                    : "No tailored resume was generated for this run."}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "rubric" && jdRubric && (
-          <div className="tab-pane">
-            {job && (
-              <section className="explain-section job-description-panel">
-                <h3>Job Description (Tailoring Input)</h3>
-                <p className="section-hint">
-                  This is the raw job description text that was provided to the resume tailoring prompt.
-                </p>
-                {jobDescriptionText ? (
-                  <div className="job-description-accordion">
-                    {jobSections.map((section, idx) => (
-                      <details key={`${section.title}-${idx}`} open={idx === 0}>
-                        <summary>
-                          <span className="job-section-title">{section.title}</span>
-                          <span className="job-section-toggle" aria-hidden="true" />
-                        </summary>
-                        <div className="section-content">{renderRichText(section.content)}</div>
-                      </details>
+            {activeTab === "rubric" && jdRubric && (
+              <div className="tab-pane">
+                {job && (
+                  <SectionCard title="Job Description" subtitle="Tailoring input" collapsible defaultOpen={false}>
+                    {jobDescriptionText ? (
+                      <div className="job-description-accordion">
+                        {jobSections.map((section, idx) => (
+                          <details key={`${section.title}-${idx}`} open={idx === 0}>
+                            <summary>
+                              <span className="job-section-title">{section.title}</span>
+                              <span className="job-section-toggle" aria-hidden="true" />
+                            </summary>
+                            <div className="section-content">{renderRichText(section.content)}</div>
+                          </details>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="hint">No job description was captured for this posting.</p>
+                    )}
+                  </SectionCard>
+                )}
+                <SectionCard title={`Job Requirements (${jdRubric.requirements.length})`}>
+                  <p className="section-hint">
+                    These are the requirements extracted from the job description.
+                  </p>
+                  <div className="requirements-list">
+                    {jdRubric.requirements.map((req: any) => (
+                      <div
+                        key={req.reqId}
+                        className={`requirement-card ${
+                          selectionPlan?.coverage.uncoveredRequirements.some(
+                            (u: any) => u.reqId === req.reqId
+                          )
+                            ? "uncovered"
+                            : "covered"
+                        }`}
+                      >
+                        <div className="requirement-header">
+                          <div className="requirement-badge">
+                            <span className={`badge ${req.type}`}>{req.type}</span>
+                            <span className="weight">Weight: {req.weight}</span>
+                          </div>
+                          <span className="status-badge">
+                            {selectionPlan?.coverage.uncoveredRequirements.some(
+                              (u: any) => u.reqId === req.reqId
+                            )
+                              ? "❌ Uncovered"
+                              : "✓ Covered"}
+                          </span>
+                        </div>
+                        <div className="requirement-text">{renderRichText(req.requirement)}</div>
+                        {req.jdEvidence?.length > 0 && (
+                          <div className="requirement-evidence">
+                            <strong>Evidence from JD:</strong>
+                            <div className="evidence-chips">
+                              {req.jdEvidence.map((ev: string, idx: number) => (
+                                <span key={idx} className="evidence-chip">
+                                  "{renderRichText(ev)}"
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
-                ) : (
-                  <p className="hint">No job description was captured for this posting.</p>
-                )}
-              </section>
-            )}
-            <div className="explain-section">
-              <h3>Job Requirements ({jdRubric.requirements.length})</h3>
-              <p className="section-hint">
-                These are the requirements extracted from the job description.
-              </p>
-              <div className="requirements-list">
-                {jdRubric.requirements.map((req: any) => (
-                  <div
-                    key={req.reqId}
-                    className={`requirement-card ${
-                      selectionPlan?.coverage.uncoveredRequirements.some(
-                        (u: any) => u.reqId === req.reqId
-                      )
-                        ? "uncovered"
-                        : "covered"
-                    }`}
-                  >
-                    <div className="requirement-header">
-                      <div className="requirement-badge">
-                        <span className={`badge ${req.type}`}>{req.type}</span>
-                        <span className="weight">Weight: {req.weight}</span>
-                      </div>
-                      <span className="status-badge">
-                        {selectionPlan?.coverage.uncoveredRequirements.some(
-                          (u: any) => u.reqId === req.reqId
-                        )
-                          ? "❌ Uncovered"
-                          : "✓ Covered"}
-                      </span>
-                    </div>
-                    <div className="requirement-text">{renderRichText(req.requirement)}</div>
-                    {req.jdEvidence?.length > 0 && (
-                      <div className="requirement-evidence">
-                        <strong>Evidence from JD:</strong>
-                        <div className="evidence-chips">
-                          {req.jdEvidence.map((ev: string, idx: number) => (
-                            <span key={idx} className="evidence-chip">
-                              "
-                              {renderRichText(ev)}
-                              "
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+                </SectionCard>
 
-            {/* Keywords */}
-            {jdRubric.keywords?.length > 0 && (
-              <div className="explain-section" style={{ marginTop: "1.5rem" }}>
-                <h3>Keywords ({jdRubric.keywords.length})</h3>
-                <div className="keywords-grid">
-                  {jdRubric.keywords.slice(0, 20).map((kw: any, idx: number) => (
-                    <div key={idx} className={`keyword-card importance-${kw.importance}`}>
-                      <div className="keyword-header">
-                        <span className="keyword-term">{kw.term}</span>
-                        <span className="keyword-type">{kw.type}</span>
-                      </div>
-                      <div className="keyword-importance">
-                        <div className="importance-bar">
-                          <div
-                            className="importance-fill"
-                            style={{ width: `${kw.importance * 20}%` }}
-                          />
-                        </div>
-                        <span className="importance-value">{kw.importance}/5</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "rubric" && !jdRubric && (
-          <div className="tab-pane">
-            <div className="empty-state-container">
-              <div className="empty-state-icon">📋</div>
-              <h3>No Rubric Generated</h3>
-              <p className="hint">
-                {run.status === "running"
-                  ? "The rubric is being generated..."
-                  : "No rubric was generated for this run."}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "selection" && selectionPlan && (
-          <div className="tab-pane">
-            <div className="explain-section">
-              <h3>Selection Summary</h3>
-              <div className="info-grid">
-                <div className="info-item">
-                  <label>Experience Bullets</label>
-                  <div>{selectionPlan.budgetsUsed.experienceBullets}</div>
-                </div>
-                <div className="info-item">
-                  <label>Project Bullets</label>
-                  <div>{selectionPlan.budgetsUsed.projectBullets}</div>
-                </div>
-                <div className="info-item">
-                  <label>Award Lines</label>
-                  <div>{selectionPlan.budgetsUsed.awardLines}</div>
-                </div>
-                <div className="info-item">
-                  <label>Embedding Model</label>
-                  <div>{selectionPlan.embeddingModel}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Selected Bullets by Category */}
-            <div className="explain-section" style={{ marginTop: "1.5rem" }}>
-              <h3>Selected Work Experience Bullets ({selectionPlan.selected.workExperience.length})</h3>
-              <div className="pipeline-bullets">
-                {selectionPlan.selected.workExperience.map((bullet: any) => (
-                  <div key={bullet.bulletId} className="pipeline-bullet">
-                    <details>
-                      <summary className="pipeline-bullet-summary">
-                        <div className="pipeline-bullet-left">
-                          <div className="pipeline-bullet-text">{renderRichText(bullet.originalText)}</div>
-                          <div className="pipeline-bullet-sub">
-                            <span className="pipeline-mini-tag">{bullet.company}</span>
-                            <span className="pipeline-mini-tag">{bullet.role}</span>
+                {jdRubric.keywords?.length > 0 && (
+                  <SectionCard title={`Keywords (${jdRubric.keywords.length})`} collapsible defaultOpen={false}>
+                    <div className="keywords-grid">
+                      {jdRubric.keywords.slice(0, 20).map((kw: any, idx: number) => (
+                        <div key={idx} className={`keyword-card importance-${kw.importance}`}>
+                          <div className="keyword-header">
+                            <span className="keyword-term">{kw.term}</span>
+                            <span className="keyword-type">{kw.type}</span>
+                          </div>
+                          <div className="keyword-importance">
+                            <div className="importance-bar">
+                              <div
+                                className="importance-fill"
+                                style={{ width: `${kw.importance * 20}%` }}
+                              />
+                            </div>
+                            <span className="importance-value">{kw.importance}/5</span>
                           </div>
                         </div>
-                        <div className="pipeline-bullet-right">
-                          <span className="pipeline-evidence-pill">
-                            Evidence: {bullet.evidence.score.toFixed(2)} ({bullet.evidence.tier})
-                          </span>
-                        </div>
-                      </summary>
-                      <div className="pipeline-bullet-body">
-                        <div className="pipeline-bullet-section-title">Matching Requirements</div>
-                        <div className="pipeline-match-grid">
-                          {bullet.matches.slice(0, 3).map((match: any) => (
-                            <div key={match.reqId} className="pipeline-match-row">
-                              <span className="pipeline-tag">{match.reqId}</span>
-                              <span>Relevance: {match.rel.toFixed(2)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="pipeline-bullet-section-title" style={{ marginTop: "1rem" }}>
-                          Rewrite Intent
-                        </div>
-                        <span className={`badge ${bullet.rewriteIntent}`}>{bullet.rewriteIntent}</span>
-                      </div>
-                    </details>
+                      ))}
+                    </div>
+                  </SectionCard>
+                )}
+              </div>
+            )}
+
+            {activeTab === "rubric" && !jdRubric && (
+              <div className="tab-pane">
+                <div className="empty-state-container">
+                  <div className="empty-state-icon">📋</div>
+                  <h3>No Rubric Generated</h3>
+                  <p className="hint">
+                    {run.status === "running"
+                      ? "The rubric is being generated..."
+                      : "No rubric was generated for this run."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "selection" && selectionPlan && (
+              <div className="tab-pane">
+                <SectionCard title="Selection Summary">
+                  <div className="info-grid">
+                    <div className="info-item">
+                      <label>Experience Bullets</label>
+                      <div>{selectionPlan.budgetsUsed.experienceBullets}</div>
+                    </div>
+                    <div className="info-item">
+                      <label>Project Bullets</label>
+                      <div>{selectionPlan.budgetsUsed.projectBullets}</div>
+                    </div>
+                    <div className="info-item">
+                      <label>Award Lines</label>
+                      <div>{selectionPlan.budgetsUsed.awardLines}</div>
+                    </div>
+                    <div className="info-item">
+                      <label>Embedding Model</label>
+                      <div>{selectionPlan.embeddingModel}</div>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                </SectionCard>
 
-            {selectionPlan.selected.projects.length > 0 && (
-              <div className="explain-section" style={{ marginTop: "1.5rem" }}>
-                <h3>Selected Project Bullets ({selectionPlan.selected.projects.length})</h3>
-                <div className="pipeline-bullets">
-                  {selectionPlan.selected.projects.map((bullet: any) => (
-                    <div key={bullet.bulletId} className="pipeline-bullet">
-                      <div className="pipeline-bullet-summary">
-                        <div className="pipeline-bullet-left">
-                          <div className="pipeline-bullet-text">{renderRichText(bullet.originalText)}</div>
-                        </div>
-                        <div className="pipeline-bullet-right">
-                          <span className="pipeline-evidence-pill">
-                            Evidence: {bullet.evidence.score.toFixed(2)}
-                          </span>
-                        </div>
+                <SectionCard
+                  title={`Selected Work Experience Bullets (${selectionPlan.selected.workExperience.length})`}
+                  collapsible
+                  defaultOpen={false}
+                >
+                  <div className="pipeline-bullets">
+                    {selectionPlan.selected.workExperience.map((bullet: any) => (
+                      <div key={bullet.bulletId} className="pipeline-bullet">
+                        <details>
+                          <summary className="pipeline-bullet-summary">
+                            <div className="pipeline-bullet-left">
+                              <div className="pipeline-bullet-text">{renderRichText(bullet.originalText)}</div>
+                              <div className="pipeline-bullet-sub">
+                                <span className="pipeline-mini-tag">{bullet.company}</span>
+                                <span className="pipeline-mini-tag">{bullet.role}</span>
+                              </div>
+                            </div>
+                            <div className="pipeline-bullet-right">
+                              <span className="pipeline-evidence-pill">
+                                Evidence: {bullet.evidence.score.toFixed(2)} ({bullet.evidence.tier})
+                              </span>
+                            </div>
+                          </summary>
+                          <div className="pipeline-bullet-body">
+                            <div className="pipeline-bullet-section-title">Matching Requirements</div>
+                            <div className="pipeline-match-grid">
+                              {bullet.matches.slice(0, 3).map((match: any) => (
+                                <div key={match.reqId} className="pipeline-match-row">
+                                  <span className="pipeline-tag">{match.reqId}</span>
+                                  <span>Relevance: {match.rel.toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="pipeline-bullet-section-title" style={{ marginTop: "1rem" }}>
+                              Rewrite Intent
+                            </div>
+                            <span className={`badge ${bullet.rewriteIntent}`}>{bullet.rewriteIntent}</span>
+                          </div>
+                        </details>
                       </div>
+                    ))}
+                  </div>
+                </SectionCard>
+
+                {selectionPlan.selected.projects.length > 0 && (
+                  <SectionCard
+                    title={`Selected Project Bullets (${selectionPlan.selected.projects.length})`}
+                    collapsible
+                    defaultOpen={false}
+                  >
+                    <div className="pipeline-bullets">
+                      {selectionPlan.selected.projects.map((bullet: any) => (
+                        <div key={bullet.bulletId} className="pipeline-bullet">
+                          <div className="pipeline-bullet-summary">
+                            <div className="pipeline-bullet-left">
+                              <div className="pipeline-bullet-text">{renderRichText(bullet.originalText)}</div>
+                            </div>
+                            <div className="pipeline-bullet-right">
+                              <span className="pipeline-evidence-pill">
+                                Evidence: {bullet.evidence.score.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </SectionCard>
+                )}
+
+                {selectionPlan.coverage.uncoveredRequirements.length > 0 && (
+                  <SectionCard
+                    title={`Uncovered Requirements (${selectionPlan.coverage.uncoveredRequirements.length})`}
+                    collapsible
+                    defaultOpen={false}
+                  >
+                    <p className="section-hint">
+                      These requirements could not be covered with your resume bullets.
+                    </p>
+                    <div className="requirements-list">
+                      {selectionPlan.coverage.uncoveredRequirements.map((ur: any) => (
+                        <div key={ur.reqId} className="requirement-card uncovered">
+                          <div className="requirement-header">
+                            <div className="requirement-badge">
+                              <span className={`badge ${ur.type}`}>{ur.type}</span>
+                              <span className="weight">Weight: {ur.weight}</span>
+                            </div>
+                          </div>
+                          <div className="uncovered-reason">
+                            <strong>Reason:</strong> {ur.reason}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </SectionCard>
+                )}
               </div>
             )}
 
-            {/* Uncovered Requirements */}
-            {selectionPlan.coverage.uncoveredRequirements.length > 0 && (
-              <div className="explain-section" style={{ marginTop: "1.5rem" }}>
-                <h3>Uncovered Requirements ({selectionPlan.coverage.uncoveredRequirements.length})</h3>
-                <p className="section-hint">
-                  These requirements could not be covered with your resume bullets.
-                </p>
-                <div className="requirements-list">
-                  {selectionPlan.coverage.uncoveredRequirements.map((ur: any) => (
-                    <div key={ur.reqId} className="requirement-card uncovered">
-                      <div className="requirement-header">
-                        <div className="requirement-badge">
-                          <span className={`badge ${ur.type}`}>{ur.type}</span>
-                          <span className="weight">Weight: {ur.weight}</span>
-                        </div>
-                      </div>
-                      <div className="uncovered-reason">
-                        <strong>Reason:</strong> {ur.reason}
-                      </div>
-                    </div>
-                  ))}
+            {activeTab === "selection" && !selectionPlan && (
+              <div className="tab-pane">
+                <div className="empty-state-container">
+                  <div className="empty-state-icon">📊</div>
+                  <h3>No Selection Plan</h3>
+                  <p className="hint">
+                    {run.status === "running"
+                      ? "The selection plan is being generated..."
+                      : "No selection plan was generated for this run."}
+                  </p>
                 </div>
               </div>
             )}
           </div>
-        )}
-
-        {activeTab === "selection" && !selectionPlan && (
-          <div className="tab-pane">
-            <div className="empty-state-container">
-              <div className="empty-state-icon">📊</div>
-              <h3>No Selection Plan</h3>
-              <p className="hint">
-                {run.status === "running"
-                  ? "The selection plan is being generated..."
-                  : "No selection plan was generated for this run."}
-              </p>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
