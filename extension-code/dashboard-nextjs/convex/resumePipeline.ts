@@ -582,7 +582,9 @@ export const syncArtifactsFromBackend = action({
                     if (Array.isArray(project.links)) {
                       linkValues.push(...project.links);
                     } else if (typeof project.links === "object") {
-                      linkValues.push(...Object.values(project.links));
+                      linkValues.push(
+                        ...Object.values(project.links as Record<string, string>)
+                      );
                     }
                   }
                   const cleanedLinks = Array.from(

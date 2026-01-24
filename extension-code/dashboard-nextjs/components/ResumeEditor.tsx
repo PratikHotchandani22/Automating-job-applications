@@ -194,11 +194,6 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Don't render if resume is not loaded yet
-  if (!resume) {
-    return null;
-  }
-
   // Local state for all resume sections
   const [header, setHeader] = useState(resume?.header || {});
   const [summary, setSummary] = useState(resume?.summary || "");
@@ -620,6 +615,10 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
   const updateHeader = (field: string, value: string) => {
     setHeader({ ...header, [field]: value || undefined });
   };
+
+  if (!resume) {
+    return null;
+  }
 
   return (
     <div
@@ -1579,7 +1578,7 @@ function ArrayEditor({
       </button>
       {itemsArray.length === 0 && (
         <p className="hint" style={{ fontSize: "12px", marginTop: "0.5rem" }}>
-          No items yet. Click "Add Item" to add one.
+          No items yet. Click &quot;Add Item&quot; to add one.
         </p>
       )}
     </div>

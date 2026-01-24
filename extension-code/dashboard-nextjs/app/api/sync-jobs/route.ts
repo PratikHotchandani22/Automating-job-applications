@@ -46,8 +46,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found in Convex" }, { status: 404 });
     }
 
-    const createdJobs = [];
-    const errors = [];
+    const createdJobs: Array<{ tabId: string; jobId: string }> = [];
+    const errors: Array<{ jobData: any; error: string }> = [];
 
     for (const jobData of jobsToSync) {
       try {
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       created: createdJobs.length,
-      errors: errors.length,
+      errorCount: errors.length,
       jobs: createdJobs,
       errors: errors,
     });
@@ -115,4 +115,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

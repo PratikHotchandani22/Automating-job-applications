@@ -41,3 +41,4 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 
 The code now explicitly passes the `publishableKey` to `ClerkProvider`, which will help diagnose if the environment variable is being loaded correctly.
 
+

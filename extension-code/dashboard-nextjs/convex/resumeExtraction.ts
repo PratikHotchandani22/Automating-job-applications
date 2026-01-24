@@ -8,6 +8,7 @@ import { generateResumeLatex } from "./latexGenerator";
 import {
   buildHeaderLinks,
   buildProjectLinks,
+  extractProjectsWithRelatedArticle,
   extractAllLinks,
   extractProjectNamesFromText,
   mergeProjectsWithFallback,
@@ -295,9 +296,9 @@ Return only valid JSON that strictly conforms to the schema above.`;
     }
 
     // Clean awards array: convert null values to undefined
-    let cleanedAwards = undefined;
+    let cleanedAwards: any[] | undefined = undefined;
     if (extractedContent.awards && Array.isArray(extractedContent.awards)) {
-      cleanedAwards = extractedContent.awards.map((award: any) => {
+      const awards = extractedContent.awards.map((award: any) => {
         const cleaned: any = {
           name: award.name || "",
           issuer: award.issuer || "",
@@ -311,22 +312,19 @@ Return only valid JSON that strictly conforms to the schema above.`;
         return cleaned;
       });
       // Filter out invalid awards (must have at least name, issuer, or year)
-      cleanedAwards = cleanedAwards.filter((award: any) => award.name || award.issuer || award.year);
-      // If cleaned awards array is empty, set to undefined
-      if (cleanedAwards.length === 0) {
-        cleanedAwards = undefined;
-      }
+      const filteredAwards = awards.filter(
+        (award: any) => award.name || award.issuer || award.year
+      );
+      cleanedAwards = filteredAwards.length > 0 ? filteredAwards : undefined;
     }
 
     // Clean mentorship array: filter out null values
-    let cleanedMentorship = undefined;
+    let cleanedMentorship: string[] | undefined = undefined;
     if (extractedContent.mentorship && Array.isArray(extractedContent.mentorship)) {
-      cleanedMentorship = extractedContent.mentorship.filter(
+      const filteredMentorship = extractedContent.mentorship.filter(
         (item: any) => item !== null && item !== undefined && typeof item === 'string' && item.trim() !== ''
       );
-      if (cleanedMentorship.length === 0) {
-        cleanedMentorship = undefined;
-      }
+      cleanedMentorship = filteredMentorship.length > 0 ? filteredMentorship : undefined;
     }
 
     const fallbackProjectNames = extractProjectNamesFromText(args.resumeText);
@@ -334,14 +332,19 @@ Return only valid JSON that strictly conforms to the schema above.`;
       Array.isArray(extractedContent.projects) ? extractedContent.projects : [],
       fallbackProjectNames
     );
-    const normalizedProjectNames = new Set(
-      fallbackProjectNames.map((name) => name.trim().toLowerCase()).filter(Boolean)
-    );
+    const normalizedProjectNames = fallbackProjectNames
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean);
+    const normalizedProjectSet = new Set(normalizedProjectNames);
     const filteredProjects =
-      normalizedProjectNames.size > 0
+      normalizedProjectNames.length > 0
         ? mergedProjects.filter((proj: any) => {
             const name = typeof proj?.name === "string" ? proj.name.trim().toLowerCase() : "";
-            return name && normalizedProjectNames.has(name);
+            if (!name) return false;
+            if (normalizedProjectSet.has(name)) return true;
+            return normalizedProjectNames.some(
+              (fallbackName) => name.startsWith(fallbackName) || fallbackName.startsWith(name)
+            );
           })
         : mergedProjects;
     extractedContent.projects = filteredProjects;
@@ -351,11 +354,48 @@ Return only valid JSON that strictly conforms to the schema above.`;
     const normalizedResumeLinks = resumeLinks.flatMap((link) => extractAllLinks(link));
     const allLinks = Array.from(new Set([...textLinks, ...normalizedResumeLinks]));
     const headerLinks = buildHeaderLinks(args.resumeText, allLinks);
-    const projectLinks = buildProjectLinks(
+    let projectLinks = buildProjectLinks(
       mergedProjects.map((proj: any) => proj?.name).filter(Boolean),
       args.resumeText,
       allLinks
     );
+    const relatedArticleProjects = extractProjectsWithRelatedArticle(
+      args.resumeText,
+      mergedProjects.map((proj: any) => proj?.name).filter(Boolean)
+    );
+    if (relatedArticleProjects.length > 0) {
+      const headerLinkSet = new Set<string>();
+      const headerValues = [
+        headerLinks.linkedin,
+        headerLinks.github,
+        headerLinks.portfolio,
+        ...(headerLinks.other || []),
+      ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+      headerValues.forEach((value) => headerLinkSet.add(value));
+
+      const filteredLinks = allLinks.filter((link) => {
+        const lower = link.toLowerCase();
+        if (headerLinkSet.has(link)) return false;
+        if (lower.includes("linkedin.com")) return false;
+        if (lower.includes("github.com")) return false;
+        if (headerLinks.portfolio && link === headerLinks.portfolio) return false;
+        return true;
+      });
+
+      const relatedLower = new Set(relatedArticleProjects.map((name) => name.toLowerCase()));
+      const retainedLinks = projectLinks.filter(
+        (entry) => !relatedLower.has(entry.projectName.toLowerCase())
+      );
+      const remainingLinks = [...filteredLinks];
+
+      relatedArticleProjects.forEach((projectName) => {
+        const nextLink = remainingLinks.shift();
+        if (!nextLink) return;
+        retainedLinks.push({ projectName, links: [nextLink] });
+      });
+
+      projectLinks = retainedLinks;
+    }
 
     const linksPayload: ResumeLinkData = {
       headerLinks,

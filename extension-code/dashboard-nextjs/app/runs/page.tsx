@@ -28,7 +28,7 @@ export default function RunsPage() {
   // Map Convex data to RunRecord format
   const runs: RunRecord[] = useMemo(() => {
     if (!runsData) return [];
-    return runsData.map((run) => ({
+    return runsData.map((run: any) => ({
       runId: run.runId,
       title: run.title,
       company: run.company,

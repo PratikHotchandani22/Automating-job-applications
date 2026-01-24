@@ -151,7 +151,8 @@ export function extractProjectNamesFromText(text: string): string[] {
   const seen = new Set<string>();
   const dateRegex = /\b(0?[1-9]|1[0-2])[\/\-]\d{4}\b|\b20\d{2}\b/;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     if (!inProjects) {
       if (headerRegex.test(line)) {
         inProjects = true;
@@ -173,12 +174,23 @@ export function extractProjectNamesFromText(text: string): string[] {
     if (!normalizedLine) continue;
     if (normalizedLine.length > 180) continue;
 
-    const candidate =
-      normalizedLine.includes(":")
-        ? normalizedLine.split(":")[0].trim()
-        : normalizedLine.split("|")[0].split(" - ")[0].trim();
+    const baseCandidate = normalizedLine.split("|")[0].split(" - ")[0].trim();
+    let candidate = baseCandidate;
+    if (normalizedLine.includes(":")) {
+      const [left, ...rest] = normalizedLine.split(":");
+      const leftTrim = left.trim();
+      const rightTrim = rest.join(":").trim();
+      const leftWords = leftTrim.split(/\s+/).filter(Boolean).length;
+      const isGenericLabel = /^(project|projects|capstone|thesis|research|case study)$/i.test(leftTrim);
+      if ((isGenericLabel || leftWords <= 2) && rightTrim) {
+        candidate = rightTrim;
+      } else {
+        candidate = normalizedLine;
+      }
+    }
     if (!candidate || candidate.length < 2) continue;
     const lowerCandidate = candidate.toLowerCase();
+    if (lowerCandidate.includes("related article")) continue;
     if (
       lowerCandidate === "github" ||
       lowerCandidate === "demo" ||
@@ -191,7 +203,17 @@ export function extractProjectNamesFromText(text: string): string[] {
     if (sectionStopRegex.test(candidate)) continue;
     const wordCount = candidate.split(/\s+/).filter(Boolean).length;
     if (wordCount < 2) continue;
-    if (!normalizedLine.includes(":") && !normalizedLine.includes("|") && !dateRegex.test(normalizedLine)) {
+    if (wordCount > 12) continue;
+    if (candidate.endsWith(".")) continue;
+    if (candidate.includes("→")) continue;
+    const nextLine = lines[i + 1] || "";
+    const hasBulletAfter = nextLine.startsWith("-") || nextLine.startsWith("•");
+    if (
+      !normalizedLine.includes(":") &&
+      !normalizedLine.includes("|") &&
+      !dateRegex.test(normalizedLine) &&
+      !hasBulletAfter
+    ) {
       continue;
     }
     const key = normalizeProjectName(candidate);
@@ -215,7 +237,7 @@ export function buildHeaderLinks(
   const headerLinks: HeaderLinks = {};
   const other: string[] = [];
 
-  const setIfEmpty = (key: keyof HeaderLinks, value: string) => {
+  const setIfEmpty = (key: "linkedin" | "github" | "portfolio", value: string) => {
     if (!headerLinks[key]) {
       headerLinks[key] = value;
     }
@@ -347,6 +369,50 @@ export function buildProjectLinks(
   }
 
   return entries;
+}
+
+export function extractProjectsWithRelatedArticle(
+  text: string,
+  projectNames: string[]
+): string[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const sectionStopRegex = /^(experience|education|skills?|awards?|certifications?|publications?|summary|profile)$/i;
+  const normalizedProjects = projectNames
+    .filter((name) => typeof name === "string" && name.trim().length > 0)
+    .map((name) => ({ name: name.trim(), key: normalizeProjectName(name) }))
+    .filter((entry) => entry.key);
+
+  const indices = normalizedProjects
+    .map((project) => {
+      const idx = lines.findIndex((line) =>
+        line.toLowerCase().includes(project.name.toLowerCase())
+      );
+      return idx >= 0 ? { name: project.name, index: idx } : null;
+    })
+    .filter((entry): entry is { name: string; index: number } => Boolean(entry))
+    .sort((a, b) => a.index - b.index);
+
+  const relatedProjects: string[] = [];
+  for (let i = 0; i < indices.length; i += 1) {
+    const current = indices[i];
+    const nextIndex = i + 1 < indices.length ? indices[i + 1].index : lines.length;
+    let hasRelated = false;
+    for (let j = current.index + 1; j < nextIndex; j += 1) {
+      if (sectionStopRegex.test(lines[j])) break;
+      if (/related article/i.test(lines[j])) {
+        hasRelated = true;
+        break;
+      }
+    }
+    if (hasRelated) {
+      relatedProjects.push(current.name);
+    }
+  }
+
+  return relatedProjects;
 }
 
 export function mergeProjectsWithFallback(

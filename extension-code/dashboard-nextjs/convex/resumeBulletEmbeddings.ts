@@ -1,6 +1,7 @@
 // convex/resumeBulletEmbeddings.ts
 
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { generateEmbedKeyHash } from "./helpers";
 
@@ -59,7 +60,7 @@ export const createResumeBulletEmbeddings = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const ids = [];
+    const ids: Array<Id<"resumeBulletEmbeddings">> = [];
     for (const emb of args.embeddings) {
       const embedKeyHash = generateEmbedKeyHash(
         emb.embeddingModel,

@@ -411,6 +411,7 @@ interface MasterResume {
     degree?: string;
     field?: string;
     dates?: string;
+    location?: string;
     gpa?: string;
   }>;
   certifications?: string[];
@@ -630,6 +631,14 @@ async function handleStartPhase(body: any, clerkId: string) {
 }
 
 async function handleExecutePhase(body: any, clerkId: string) {
+  const openaiClient = openai;
+  if (!openaiClient) {
+    return NextResponse.json(
+      { error: "OpenAI API key not configured. Please set OPENAI_API_KEY environment variable." },
+      { status: 500 }
+    );
+  }
+
   const runId = body.run_id || body.runId;
   if (!runId) {
     return NextResponse.json({ error: "runId is required" }, { status: 400 });
@@ -654,7 +663,7 @@ async function handleExecutePhase(body: any, clerkId: string) {
     return NextResponse.json({ error: "Job description missing" }, { status: 400 });
   }
 
-  let masterResume = body.master_resume as MasterResume | undefined;
+  let masterResume: MasterResume | null = body.master_resume ?? null;
   if (!masterResume) {
     masterResume = await buildMasterResumePayload(run.masterResumeId);
   }
@@ -717,7 +726,7 @@ async function handleExecutePhase(body: any, clerkId: string) {
 
   let rubric: any;
   try {
-    const rubricResponse = await openai.chat.completions.create({
+    const rubricResponse = await openaiClient.chat.completions.create({
       model: premiumModel,
       messages: [
         { role: "system", content: RUBRIC_SYSTEM_PROMPT },
@@ -775,7 +784,7 @@ CRITICAL REMINDERS:
 - Only rephrase existing bullets to better highlight relevant keywords
 - Select the most relevant bullets, but do not fabricate new ones`;
 
-    const tailorResponse = await openai.chat.completions.create({
+    const tailorResponse = await openaiClient.chat.completions.create({
       model: modelName,
       messages: [
         { role: "system", content: TAILOR_SHARED_SYSTEM_PROMPT },
@@ -1144,7 +1153,18 @@ ${bullets}
     .join("\n\n");
 
   const skills = normalizeSkillsMap(masterResume.skills || {});
-  const skillsLatex = Object.entries(skills)
+  const highlightedSkills = Array.isArray(tailored?.skills_highlighted)
+    ? tailored.skills_highlighted
+    : [];
+  const filteredSkills =
+    highlightedSkills.length > 0
+      ? filterSkillsByHighlights(skills, highlightedSkills)
+      : skills;
+  const skillsForRender =
+    highlightedSkills.length > 0 && Object.values(filteredSkills).some((values) => values.length > 0)
+      ? filteredSkills
+      : skills;
+  const skillsLatex = Object.entries(skillsForRender)
     .filter(([_, values]) => Array.isArray(values) && values.length > 0)
     .map(([category, values]) => {
       const label = formatSkillLabel(category);
@@ -1278,6 +1298,29 @@ function escapeLatexChars(text: string): string {
     .replace(/\}/g, "\\}")
     .replace(/~/g, "\\textasciitilde{}")
     .replace(/\^/g, "\\textasciicircum{}");
+}
+
+function filterSkillsByHighlights(
+  skills: Record<string, string[]>,
+  highlights: string[]
+): Record<string, string[]> {
+  const normalizedHighlights = highlights
+    .filter((item) => typeof item === "string")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  if (!normalizedHighlights.length) return skills;
+
+  const isHighlighted = (skill: string) => {
+    const normalized = skill.trim().toLowerCase();
+    return normalizedHighlights.some(
+      (highlight) => normalized === highlight || normalized.includes(highlight) || highlight.includes(normalized)
+    );
+  };
+
+  return Object.entries(skills).reduce((acc, [category, values]) => {
+    acc[category] = values.filter((value) => isHighlighted(value));
+    return acc;
+  }, {} as Record<string, string[]>);
 }
 
 function formatSkillLabel(key: string): string {

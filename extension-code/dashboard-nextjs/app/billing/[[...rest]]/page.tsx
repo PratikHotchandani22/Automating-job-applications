@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import BillingClient from "../BillingClient";
 
-export default function BillingPage() {
-  const { userId, redirectToSignIn } = auth();
+export default async function BillingPage() {
+  const { userId, redirectToSignIn } = await auth();
 
   if (!userId) {
     return redirectToSignIn();

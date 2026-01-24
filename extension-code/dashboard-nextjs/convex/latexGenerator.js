@@ -1,0 +1,302 @@
+"use strict";
+// convex/latexGenerator.ts
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.generateResumeLatex = generateResumeLatex;
+/**
+ * Generate LaTeX resume from master resume data
+ */
+function generateResumeLatex(resume, workExperiences, projects) {
+    let latex = `\\documentclass[letterpaper,10pt]{article}
+
+% Packages
+\\usepackage[empty]{fullpage}
+\\usepackage{titlesec}
+\\usepackage{hyperref}
+\\usepackage{enumitem}
+\\usepackage{xcolor}
+\\usepackage{hyperref}
+
+% Add sleeker font packages (pdfLaTeX compatible)
+\\usepackage[T1]{fontenc}
+
+% Choose one of these font options:
+
+% Option 1: Helvetica - clean, modern sans-serif (default)
+\\usepackage{helvet}
+\\renewcommand{\\familydefault}{\\sfdefault}
+
+% Set margins
+\\usepackage[left=0.3in, right=0.3in, top=0.2in, bottom=0.3in]{geometry}
+
+% Line spacing
+\\renewcommand{\\baselinestretch}{0.95}
+
+% Section format - reduce spacing by half
+\\titleformat{\\section}{\\scshape\\raggedright\\bfseries\\normalsize}{}{0em}{}[\\titlerule]
+\\titlespacing{\\section}{0pt}{2.5pt}{1pt}
+
+% Bullet points
+\\renewcommand{\\labelitemi}{$\\bullet$}
+
+% Hyperlinks
+\\hypersetup{
+    colorlinks=true,
+    urlcolor=blue
+}
+
+% List settings
+\\setlist[itemize]{leftmargin=*,itemsep=0pt,parsep=0pt,topsep=1pt,partopsep=0pt}
+
+\\begin{document}
+
+%===LOCK_HEADER_START===
+\\vspace{3 pt}
+\\begin{center}
+    {\\LARGE \\textbf{${escapeLaTeX(resume.header?.fullName || "Name")}}} \\\\[3pt]
+`;
+    // Build header contact info
+    const contactParts = [];
+    if (resume.header?.address)
+        contactParts.push(escapeLaTeX(resume.header.address));
+    if (resume.header?.phone)
+        contactParts.push(escapeLaTeX(resume.header.phone));
+    if (resume.header?.email)
+        contactParts.push(`\\href{mailto:${resume.header.email}}{${escapeLaTeX(resume.header.email)}}`);
+    const headerLinks = Array.isArray(resume.links) ? undefined : resume.links?.headerLinks;
+    const linkedin = resume.header?.linkedin || headerLinks?.linkedin;
+    const github = resume.header?.github || headerLinks?.github;
+    const portfolio = resume.header?.portfolio || headerLinks?.portfolio;
+    const website = resume.header?.website;
+    if (linkedin)
+        contactParts.push(`\\href{${linkedin}}{LinkedIn}`);
+    if (github)
+        contactParts.push(`\\href{${github}}{GitHub}`);
+    if (portfolio)
+        contactParts.push(`\\href{${portfolio}}{Portfolio}`);
+    if (website)
+        contactParts.push(`\\href{${website}}{Website}`);
+    latex += `    ${contactParts.join(" --- ")}\n`;
+    latex += `\\end{center}\n%===LOCK_HEADER_END===\n\n`;
+    // Summary section
+    if (resume.summary) {
+        latex += `\\vspace{-3 pt}\n\\section{SUMMARY}\n\\vspace{3 pt}\n\\noindent ${escapeLaTeX(resume.summary)}\n\n`;
+    }
+    // Skills section
+    latex += `\\vspace{3 pt}\n\\section{SKILLS}\n\\vspace{3 pt}\n\\noindent`;
+    const skillParts = Object.entries(resume.skills || {})
+        .filter(([_, values]) => Array.isArray(values) && values.length > 0)
+        .map(([category, values]) => {
+        const label = formatSkillLabel(category);
+        return `\\textbf{${escapeLaTeX(label)}:} ${values.map(s => escapeLaTeX(s)).join(", ")}`;
+    });
+    latex += skillParts.join(" \\\\\n");
+    latex += "\n\n";
+    // Education section
+    if (resume.education.length > 0) {
+        latex += `%===LOCK_EDUCATION_START===\n\\vspace{3 pt}\n\\section{EDUCATION}\n\\vspace{3 pt}\n`;
+        resume.education.forEach((edu) => {
+            const locationPart = edu.location ? ` \\hfill \\textbf{${escapeLaTeX(edu.location)}}` : "";
+            latex += `\\noindent\\textbf{${escapeLaTeX(edu.institution)}}${locationPart} \\\\\n`;
+            latex += `${escapeLaTeX(edu.degree)}`;
+            if (edu.gpa) {
+                latex += ` (GPA: ${escapeLaTeX(edu.gpa)})`;
+            }
+            if (edu.dates) {
+                latex += ` \\hfill \\textbf{${escapeLaTeX(edu.dates)}}`;
+            }
+            latex += "\n\n";
+        });
+        latex += `%===LOCK_EDUCATION_END===\n\n`;
+    }
+    // Work Experience section
+    if (workExperiences.length > 0) {
+        latex += `\\vspace{3 pt}\n\\section{WORK EXPERIENCE}\n\\vspace{3 pt}\n`;
+        workExperiences.forEach((exp, idx) => {
+            if (idx > 0) {
+                latex += `\\vspace{3pt}\n`;
+            }
+            const company = exp.company || "Company";
+            const dates = exp.dates || "";
+            const role = exp.role || "";
+            const location = exp.location ? ` ${exp.location}` : "";
+            latex += `\\noindent\\textbf{${escapeLaTeX(company)}}`;
+            if (dates) {
+                latex += ` \\hfill \\textbf{${escapeLaTeX(dates)}}`;
+            }
+            latex += ` \\\\\n`;
+            if (role) {
+                latex += `\\textbf{\\textit{${escapeLaTeX(role)}}}`;
+                if (location) {
+                    latex += ` \\hfill ${escapeLaTeX(location)}`;
+                }
+                latex += `\n`;
+            }
+            if (exp.bullets.length > 0) {
+                latex += `\\begin{itemize}\n`;
+                exp.bullets.forEach((bullet) => {
+                    latex += `    \\item ${escapeLaTeX(bullet.text)}\n`;
+                });
+                latex += `\\end{itemize}\n`;
+            }
+        });
+        latex += "\n";
+    }
+    // Projects section
+    if (projects.length > 0) {
+        latex += `\\vspace{3 pt}\n\\section{PROJECTS}\n\n\\vspace{3 pt}\n`;
+        projects.forEach((proj) => {
+            const name = proj.name || "Project";
+            const dates = proj.dates ? ` \\hfill \\textbf{${escapeLaTeX(proj.dates)}}` : "";
+            const tags = proj.tags && proj.tags.length > 0 ? `: ${proj.tags.map(t => escapeLaTeX(t)).join(", ")}` : "";
+            const links = [];
+            if (proj.links && proj.links.length > 0) {
+                proj.links.forEach((link) => {
+                    const label = labelProjectLink(link);
+                    // Use compact label as display text, not the full URL
+                    // Format: \href{full_url}{Label}
+                    links.push(`\\href{${link}}{${escapeLaTeX(label)}}`);
+                });
+            }
+            latex += `\\noindent\\textbf{${escapeLaTeX(name)}${tags}}${links.length > 0 ? " --- " + links.join(" --- ") : ""}${dates}\n`;
+            if (proj.bullets.length > 0) {
+                latex += `\\begin{itemize}\n`;
+                proj.bullets.forEach((bullet) => {
+                    latex += `    \\item ${escapeLaTeX(bullet.text)}\n`;
+                });
+                latex += `\\end{itemize}\n`;
+            }
+            latex += "\n";
+        });
+    }
+    // Awards & Mentorship section
+    const hasAwards = resume.awards && resume.awards.length > 0;
+    const hasMentorship = resume.mentorship && resume.mentorship.length > 0;
+    if (hasAwards || hasMentorship) {
+        latex += `\\vspace{3 pt}\n\\section{AWARDS \\& MENTORSHIP}\n\\vspace{3 pt}\n\\begin{itemize}\n`;
+        if (hasAwards) {
+            resume.awards.forEach((award) => {
+                let awardText = `"${escapeLaTeX(award.name)}," ${escapeLaTeX(award.issuer)}`;
+                if (award.details) {
+                    awardText += ` - ${escapeLaTeX(award.details)}`;
+                }
+                if (award.year) {
+                    awardText += ` \\hfill \\textbf{${escapeLaTeX(award.year)}}`;
+                }
+                latex += `    \\item ${awardText}\n`;
+            });
+        }
+        if (hasMentorship) {
+            resume.mentorship.forEach((mentor) => {
+                latex += `    \\item ${escapeLaTeX(mentor)}\n`;
+            });
+        }
+        latex += `\\end{itemize}\n\n`;
+    }
+    latex += `\\end{document}\n`;
+    return latex;
+}
+/**
+ * Escape special LaTeX characters and convert markdown bold to \textbf{}
+ *
+ * The approach:
+ * 1. First convert **text** directly to \textbf{text}
+ * 2. Then escape special chars, but protect the \textbf{} we just created
+ */
+function escapeLaTeX(text) {
+    if (!text)
+        return "";
+    const normalized = text
+        .replace(/\\_\\_MARKDOWN\\_BOLD\\_START\\_\\_/g, "**")
+        .replace(/\\_\\_MARKDOWN\\_BOLD\\_END\\_\\_/g, "**")
+        .replace(/__MARKDOWN_BOLD_START__/g, "**")
+        .replace(/__MARKDOWN_BOLD_END__/g, "**");
+    // Step 1: Convert markdown bold **text** to LaTeX \textbf{text}
+    // We do this FIRST before any escaping
+    let result = normalized.replace(/\*\*([^*]+(?:\*(?!\*)[^*]*)*)\*\*/g, (_, content) => {
+        // Escape special chars inside the bold content
+        const escapedContent = escapeLatexChars(content);
+        return `\\textbf{${escapedContent}}`;
+    });
+    // Step 2: Escape remaining special chars in non-bold text
+    // Split by \textbf{...} to avoid escaping inside commands
+    const parts = result.split(/(\\textbf\{[^}]*\})/g);
+    result = parts.map((part, i) => {
+        // Odd indices are the \textbf{...} matches - don't escape those
+        if (i % 2 === 1)
+            return part;
+        // Even indices are regular text - escape them
+        return escapeLatexChars(part);
+    }).join('');
+    return result;
+}
+function formatSkillLabel(key) {
+    if (key === "other_skills")
+        return "Other Skills";
+    return key
+        .split("_")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+}
+/**
+ * Escape LaTeX special characters in plain text
+ */
+function escapeLatexChars(text) {
+    if (!text)
+        return "";
+    return text
+        .replace(/\\/g, "\\textbackslash{}")
+        .replace(/\{/g, "\\{")
+        .replace(/\}/g, "\\}")
+        .replace(/\$/g, "\\$")
+        .replace(/&/g, "\\&")
+        .replace(/%/g, "\\%")
+        .replace(/#/g, "\\#")
+        .replace(/\^/g, "\\textasciicircum{}")
+        .replace(/_/g, "\\_")
+        .replace(/~/g, "\\textasciitilde{}")
+        .replace(/\n/g, " ");
+}
+/**
+ * Generate a display label for a project link based on URL patterns.
+ *
+ * Examples:
+ *   https://github.com/user/repo → "GitHub"
+ *   https://myapp.streamlit.app → "Demo"
+ *   https://arxiv.org/abs/... → "Paper"
+ *   https://example.com → "Link"
+ */
+function labelProjectLink(link) {
+    const lower = link.toLowerCase();
+    // GitHub repository links
+    if (lower.includes("github.com"))
+        return "GitHub";
+    // GitLab repository links
+    if (lower.includes("gitlab.com"))
+        return "GitLab";
+    // Academic paper links
+    if (lower.includes("arxiv.org") || lower.includes("doi.org") || lower.includes("papers."))
+        return "Paper";
+    // Demo/App hosting platforms
+    if (lower.includes("streamlit.app") || lower.includes("streamlit.io"))
+        return "Demo";
+    if (lower.includes("herokuapp.com") || lower.includes("heroku"))
+        return "Demo";
+    if (lower.includes("vercel.app") || lower.includes("vercel.com"))
+        return "Demo";
+    if (lower.includes("netlify.app") || lower.includes("netlify.com"))
+        return "Demo";
+    if (lower.includes("huggingface.co") || lower.includes("hf.space"))
+        return "Demo";
+    if (lower.includes("gradio.app"))
+        return "Demo";
+    if (lower.includes("replit.com") || lower.includes("repl.co"))
+        return "Demo";
+    // Portfolio/personal site on GitHub Pages
+    if (lower.includes("github.io"))
+        return "Portfolio";
+    // Generic app/demo keywords in URL
+    if (lower.includes("demo") || lower.includes("app") || lower.includes("webapp"))
+        return "Demo";
+    return "Link";
+}

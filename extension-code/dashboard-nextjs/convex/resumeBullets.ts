@@ -1,6 +1,7 @@
 // convex/resumeBullets.ts
 
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 /**
@@ -67,7 +68,7 @@ export const createResumeBullets = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const ids = [];
+    const ids: Array<Id<"resumeBullets">> = [];
     for (const bullet of args.bullets) {
       const id = await ctx.db.insert("resumeBullets", {
         ...bullet,

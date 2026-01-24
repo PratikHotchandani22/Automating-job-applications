@@ -183,3 +183,4 @@ export const deleteJob = mutation({
     });
   },
 });
+

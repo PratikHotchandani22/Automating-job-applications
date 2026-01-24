@@ -145,3 +145,4 @@ export const getTailoredResumes = query({
       .collect();
   },
 });
+

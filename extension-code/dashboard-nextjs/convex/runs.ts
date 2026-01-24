@@ -251,7 +251,7 @@ export const getRunsWithJobDetails = query({
           .first();
 
         // Calculate coverage percentage
-        let coverage = null;
+        let coverage: number | null = null;
         if (selectionPlan?.coverage) {
           const { mustTotal, mustCovered, niceTotal, niceCovered } = selectionPlan.coverage;
           const totalReqs = mustTotal + niceTotal;
@@ -260,7 +260,7 @@ export const getRunsWithJobDetails = query({
         }
 
         // Calculate runtime in seconds
-        const runtimeSec = run.timing?.totalMs 
+        const runtimeSec: number | null = run.timing?.totalMs 
           ? Math.round(run.timing.totalMs / 1000) 
           : run.startedAt && run.completedAt 
             ? Math.round((run.completedAt - run.startedAt) / 1000)

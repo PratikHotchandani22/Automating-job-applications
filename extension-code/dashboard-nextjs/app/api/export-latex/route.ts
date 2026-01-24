@@ -11,6 +11,25 @@ interface ExportLatexRequest {
   runId: string;
 }
 
+interface TailoredWorkExperience {
+  company?: string;
+  title?: string;
+  dateRange?: string;
+  location?: string;
+  bullets: Array<{ tailoredText: string }>;
+}
+
+interface TailoredProject {
+  name?: string;
+  date?: string;
+  bullets: Array<{ tailoredText: string }>;
+}
+
+interface ProjectLinkEntry {
+  projectName?: string;
+  links: string[];
+}
+
 export async function POST(request: NextRequest) {
   try {
     let authState;
@@ -73,7 +92,7 @@ export async function POST(request: NextRequest) {
       links: resumeLinks,
     };
 
-    const workExperiences = tailoredResume.workExperience.map((exp) => ({
+    const workExperiences = tailoredResume.workExperience.map((exp: TailoredWorkExperience) => ({
       company: exp.company,
       role: exp.title,
       dates: exp.dateRange,
@@ -82,13 +101,13 @@ export async function POST(request: NextRequest) {
     }));
 
     const projectLinks = new Map<string, string[]>();
-    (resumeLinks?.projectLinks || []).forEach((entry) => {
+    (resumeLinks?.projectLinks || []).forEach((entry: ProjectLinkEntry) => {
       if (entry.projectName && entry.links.length > 0) {
         projectLinks.set(entry.projectName.toLowerCase(), entry.links);
       }
     });
 
-    const projects = tailoredResume.projects.map((proj) => ({
+    const projects = tailoredResume.projects.map((proj: TailoredProject) => ({
       name: proj.name,
       dates: proj.date,
       links: projectLinks.get((proj.name || "").toLowerCase()),

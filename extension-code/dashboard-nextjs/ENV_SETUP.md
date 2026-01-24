@@ -49,3 +49,4 @@ You should see no errors related to Convex connection. If you see connection err
 2. You've run `npx convex dev` at least once to initialize the deployment
 3. The URL matches what's shown in your terminal when running `npx convex dev`
 
+

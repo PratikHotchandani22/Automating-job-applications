@@ -138,3 +138,4 @@ All functions use Convex's type-safe validators (`v.*`). The generated types in 
 4. Set up scheduled cleanup jobs for soft-deleted records
 5. Implement file upload/download for generated artifacts
 
+

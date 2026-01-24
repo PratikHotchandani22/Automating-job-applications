@@ -19,3 +19,4 @@ export default function KpiCard({ title, value, hint, variant = "secondary", tre
   );
 }
 
+

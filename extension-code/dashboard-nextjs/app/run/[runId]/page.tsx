@@ -78,6 +78,11 @@ const JOB_SECTION_TITLES = [
   "Equal Opportunity Statement",
 ] as const;
 
+type JobSection = {
+  title: string;
+  content: string;
+};
+
 function parseJobDescriptionSections(description?: string) {
   if (!description) return [];
   const normalized = description.replace(/\r\n/g, "\n").trim();
@@ -89,7 +94,10 @@ function parseJobDescriptionSections(description?: string) {
     if (idx === -1) return null;
     return { title, idx };
   })
-    .filter((match): match is { title: string; idx: number } => Boolean(match))
+    .filter(
+      (match): match is { title: (typeof JOB_SECTION_TITLES)[number]; idx: number } =>
+        Boolean(match)
+    )
     .sort((a, b) => a.idx - b.idx);
 
   const sections: { title: string; content: string }[] = [];
@@ -177,9 +185,9 @@ export default function RunResultsPage() {
   );
 
   const jobDescriptionText = runDetails?.job?.extractedText || runDetails?.job?.rawDescription;
-  const jobSections = useMemo(() => {
+  const jobSections = useMemo<JobSection[]>(() => {
     if (runDetails?.job?.structuredDescription?.length) {
-      return runDetails.job.structuredDescription;
+      return runDetails.job.structuredDescription as JobSection[];
     }
     return parseJobDescriptionSections(jobDescriptionText);
   }, [runDetails?.job?.structuredDescription, jobDescriptionText]);
@@ -237,7 +245,7 @@ export default function RunResultsPage() {
           <div className="empty-state-container">
             <div className="empty-state-icon">🔍</div>
             <h3>Run Not Found</h3>
-            <p className="hint">The run with ID "{runIdParam}" was not found or has been deleted.</p>
+            <p className="hint">The run with ID &quot;{runIdParam}&quot; was not found or has been deleted.</p>
             <Link href="/runs" className="primary" style={{ marginTop: "1rem" }}>
               Back to Runs
             </Link>
@@ -598,9 +606,9 @@ export default function RunResultsPage() {
                         <div className="evidence-chips">
                           {req.jdEvidence.map((ev: string, idx: number) => (
                             <span key={idx} className="evidence-chip">
-                              "
+                              &quot;
                               {renderRichText(ev)}
-                              "
+                              &quot;
                             </span>
                           ))}
                         </div>

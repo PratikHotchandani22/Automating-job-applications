@@ -53,6 +53,19 @@ export const getUserByClerkId = query({
 });
 
 /**
+ * Get user by email
+ */
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  },
+});
+
+/**
  * Get user by ID
  */
 export const getUser = query({
