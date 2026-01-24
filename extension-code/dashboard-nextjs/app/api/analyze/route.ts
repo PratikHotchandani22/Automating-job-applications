@@ -230,6 +230,9 @@ Return a JSON object with this structure:
       "bullets": ["rewritten bullet1", "rewritten bullet2", ...]
     }
   ],
+  "skills": {
+    "Category Label": ["skill1", "skill2", "..."]
+  },
   "skills_highlighted": ["skill1", "skill2", ...],
   "requirements_addressed": {
     "R1": "how this resume addresses requirement R1",
@@ -352,6 +355,9 @@ Final Output JSON (Output ONLY this; valid JSON)
         "bullets": ["string"]
       }
     ],
+    "skills": {
+      "Category Label": ["string"]
+    },
     "skills_highlighted": ["string"],
     "requirements_addressed": {
       "R1": "string"
@@ -925,7 +931,18 @@ CRITICAL REMINDERS:
         gpa: edu.gpa,
       }));
 
-      const skills = normalizeSkillsMap(masterResume.skills || {});
+      const tailoredSkills = normalizeSkillsMap(tailored?.skills || {});
+      const highlightedSkills = Array.isArray(tailored?.skills_highlighted)
+        ? tailored.skills_highlighted
+            .filter((skill: any) => typeof skill === "string" && skill.trim().length)
+            .map((skill: string) => skill.trim())
+        : [];
+      const skills =
+        Object.keys(tailoredSkills).length > 0
+          ? tailoredSkills
+          : highlightedSkills.length > 0
+            ? { Highlighted: highlightedSkills }
+            : normalizeSkillsMap(masterResume.skills || {});
 
       await convex.mutation(api.tailoredResumes.createTailoredResume, {
         runId: run._id,
@@ -1143,7 +1160,18 @@ ${bullets}
     })
     .join("\n\n");
 
-  const skills = normalizeSkillsMap(masterResume.skills || {});
+  const tailoredSkills = normalizeSkillsMap(tailored?.skills || {});
+  const highlightedSkills = Array.isArray(tailored?.skills_highlighted)
+    ? tailored.skills_highlighted
+        .filter((skill: any) => typeof skill === "string" && skill.trim().length)
+        .map((skill: string) => skill.trim())
+    : [];
+  const skills =
+    Object.keys(tailoredSkills).length > 0
+      ? tailoredSkills
+      : highlightedSkills.length > 0
+        ? { Highlighted: highlightedSkills }
+        : normalizeSkillsMap(masterResume.skills || {});
   const skillsLatex = Object.entries(skills)
     .filter(([_, values]) => Array.isArray(values) && values.length > 0)
     .map(([category, values]) => {
