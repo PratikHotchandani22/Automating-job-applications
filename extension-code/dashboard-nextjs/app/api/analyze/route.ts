@@ -748,6 +748,10 @@ async function handleExecutePhase(body: any, clerkId: string) {
 
   await updateStatus("rubric_generating");
 
+  if (!openai) {
+    return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
+  }
+
   let rubric: any;
   try {
     const rubricResponse = await openai.chat.completions.create({
