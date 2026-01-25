@@ -165,5 +165,8 @@ cython_debug/
 /temp_dir
 credentials.py
 *.json
+!**/package.json
+!**/package-lock.json
+!**/tsconfig.json
 *.csv
 *.docx
