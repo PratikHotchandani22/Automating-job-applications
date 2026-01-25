@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@clerk/nextjs'],
+  transpilePackages: ['@clerk/nextjs', '@clerk/shared', '@clerk/backend'],
   // If you need to proxy API requests or configure other settings
   async rewrites() {
     return [
