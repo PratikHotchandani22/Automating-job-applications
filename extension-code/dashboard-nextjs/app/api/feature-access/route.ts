@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAuthOrThrow, getFeatureAccessForUser } from "@/lib/featureAccess";
 
+// Force Node.js runtime
+export const runtime = 'nodejs';
+
 export async function GET() {
   try {
     const authState = await getAuthOrThrow();

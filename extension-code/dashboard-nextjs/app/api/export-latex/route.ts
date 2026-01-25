@@ -5,6 +5,9 @@ import { getAuthOrThrow, getFeatureAccessForUser } from "@/lib/featureAccess";
 import { buildSubscriptionError } from "@/lib/subscription-errors";
 import { generateResumeLatex } from "@/lib/latexGenerator";
 
+// Force Node.js runtime
+export const runtime = 'nodejs';
+
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 interface ExportLatexRequest {

@@ -4,6 +4,9 @@ import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import * as zlib from "zlib";
 
+// Force Node.js runtime for this route (pdf-parse uses __dirname which isn't available in Edge)
+export const runtime = 'nodejs';
+
 /**
  * URL extraction regex patterns for comprehensive link detection.
  * Handles:

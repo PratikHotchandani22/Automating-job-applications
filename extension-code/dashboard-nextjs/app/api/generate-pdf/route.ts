@@ -1,6 +1,9 @@
 // app/api/generate-pdf/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
+// Force Node.js runtime
+export const runtime = 'nodejs';
+
 const LATEX_API_URL = "https://latex.ytotech.com/builds/sync";
 
 interface GeneratePDFRequest {

@@ -7,6 +7,9 @@ import OpenAI from "openai";
 import { Id } from "@/convex/_generated/dataModel";
 import { getFeatureAccessForUser } from "@/lib/featureAccess";
 
+// Force Node.js runtime (uses crypto module)
+export const runtime = 'nodejs';
+
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 const openai = process.env.OPENAI_API_KEY 

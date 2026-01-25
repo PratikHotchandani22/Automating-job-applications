@@ -4,6 +4,9 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { createHash } from "crypto";
 
+// Force Node.js runtime (uses crypto module)
+export const runtime = 'nodejs';
+
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 function hashString(str: string): string {

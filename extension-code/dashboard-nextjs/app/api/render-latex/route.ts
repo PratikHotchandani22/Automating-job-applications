@@ -4,6 +4,9 @@ import { api } from "@/convex/_generated/api";
 import { getAuthOrThrow } from "@/lib/featureAccess";
 import { generateResumeLatex } from "@/lib/latexGenerator";
 
+// Force Node.js runtime
+export const runtime = 'nodejs';
+
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 interface RenderLatexRequest {
