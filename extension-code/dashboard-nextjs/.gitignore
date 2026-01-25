@@ -37,8 +37,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Convex
-convex/_generated/
+# Convex - keeping _generated for Vercel builds
+# convex/_generated/
 
 # IDE
 .vscode/
