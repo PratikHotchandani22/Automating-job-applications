@@ -224,10 +224,7 @@ export default function TailoredResumeView({
     setGeneratingPdf(true);
     setPdfError(null);
 
-    // #region agent log
     const generatedFilename = generateFilename();
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TailoredResumeView.tsx:195',message:'handleGeneratePdf entry with full name',data:{fullName:masterResume?.header?.fullName,jobTitle:job?.title,jobCompany:job?.company,generatedFilename,download,store},timestamp:Date.now(),sessionId:'debug-session',runId:'fullname-fix',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
 
     try {
       const latexResponse = await ensureLatexSource(true);
@@ -256,9 +253,6 @@ export default function TailoredResumeView({
         const link = document.createElement("a");
         link.href = url;
         const downloadFilename = `${filename}.pdf`;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TailoredResumeView.tsx:226',message:'download filename with full name',data:{downloadFilename,fullName:masterResume?.header?.fullName,jobTitle:job?.title,jobCompany:job?.company},timestamp:Date.now(),sessionId:'debug-session',runId:'fullname-fix',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         link.download = downloadFilename;
         document.body.appendChild(link);
         link.click();
