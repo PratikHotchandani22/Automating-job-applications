@@ -1,0 +1,27 @@
+{
+  "name": "resume-intel-backend",
+  "version": "0.2.0",
+  "description": "Backend for the resume intelligence pipeline.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "NODE_ENV=development node server.js",
+    "score:resume": "node scripts/score_master_resume.js",
+    "cache:evidence:status": "node scripts/cache_evidence_status.js",
+    "cache:evidence:clear": "node scripts/cache_evidence_clear.js",
+    "db:migrate": "node scripts/migrate.js",
+    "test": "NODE_ENV=test node test/schema.test.js && NODE_ENV=test node test/rubric.test.js && NODE_ENV=test node test/evidenceCache.test.js && NODE_ENV=test node test/evidenceScorer.test.js && NODE_ENV=test node test/embeddings.test.js && NODE_ENV=test node test/selection.test.js && NODE_ENV=test node test/tailor_selection_enforcement.test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.21.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "openai": "^4.52.0",
+    "uuid": "^9.0.1"
+  }
+}

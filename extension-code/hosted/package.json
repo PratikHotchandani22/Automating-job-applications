@@ -1,0 +1,29 @@
+{
+  "name": "resume-intelligence-hosted",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hosted API for Resume Intelligence",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "tsc",
+    "deploy": "vercel --prod",
+    "deploy:preview": "vercel",
+    "db:types": "npx supabase gen types typescript --project-id YOUR_PROJECT_ID > lib/database.types.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.10.0",
+    "@supabase/supabase-js": "^2.47.0",
+    "@upstash/redis": "^1.25.0",
+    "openai": "^4.20.0",
+    "posthog-node": "^4.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vercel/node": "^3.0.0",
+    "typescript": "^5.0.0",
+    "vercel": "^32.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
