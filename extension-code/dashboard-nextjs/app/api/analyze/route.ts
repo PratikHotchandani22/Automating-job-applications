@@ -687,7 +687,7 @@ async function handleExecutePhase(body: any, clerkId: string) {
     return NextResponse.json({ error: "Job description missing" }, { status: 400 });
   }
 
-  let masterResume = body.master_resume as MasterResume | undefined;
+  let masterResume: MasterResume | null | undefined = body.master_resume as MasterResume | undefined;
   if (!masterResume) {
     masterResume = await buildMasterResumePayload(run.masterResumeId);
   }
