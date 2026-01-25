@@ -303,6 +303,19 @@ export default defineSchema({
     userId: v.id("users"),
     masterResumeId: v.id("masterResumes"),
     jobId: v.id("jobs"),
+    runType: v.optional(v.union(v.literal("single"), v.literal("queue"))),
+    queueJobIds: v.optional(v.array(v.id("jobs"))),
+    queueCursorIndex: v.optional(v.number()),
+    queueId: v.optional(v.id("runs")),
+    queuePosition: v.optional(v.number()),
+    queueState: v.optional(
+      v.union(
+        v.literal("queued"),
+        v.literal("running"),
+        v.literal("done"),
+        v.literal("failed")
+      )
+    ),
     runStrategy: v.optional(v.union(v.literal("free"), v.literal("premium"))),
     status: runStatusValidator,
     stage: runStageValidator,
@@ -342,6 +355,8 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_job", ["jobId"])
+    .index("by_user_type", ["userId", "runType"])
+    .index("by_queue", ["queueId"])
     .index("by_user_status", ["userId", "status"])
     .index("by_user_recent", ["userId", "createdAt"])
     .index("by_run_id", ["runId"]),

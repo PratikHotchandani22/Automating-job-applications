@@ -157,6 +157,8 @@ export const startTailoringPipeline = action({
     userId: v.id("users"),
     masterResumeId: v.id("masterResumes"),
     jobId: v.id("jobs"),
+    queueId: v.optional(v.id("runs")),
+    queuePosition: v.optional(v.number()),
     options: v.optional(
       v.object({
         page_limit: v.optional(v.number()),
@@ -165,10 +167,18 @@ export const startTailoringPipeline = action({
     ),
   },
   handler: async (ctx, args) => {
+    // #region agent log
+    console.log('[DEBUG:startTailoringPipeline] Called with args:', { userId: args.userId, masterResumeId: args.masterResumeId, jobId: args.jobId, queueId: args.queueId, queuePosition: args.queuePosition });
+    // #endregion
+
     // Get job data
     const job = await ctx.runQuery(api.jobs.getJob, {
       jobId: args.jobId,
     });
+
+    // #region agent log
+    console.log('[DEBUG:startTailoringPipeline] Job query result:', { found: !!job, jobId: args.jobId, jobTitle: job?.title, hasDescription: !!(job?.extractedText || job?.rawDescription) });
+    // #endregion
 
     if (!job) {
       throw new Error(`Job ${args.jobId} not found`);
@@ -218,21 +228,45 @@ export const startTailoringPipeline = action({
       options: args.options || {},
     };
 
-    const response = await fetch(`${BACKEND_BASE_URL}/analyze`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(analyzePayload),
-    });
+    // #region agent log
+    console.log('[DEBUG:startTailoringPipeline] About to call backend /analyze at:', BACKEND_BASE_URL);
+    console.log('[DEBUG:startTailoringPipeline] Payload:', { resume_id: analyzePayload.resume_id, job_title: analyzePayload.job_payload?.job?.title, has_master_resume_json: !!analyzePayload.master_resume_json });
+    // #endregion
+
+    let response;
+    try {
+      response = await fetch(`${BACKEND_BASE_URL}/analyze`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(analyzePayload),
+      });
+    } catch (fetchError: any) {
+      // #region agent log
+      console.log('[DEBUG:startTailoringPipeline] Fetch failed:', fetchError?.message);
+      // #endregion
+      throw new Error(`Backend connection failed: ${fetchError?.message}`);
+    }
+
+    // #region agent log
+    console.log('[DEBUG:startTailoringPipeline] Backend response status:', response.status, response.statusText);
+    // #endregion
 
     if (!response.ok) {
       const errorText = await response.text();
+      // #region agent log
+      console.log('[DEBUG:startTailoringPipeline] Backend error response:', errorText);
+      // #endregion
       throw new Error(`Backend analyze failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     const backendRunId = data.run_id || data.runId;
+
+    // #region agent log
+    console.log('[DEBUG:startTailoringPipeline] Backend response data:', { backendRunId, status: data.status, stage: data.stage });
+    // #endregion
 
     if (!backendRunId) {
       throw new Error("Backend did not return a run_id");
@@ -244,6 +278,10 @@ export const startTailoringPipeline = action({
       userId: args.userId,
       masterResumeId: args.masterResumeId,
       jobId: args.jobId,
+      runType: "single",
+      queueId: args.queueId,
+      queuePosition: args.queuePosition,
+      queueState: "running",
       status: "running",
       stage: "initialized",
       mockMode: args.options?.mock_mode,

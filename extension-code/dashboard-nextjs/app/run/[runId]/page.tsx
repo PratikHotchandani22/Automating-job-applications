@@ -61,6 +61,68 @@ function formatDuration(ms: number): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
+// Utility to detect corrupted job titles (like LinkedIn notification badges)
+function isCorruptedTitle(title: string | undefined | null): boolean {
+  if (!title) return true;
+  const lower = title.toLowerCase().trim();
+  // Detect patterns like "0 notifications total", "1 notification total", etc.
+  if (/^\d+\s*notifications?\s*total$/i.test(lower)) return true;
+  // Detect very short titles that are just numbers
+  if (/^\d+$/.test(lower)) return true;
+  // Detect other LinkedIn UI text that might get captured
+  if (lower === "loading..." || lower === "linkedin" || lower.length < 3) return true;
+  return false;
+}
+
+// Try to extract a title from a LinkedIn job URL
+// URLs like: /jobs/view/software-engineer-at-google-1234567890/
+function extractTitleFromUrl(url: string | undefined | null): string | null {
+  if (!url) return null;
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    // Match LinkedIn job URLs: /jobs/view/{slug}/
+    const match = pathname.match(/\/jobs\/view\/([^\/]+)/);
+    if (match && match[1]) {
+      // Convert slug to title: "software-engineer-at-google-1234567890" -> "Software Engineer at Google"
+      const slug = match[1];
+      // Remove trailing job ID (numbers at the end)
+      const cleanSlug = slug.replace(/-\d+$/, "");
+      // Convert dashes to spaces and capitalize
+      const title = cleanSlug
+        .split("-")
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+      if (title.length > 5) return title;
+    }
+  } catch {
+    // Invalid URL
+  }
+  return null;
+}
+
+// Get a display-safe title with multiple fallback sources
+function getSafeTitle(
+  title: string | undefined | null,
+  jobUrl?: string | null,
+  company?: string | null,
+  fallback: string = "Untitled Job"
+): string {
+  // First, try the provided title if it's not corrupted
+  if (!isCorruptedTitle(title)) return title!;
+  
+  // Try to extract title from URL
+  const urlTitle = extractTitleFromUrl(jobUrl);
+  if (urlTitle) return urlTitle;
+  
+  // If we have a company, create a generic title
+  if (company && company.toLowerCase() !== "unknown" && company.toLowerCase() !== "unknown company") {
+    return `Job at ${company}`;
+  }
+  
+  return fallback;
+}
+
 const JOB_SECTION_TITLES = [
   "About the Job",
   "About the Role",
@@ -264,7 +326,7 @@ export default function RunResultsPage() {
           Runs
         </Link>
         <span className="breadcrumb-separator">›</span>
-        <span className="breadcrumb-current">{job?.title || run.runId}</span>
+        <span className="breadcrumb-current">{getSafeTitle(job?.title, job?.jobUrl, job?.company, run.runId)}</span>
       </div>
 
       {/* Header Panel */}
@@ -278,7 +340,7 @@ export default function RunResultsPage() {
                 </button>
                 {copyToast && <span className="copy-toast">Copied!</span>}
               </div>
-              <h2>{job?.title || "Untitled Job"}</h2>
+              <h2>{getSafeTitle(job?.title, job?.jobUrl, job?.company)}</h2>
               <p className="hint">
                 {job?.company || "Unknown Company"}
                 {job?.location && ` • ${job.location}`}

@@ -2,12 +2,25 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import UserOnboarding from "@/components/UserOnboarding";
 import Link from "next/link";
 import StatusPill from "@/components/StatusPill";
-import { formatDateTime } from "@/utils/runFilters";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 // Declare chrome types for TypeScript
 declare global {
@@ -20,20 +33,85 @@ declare global {
   }
 }
 
-// Known extension ID - users can update this if using unpacked extension
-const EXTENSION_ID = "YOUR_EXTENSION_ID_HERE"; // Will be auto-detected
+// Utility to detect corrupted job titles (like LinkedIn notification badges)
+function isCorruptedTitle(title: string | undefined | null): boolean {
+  if (!title) return true;
+  const lower = title.toLowerCase().trim();
+  // Detect patterns like "0 notifications total", "1 notification total", etc.
+  if (/^\d+\s*notifications?\s*total$/i.test(lower)) return true;
+  // Detect very short titles that are just numbers
+  if (/^\d+$/.test(lower)) return true;
+  // Detect other LinkedIn UI text that might get captured
+  if (lower === "loading..." || lower === "linkedin" || lower.length < 3) return true;
+  return false;
+}
+
+// Get a display-safe title, preferring the first valid title from the list
+function getSafeTitle(...titles: (string | undefined | null)[]): string {
+  for (const title of titles) {
+    if (!isCorruptedTitle(title)) return title!;
+  }
+  return "Untitled Job";
+}
+
+function SortableQueueItem({
+  id,
+  disabled,
+  children,
+}: {
+  id: string;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
+}
+
+const dedupeJobIds = (jobIds: any[]) => {
+  const seen = new Set<string>();
+  return jobIds.filter((jobId) => {
+    const key = jobId.toString();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const safeHostname = (value?: string) => {
+  if (!value) return "";
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return "";
+  }
+};
 
 export default function StartRunPage() {
   const { user: clerkUser } = useUser();
-  const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [selectedTabIds, setSelectedTabIds] = useState<string[]>([]);
+  const [tabSearch, setTabSearch] = useState("");
+  const [tabFilter, setTabFilter] = useState<"all" | "new" | "analyzed" | "queued">("all");
   const [analyzing, setAnalyzing] = useState(false);
   const [statusText, setStatusText] = useState("Ready.");
   const [backendStatus, setBackendStatus] = useState<"online" | "offline" | "checking">("online");
   const [syncingJobs, setSyncingJobs] = useState(false);
-  const [extensionId, setExtensionId] = useState<string | null>(null);
   const [extensionDetected, setExtensionDetected] = useState(false);
   const extensionIdRef = useRef<string | null>(null);
+  
+  // Track queue processing state locally
+  const [currentProcessingIndex, setCurrentProcessingIndex] = useState<number | null>(null);
+  const [completedJobRuns, setCompletedJobRuns] = useState<Map<string, { runId: string; status: "success" | "error" }>>(new Map());
   
   // Get user from Convex
   const convexUser = useQuery(
@@ -51,12 +129,6 @@ export default function StartRunPage() {
     return resumes?.find((r: any) => r.isActive) || resumes?.[0];
   }, [resumes]);
 
-  // Get resume bullets for the active resume
-  const resumeBullets = useQuery(
-    api.resumeBullets.getResumeBullets,
-    activeResume ? { masterResumeId: activeResume._id } : "skip"
-  );
-
   // Get tabs from extension (like React dashboard did)
   const [tabs, setTabs] = useState<any[]>([]);
   
@@ -66,11 +138,50 @@ export default function StartRunPage() {
     convexUser ? { userId: convexUser._id } : "skip"
   ) || [];
 
+  const tabTitleByUrl = useMemo(() => {
+    const map = new Map<string, string>();
+    tabs.forEach((tab: any) => {
+      if (tab.url && tab.title) {
+        map.set(tab.url, tab.title);
+      }
+    });
+    return map;
+  }, [tabs]);
+
+  const jobByUrl = useMemo(() => {
+    const map = new Map<string, any>();
+    jobs.forEach((job: any) => {
+      if (job.jobUrl) {
+        map.set(job.jobUrl, job);
+      }
+    });
+    return map;
+  }, [jobs]);
+
   // Get user's runs
   const runs = useQuery(
     api.runs.getRuns,
     convexUser ? { userId: convexUser._id } : "skip"
   ) || [];
+
+  const queueData = useQuery(
+    api.runs.getActiveQueueRunWithItems,
+    convexUser ? { userId: convexUser._id } : "skip"
+  );
+  const createQueueRun = useMutation(api.runs.createQueueRun);
+  const updateQueueOrder = useMutation(api.runs.updateQueueOrder);
+  const processQueueSequentially = useAction(api.runs.processQueueSequentially);
+  const resetQueueRun = useMutation(api.runs.resetQueueRun);
+  const updateRunStatus = useMutation(api.runs.updateRunStatus);
+
+  const queueRun = queueData?.queueRun || null;
+  const queueItems = queueData?.items || [];
+  const queueJobIds = queueRun?.queueJobIds || [];
+
+  const queueOrder = useMemo(
+    () => queueJobIds.map((id: any) => id.toString()),
+    [queueJobIds]
+  );
 
   // Helper to check if we're in an iframe
   const isInIframe = useCallback(() => {
@@ -197,10 +308,9 @@ export default function StartRunPage() {
         try {
           await new Promise<void>((resolve, reject) => {
             window.chrome!.runtime!.sendMessage(extId, { action: "GET_EXTENSION_ID" }, (response: any) => {
-              if (response?.ok && response?.extensionId) {
-                extensionIdRef.current = response.extensionId;
-                setExtensionId(response.extensionId);
-                setExtensionDetected(true);
+                if (response?.ok && response?.extensionId) {
+                  extensionIdRef.current = response.extensionId;
+                  setExtensionDetected(true);
                 setStatusText("Extension connected. Click 'Refresh tabs' to load tabs.");
                 // #region agent log
                 fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:detectExtension',message:'Extension detected',data:{extensionId:response.extensionId},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'G'})}).catch(()=>{});
@@ -313,206 +423,641 @@ export default function StartRunPage() {
     return map;
   }, [runs]);
 
-  const runningSelectedCount = useMemo(() => {
-    return runs.filter((r: any) => 
-      (r.status === "running" || r.stage !== "DONE") &&
-      r.jobId &&
-      selectedJobIds.includes(r.jobId)
-    ).length;
-  }, [runs, selectedJobIds]);
+  const tabsWithJobs = useMemo(() => {
+    return tabs.map((tab: any) => {
+      const job = tab.url ? jobByUrl.get(tab.url) : null;
+      const analyzedRun = job ? analyzedByJobId.get(job._id) : null;
+      const inQueue = job ? queueOrder.includes(job._id.toString()) : false;
+      return { tab, job, analyzedRun, inQueue };
+    });
+  }, [tabs, jobByUrl, analyzedByJobId, queueOrder]);
 
-  const analyzedSelectedCount = useMemo(() => {
-    return runs.filter((r: any) => 
-      r.status === "success" && 
-      r.jobId && 
-      selectedJobIds.includes(r.jobId)
-    ).length;
-  }, [runs, selectedJobIds]);
+  const filteredTabs = useMemo(() => {
+    const query = tabSearch.trim().toLowerCase();
+    return tabsWithJobs.filter(({ tab, analyzedRun, inQueue }) => {
+      if (tabFilter === "analyzed" && !analyzedRun) return false;
+      if (tabFilter === "new" && analyzedRun) return false;
+      if (tabFilter === "queued" && !inQueue) return false;
+      if (!query) return true;
+      const title = (tab.title || "").toLowerCase();
+      const url = (tab.url || "").toLowerCase();
+      return title.includes(query) || url.includes(query);
+    });
+  }, [tabsWithJobs, tabSearch, tabFilter]);
 
-  const handleToggleJob = (jobId: string) => {
-    setSelectedJobIds((prev) => {
-      const exists = prev.includes(jobId);
-      return exists ? prev.filter((id) => id !== jobId) : [...prev, jobId];
+  // Queue is only "locked" for reordering when actively processing, but adding is always allowed
+  const isQueueProcessing = analyzing || currentProcessingIndex !== null;
+
+  // Ref for auto-resume (will be used in effect after handleStartQueue is defined)
+  const hasAutoResumedRef = useRef(false);
+
+  const handleToggleTab = (tabId: string) => {
+    setSelectedTabIds((prev) => {
+      const exists = prev.includes(tabId);
+      return exists ? prev.filter((id) => id !== tabId) : [...prev, tabId];
     });
   };
 
-  const handleSelectAll = () => {
-    const allIds = tabs.map((t: any) => t.id.toString());
-    setSelectedJobIds(allIds);
-    setDropdownOpen(false);
-  };
-
-  const handleClearSelection = () => {
-    setSelectedJobIds([]);
-    setDropdownOpen(false);
-  };
-
-  const handleAnalyze = useCallback(async () => {
-    if (selectedJobIds.length === 0) {
-      setStatusText("Select at least one tab.");
-      return;
-    }
-
-    if (!activeResume) {
+  const handleAddToQueue = useCallback(async () => {
+    if (!activeResume || !convexUser) {
       setStatusText("No active master resume. Please create one in Settings.");
       return;
     }
 
-    if (resumeBullets === undefined) {
-      setStatusText("Loading resume data... Please wait.");
-      return;
-    }
+    const selectedTabs = tabsWithJobs.filter(({ tab }) =>
+      selectedTabIds.includes(tab.id.toString())
+    );
+    const existingJobIds = selectedTabs
+      .map(({ job }) => job?._id)
+      .filter(Boolean);
 
-    if (runningSelectedCount > 0) {
-      setStatusText(`Already running for ${runningSelectedCount} selected tab${runningSelectedCount > 1 ? "s" : ""}.`);
-      return;
-    }
+    const missingTabs = selectedTabs.filter(({ job }) => !job);
+    let syncedJobIds: any[] = [];
 
-    // Check if we can communicate with extension
-    if (!extensionIdRef.current && !isInIframe()) {
-      setStatusText("Extension not connected. Please enter your extension ID above.");
-      return;
-    }
-
-    setAnalyzing(true);
-    setStatusText("Extracting job data from tabs...");
-
-    try {
-      // Convert selected IDs to numbers (tab IDs)
-      const tabIds = selectedJobIds.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
-      
-      if (tabIds.length === 0) {
-        setStatusText("No valid tabs selected.");
-        setAnalyzing(false);
+    if (missingTabs.length > 0) {
+      if (!extensionIdRef.current && !isInIframe()) {
+        setStatusText("Extension not connected. Please enter your extension ID above.");
         return;
       }
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Starting analysis',data:{tabIds,selectedJobIds,extensionId:extensionIdRef.current,isInIframe:isInIframe()},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
-      // #endregion
+      setAnalyzing(true);
+      setStatusText("Syncing job data for queued tabs...");
 
-      let successCount = 0;
-      let failCount = 0;
-      const results: any[] = [];
-
-      // Process each selected tab
-      for (const tabId of tabIds) {
+      const jobsToSync: any[] = [];
+      for (const { tab } of missingTabs) {
         try {
-          setStatusText(`Extracting from tab ${tabId}...`);
-          
-          // Step 1: Extract job data from tab using extension
           const extractResponse = await sendExtensionMessage({
             action: "EXTRACT_JOB_FROM_TAB",
-            tabId
+            tabId: tab.id,
           });
 
           if (!extractResponse?.ok || !extractResponse?.data) {
-            failCount++;
-            results.push({ tabId, ok: false, error: "Extraction failed" });
             continue;
           }
 
           const extraction = extractResponse.data;
-          const jobPayload = {
-            job: {
-              title: extraction.job?.title || "",
-              company: extraction.job?.company || "",
-              location: extraction.job?.location || "",
-              description_text: extraction.job?.description_text || "",
-            },
-            meta: {
-              url: extraction.meta?.url || "",
-              platform: extraction.meta?.platform || "",
-            }
-          };
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Job extracted',data:{tabId,title:jobPayload.job.title,company:jobPayload.job.company,descLength:jobPayload.job.description_text.length},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
-          // #endregion
-
-          if (!jobPayload.job.description_text) {
-            failCount++;
-            results.push({ tabId, ok: false, error: "No job description found" });
+          const description = extraction.job?.description_text || "";
+          if (!description) {
             continue;
           }
 
-          // Step 2: Call the Next.js analyze API
-          setStatusText(`Analyzing job: ${jobPayload.job.title || "Unknown"}...`);
-
-          const analyzeResponse = await fetch("/api/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              job_payload: jobPayload,
-              master_resume_id: activeResume._id,
-            }),
+          jobsToSync.push({
+            id: tab.id,
+            url: extraction.meta?.url || tab.url || "",
+            // Use getSafeTitle to filter out corrupted titles like "0 notifications total"
+            // and prefer the browser tab title which is usually more reliable
+            title: getSafeTitle(extraction.job?.title, tab.title, "Untitled"),
+            company: extraction.job?.company,
+            location: extraction.job?.location,
+            description,
           });
-
-          const analyzeResult = await analyzeResponse.json();
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Analyze API response',data:{tabId,success:analyzeResult.success,runId:analyzeResult.run_id,error:analyzeResult.error},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
-          // #endregion
-
-          if (analyzeResult.success) {
-            successCount++;
-            results.push({ 
-              tabId, 
-              ok: true, 
-              runId: analyzeResult.run_id,
-              title: jobPayload.job.title,
-              company: jobPayload.job.company,
-            });
-            if (selectedJobIds.length === 1 && analyzeResult.run_id) {
-              window.location.href = `/run/${analyzeResult.run_id}`;
-              return;
-            }
-
-            fetch("/api/analyze", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ phase: "execute", run_id: analyzeResult.run_id }),
-              keepalive: true,
-            }).catch(() => {});
-          } else {
-            failCount++;
-            results.push({ tabId, ok: false, error: analyzeResult.error || "Analysis failed" });
-          }
-        } catch (e: any) {
-          failCount++;
-          results.push({ tabId, ok: false, error: e.message });
+        } catch {
+          // skip failed extraction
         }
       }
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Analysis complete',data:{successCount,failCount,results},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
-      // #endregion
-
-      if (failCount > 0 && successCount > 0) {
-        setStatusText(`Analysis complete. ${successCount} succeeded, ${failCount} failed.`);
-      } else if (failCount > 0) {
-        setStatusText(`Analysis failed for all ${failCount} tab(s). Check console for details.`);
-      } else {
-        setStatusText(`Analysis complete for ${successCount} tab(s)!`);
+      if (jobsToSync.length > 0) {
+        const syncResponse = await fetch("/api/sync-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tabs: jobsToSync }),
+        });
+        const result = await syncResponse.json();
+        if (!syncResponse.ok) {
+          setAnalyzing(false);
+          setStatusText(result?.error || "Failed to sync job data.");
+          return;
+        }
+        syncedJobIds = (result.jobs || []).map((entry: any) => entry.jobId);
       }
-      
-      setSelectedJobIds([]); // Clear selection after starting
-    } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:handleAnalyze',message:'Analysis error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze',hypothesisId:'H'})}).catch(()=>{});
-      // #endregion
-      setStatusText(error.message || "Failed to start run");
-    } finally {
+
       setAnalyzing(false);
     }
-  }, [selectedJobIds, activeResume, resumeBullets, runningSelectedCount, sendExtensionMessage, isInIframe]);
+
+    const jobIdsToAdd = dedupeJobIds([...existingJobIds, ...syncedJobIds]);
+
+    if (jobIdsToAdd.length === 0) {
+      setStatusText("No jobs could be synced for the selected tabs.");
+      return;
+    }
+
+    const nextQueue = dedupeJobIds([...queueJobIds, ...jobIdsToAdd]);
+
+    try {
+      if (!queueRun) {
+        await createQueueRun({
+          userId: convexUser._id,
+          masterResumeId: activeResume._id,
+          queueJobIds: nextQueue,
+        });
+      } else {
+        await updateQueueOrder({
+          queueRunId: queueRun._id,
+          queueJobIds: nextQueue,
+        });
+      }
+      setSelectedTabIds([]);
+      setStatusText(`Added ${jobIdsToAdd.length} item(s) to queue.`);
+    } catch (error: any) {
+      setStatusText(error.message || "Failed to update queue.");
+    }
+  }, [
+    activeResume,
+    convexUser,
+    selectedTabIds,
+    tabsWithJobs,
+    queueJobIds,
+    queueRun,
+    createQueueRun,
+    updateQueueOrder,
+    sendExtensionMessage,
+    isInIframe,
+  ]);
+
+  const handleRemoveFromQueue = useCallback(
+    async (jobId: string) => {
+      if (!queueRun) return;
+      const nextQueue = queueJobIds.filter(
+        (id: any) => id.toString() !== jobId
+      );
+      try {
+        await updateQueueOrder({
+          queueRunId: queueRun._id,
+          queueJobIds: nextQueue,
+        });
+      } catch (error: any) {
+        setStatusText(error.message || "Failed to update queue.");
+      }
+    },
+    [queueRun, queueJobIds, updateQueueOrder]
+  );
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
+  const handleDragEnd = useCallback(
+    async (event: any) => {
+      if (!queueRun) return;
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIndex = queueOrder.indexOf(active.id);
+      const newIndex = queueOrder.indexOf(over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const nextOrder = arrayMove(queueOrder, oldIndex, newIndex);
+      const nextQueue = nextOrder
+        .map((id) => queueJobIds.find((jobId: any) => jobId.toString() === id))
+        .filter(Boolean) as any[];
+
+      try {
+        await updateQueueOrder({
+          queueRunId: queueRun._id,
+          queueJobIds: nextQueue,
+        });
+      } catch (error: any) {
+        setStatusText(error.message || "Failed to reorder queue.");
+      }
+    },
+    [queueRun, queueOrder, queueJobIds, updateQueueOrder]
+  );
+
+  const handleStartQueue = useCallback(async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:entry',message:'handleStartQueue called',data:{hasQueueRun:!!queueRun,queueRunId:queueRun?._id,queueRunStatus:queueRun?.status,queueJobIdsLength:queueJobIds.length,queueJobIds:queueJobIds.map((id:any)=>id.toString())},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'D,E'})}).catch(()=>{});
+    // #endregion
+
+    if (!queueRun || queueJobIds.length === 0) {
+      setStatusText("Add items to the queue before starting.");
+      return;
+    }
+    if (currentProcessingIndex !== null) {
+      setStatusText("Queue is already running.");
+      return;
+    }
+    if (!activeResume || !convexUser) {
+      setStatusText("No active master resume. Please create one in Settings.");
+      return;
+    }
+    
+    // Check if any job is already actively running (not stale)
+    // This prevents starting a new processing loop if a job is mid-flight
+    const STALE_RUN_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+    const activelyRunningJob = queueItems.find((item: any) => {
+      const runStatus = item?.run?.status;
+      if (runStatus !== "running") return false;
+      const runStartedAt = item?.run?.startedAt || item?.run?.createdAt || 0;
+      const runAgeMs = Date.now() - runStartedAt;
+      return runAgeMs <= STALE_RUN_THRESHOLD_MS; // Not stale = actively running
+    });
+    
+    if (activelyRunningJob) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:alreadyRunning',message:'Job already running - aborting start',data:{activelyRunningJobId:activelyRunningJob?.job?._id?.toString(),activelyRunningJobTitle:activelyRunningJob?.job?.title},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
+      setStatusText("A job is already running. Please wait for it to complete.");
+      return;
+    }
+
+    setAnalyzing(true);
+    setStatusText(`Running ${queueJobIds.length} item(s) sequentially...`);
+
+    // Update queue status to running
+    try {
+      await updateRunStatus({
+        runId: queueRun._id,
+        status: "running",
+        stage: "analyzing",
+      });
+    } catch (e) {
+      console.error("Failed to update queue status:", e);
+    }
+
+    let processed = 0;
+    let hadError = false;
+
+    // Process each job sequentially using the Next.js /api/analyze endpoint
+    for (let i = 0; i < queueJobIds.length; i++) {
+      const jobId = queueJobIds[i];
+      const jobIdStr = jobId.toString();
+      
+      // Skip jobs that have already been completed (check both local state AND server data)
+      if (completedJobRuns.has(jobIdStr)) {
+        processed++;
+        continue;
+      }
+      
+      // Also check server data for already completed OR already running jobs
+      const queueItem = queueItems.find((item: any) => item?.job?._id?.toString() === jobIdStr);
+      const runStatus = queueItem?.run?.status;
+      const runStartedAt = queueItem?.run?.startedAt || queueItem?.run?.createdAt || 0;
+      const runAgeMs = Date.now() - runStartedAt;
+      const STALE_RUN_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+      const isStaleRun = runStatus === "running" && runAgeMs > STALE_RUN_THRESHOLD_MS;
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:checkSkip',message:'Checking if job should be skipped',data:{jobIndex:i,jobId:jobIdStr,runStatus,runId:queueItem?.run?.runId,runStartedAt,runAgeMs,isStaleRun,thresholdMs:STALE_RUN_THRESHOLD_MS},timestamp:Date.now(),sessionId:'debug-session',runId:'skip-check',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+      
+      // Skip jobs that are completed successfully
+      if (runStatus === "success") {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:skippingJob',message:'Skipping job - already completed',data:{jobIndex:i,jobId:jobIdStr,runStatus},timestamp:Date.now(),sessionId:'debug-session',runId:'skip-check',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
+        processed++;
+        continue;
+      }
+      
+      // Skip jobs that are currently running (but NOT stale runs)
+      if (runStatus === "running" && !isStaleRun) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:skippingJob',message:'Skipping job - currently running (not stale)',data:{jobIndex:i,jobId:jobIdStr,runStatus,runAgeMs},timestamp:Date.now(),sessionId:'debug-session',runId:'skip-check',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
+        processed++;
+        continue;
+      }
+      
+      // If run is stale (running for too long), log it and proceed to re-process
+      if (isStaleRun) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:staleRun',message:'Detected stale run - will re-process',data:{jobIndex:i,jobId:jobIdStr,runStatus,runAgeMs,runAgeMinutes:Math.round(runAgeMs/60000)},timestamp:Date.now(),sessionId:'debug-session',runId:'skip-check',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
+      }
+      
+      setCurrentProcessingIndex(i);
+      setStatusText(`Processing job ${i + 1} of ${queueJobIds.length}...`);
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:processingJob',message:'Processing job',data:{jobIndex:i,jobId:jobIdStr,total:queueJobIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+
+      try {
+        // Get job details
+        const job = queueItems.find((item: any) => item?.job?._id?.toString() === jobIdStr)?.job;
+        if (!job) {
+          console.error("Job not found in queueItems:", jobId);
+          setCompletedJobRuns(prev => new Map(prev).set(jobIdStr, { runId: "", status: "error" }));
+          hadError = true;
+          continue;
+        }
+
+        // Phase 1: Start the run
+        const startResponse = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_payload: {
+              job: {
+                title: job.title || "Untitled",
+                company: job.company || "",
+                location: job.location || "",
+                description_text: job.extractedText || job.rawDescription || "",
+              },
+              meta: {
+                url: job.jobUrl || "",
+                platform: job.platform || "",
+              },
+            },
+            master_resume_id: activeResume._id,
+          }),
+        });
+
+        if (!startResponse.ok) {
+          const errorData = await startResponse.json().catch(() => ({}));
+          console.error("Start phase failed:", errorData);
+          setCompletedJobRuns(prev => new Map(prev).set(jobIdStr, { runId: "", status: "error" }));
+          hadError = true;
+          continue;
+        }
+
+        const startData = await startResponse.json();
+        const runId = startData.run_id;
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:startPhaseComplete',message:'Start phase complete',data:{runId,jobId:jobIdStr},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+
+        // Phase 2: Execute the pipeline
+        setStatusText(`Analyzing job ${i + 1} of ${queueJobIds.length}...`);
+        const executeResponse = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phase: "execute",
+            run_id: runId,
+          }),
+        });
+
+        if (!executeResponse.ok) {
+          const errorData = await executeResponse.json().catch(() => ({}));
+          console.error("Execute phase failed:", errorData);
+          setCompletedJobRuns(prev => new Map(prev).set(jobIdStr, { runId, status: "error" }));
+          hadError = true;
+          continue;
+        }
+
+        const executeData = await executeResponse.json();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:executeComplete',message:'Execute phase complete',data:{runId,status:executeData.status,stage:executeData.stage},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+
+        // Mark job as completed successfully
+        setCompletedJobRuns(prev => new Map(prev).set(jobIdStr, { runId, status: "success" }));
+        processed++;
+      } catch (error: any) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:jobError',message:'Error processing job',data:{jobId:jobIdStr,error:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        console.error("Error processing job:", error);
+        setCompletedJobRuns(prev => new Map(prev).set(jobIdStr, { runId: "", status: "error" }));
+        hadError = true;
+      }
+    }
+
+    // Clear processing state
+    setCurrentProcessingIndex(null);
+
+    // Update queue status to complete
+    try {
+      await updateRunStatus({
+        runId: queueRun._id,
+        status: hadError ? "error" : "success",
+        stage: hadError ? "ERROR" : "DONE",
+        errorMessage: hadError ? "One or more items failed." : undefined,
+      });
+    } catch (e) {
+      console.error("Failed to update final queue status:", e);
+    }
+
+    setStatusText(
+      hadError
+        ? `Queue finished with errors. ${processed}/${queueJobIds.length} jobs completed.`
+        : `Queue complete. ${processed} job(s) processed successfully.`
+    );
+    setAnalyzing(false);
+  }, [queueRun, queueJobIds, queueItems, activeResume, convexUser, updateRunStatus, completedJobRuns, currentProcessingIndex]);
+
+  // Auto-resume queue processing after page refresh if queue was running
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:entry',message:'Auto-resume effect triggered',data:{hasAutoResumed:hasAutoResumedRef.current,queueRunExists:!!queueRun,queueRunStatus:queueRun?.status,queueRunId:queueRun?._id?.toString(),queueJobIdsLength:queueJobIds.length,queueItemsLength:queueItems.length,hasActiveResume:!!activeResume,hasConvexUser:!!convexUser,analyzing,currentProcessingIndex,queueItemsDetails:queueItems.map((item:any)=>({jobId:item?.job?._id?.toString(),jobTitle:item?.job?.title,runStatus:item?.run?.status}))},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H3A,H3B,H3C'})}).catch(()=>{});
+    // #endregion
+    
+    // Only auto-resume once per page load
+    if (hasAutoResumedRef.current) return;
+    
+    // Don't auto-resume if queue data isn't fully loaded yet
+    // (queueItems should have same number of items as queueJobIds)
+    if (queueJobIds.length > 0 && queueItems.length !== queueJobIds.length) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:waitingForData',message:'Waiting for queue data to load',data:{queueJobIdsLength:queueJobIds.length,queueItemsLength:queueItems.length},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+      return;
+    }
+    
+    // Check if we have an active queue that was running
+    if (
+      queueRun &&
+      queueRun.status === "running" &&
+      queueJobIds.length > 0 &&
+      activeResume &&
+      convexUser &&
+      !analyzing &&
+      currentProcessingIndex === null
+    ) {
+      const STALE_RUN_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+      
+      // FIRST: Check if ANY job is currently running (not stale)
+      // If so, DON'T auto-resume - let that job finish first
+      const hasActivelyRunningJob = queueItems.some((item: any) => {
+        const runStatus = item?.run?.status;
+        if (runStatus !== "running") return false;
+        const runStartedAt = item?.run?.startedAt || item?.run?.createdAt || 0;
+        const runAgeMs = Date.now() - runStartedAt;
+        return runAgeMs <= STALE_RUN_THRESHOLD_MS; // Not stale = actively running
+      });
+      
+      if (hasActivelyRunningJob) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:alreadyRunning',message:'Job already running - skipping auto-resume',data:{hasActivelyRunningJob:true},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H5'})}).catch(()=>{});
+        // #endregion
+        hasAutoResumedRef.current = true; // Mark as resumed to prevent future triggers
+        return;
+      }
+      
+      // Find the first job that needs processing (not completed, not failed, not currently running)
+      const firstPendingIndex = queueJobIds.findIndex((jobId: any) => {
+        const jobIdStr = jobId.toString();
+        const queueItem = queueItems.find((item: any) => item?.job?._id?.toString() === jobIdStr);
+        const runStatus = queueItem?.run?.status;
+        const runStartedAt = queueItem?.run?.startedAt || queueItem?.run?.createdAt || 0;
+        const runAgeMs = Date.now() - runStartedAt;
+        const isStaleRun = runStatus === "running" && runAgeMs > STALE_RUN_THRESHOLD_MS;
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:checkingJob',message:'Checking job for resume',data:{jobIdStr,runStatus,queueItemFound:!!queueItem,runAgeMs,isStaleRun},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
+        
+        // Job needs processing if: no run, or failed, or stale run
+        // Job should be skipped if: success, or currently running (not stale)
+        if (runStatus === "success" || runStatus === "error") return false;
+        if (runStatus === "running" && !isStaleRun) return false;
+        return true; // No run, or stale run - needs processing
+      });
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:willResume',message:'Auto-resume decision',data:{firstPendingIndex,queueRunStatus:queueRun.status,willResume:firstPendingIndex>=0},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H3A'})}).catch(()=>{});
+      // #endregion
+
+      if (firstPendingIndex >= 0) {
+        hasAutoResumedRef.current = true;
+        setStatusText(`Resuming queue from job ${firstPendingIndex + 1}...`);
+        // Use setTimeout to allow state to settle before starting
+        setTimeout(() => {
+          handleStartQueue();
+        }, 500);
+      }
+    }
+  }, [queueRun, queueJobIds, queueItems, activeResume, convexUser, analyzing, currentProcessingIndex, handleStartQueue]);
+
+  const queueSize = queueJobIds.length;
+  const selectedCount = selectedTabIds.length;
+  const queueItemsByJobId = useMemo(() => {
+    const map = new Map<string, any>();
+    queueItems.forEach((item: any) => {
+      if (item?.job?._id) {
+        map.set(item.job._id.toString(), item);
+      }
+    });
+    return map;
+  }, [queueItems]);
+  const orderedQueueItems = useMemo(() => {
+    return queueOrder.map((id, index) => {
+      return (
+        queueItemsByJobId.get(id) || {
+          job: { _id: id, title: "Unknown job", company: "", jobUrl: "" },
+          run: null,
+          position: index + 1,
+        }
+      );
+    });
+  }, [queueOrder, queueItemsByJobId]);
+
+  const getQueueItemState = (item: any, index: number) => {
+    const jobId = item?.job?._id?.toString();
+    
+    // Check if this is the currently processing item (real-time update)
+    if (currentProcessingIndex === index) {
+      return "running";
+    }
+    
+    // Check server data first (persists across page refresh)
+    const run = item?.run;
+    if (run?.status === "running") return "running";
+    if (run?.status === "success") return "done";
+    if (run?.status === "error") return "failed";
+    
+    // Fall back to local tracking state (for real-time updates before Convex refreshes)
+    if (jobId && completedJobRuns.has(jobId)) {
+      const completedRun = completedJobRuns.get(jobId);
+      return completedRun?.status === "success" ? "done" : "failed";
+    }
+    
+    return "queued";
+  };
+
+  const firstFailedIndex = useMemo(() => {
+    return orderedQueueItems.findIndex((item: any) => item?.run?.status === "error");
+  }, [orderedQueueItems]);
+
+  const hasFailedItems = firstFailedIndex >= 0;
+
+  const handleRetryFailed = useCallback(async () => {
+    if (!queueRun) return;
+    const cursorIndex = hasFailedItems ? firstFailedIndex : 0;
+    try {
+      await resetQueueRun({
+        queueRunId: queueRun._id,
+        cursorIndex,
+      });
+      setStatusText(
+        hasFailedItems
+          ? "Queue reset to retry failed items."
+          : "Queue reset to the beginning."
+      );
+    } catch (error: any) {
+      setStatusText(error.message || "Failed to reset queue.");
+    }
+  }, [queueRun, hasFailedItems, firstFailedIndex, resetQueueRun]);
+
+  const handleForceUnlock = useCallback(async () => {
+    if (!queueRun) return;
+    try {
+      await updateRunStatus({
+        runId: queueRun._id,
+        status: "error",
+        stage: "ERROR",
+        errorMessage: "Queue was force-unlocked by user.",
+      });
+      setStatusText("Queue unlocked. You can retry now.");
+    } catch (error: any) {
+      setStatusText(error.message || "Failed to unlock queue.");
+    }
+  }, [queueRun, updateRunStatus]);
+
+  // Clear completed jobs from the queue
+  const handleClearCompleted = useCallback(async () => {
+    if (!queueRun) return;
+    
+    // Find jobs that are not yet completed
+    const pendingJobIds = queueJobIds.filter((jobId: any) => {
+      const jobIdStr = jobId.toString();
+      const item = queueItems.find((item: any) => item?.job?._id?.toString() === jobIdStr);
+      const state = item?.run?.status;
+      // Keep jobs that don't have a successful run
+      return state !== "success";
+    });
+
+    try {
+      if (pendingJobIds.length === 0) {
+        // All jobs are done - mark queue as complete and it will be replaced by a new one
+        await updateRunStatus({
+          runId: queueRun._id,
+          status: "success",
+          stage: "DONE",
+        });
+        // Clear local tracking
+        setCompletedJobRuns(new Map());
+        setStatusText("Queue cleared. All jobs completed.");
+      } else {
+        // Update queue with only pending jobs
+        await updateQueueOrder({
+          queueRunId: queueRun._id,
+          queueJobIds: pendingJobIds,
+          allowWhileRunning: true,
+        });
+        // Clear local tracking for removed jobs
+        const pendingSet = new Set(pendingJobIds.map((id: any) => id.toString()));
+        setCompletedJobRuns(prev => {
+          const next = new Map(prev);
+          for (const key of next.keys()) {
+            if (!pendingSet.has(key)) {
+              next.delete(key);
+            }
+          }
+          return next;
+        });
+        setStatusText(`Cleared ${queueJobIds.length - pendingJobIds.length} completed job(s).`);
+      }
+    } catch (error: any) {
+      setStatusText(error.message || "Failed to clear completed jobs.");
+    }
+  }, [queueRun, queueJobIds, queueItems, updateRunStatus, updateQueueOrder]);
 
   // Show onboarding if user not set up
   if (!convexUser) {
     return <UserOnboarding />;
   }
-
-  const queueSize = selectedJobIds.length;
 
   return (
     <div className="page-grid">
@@ -581,7 +1126,7 @@ export default function StartRunPage() {
         <div className="panel-head">
           <div>
             <h2>Start New Run</h2>
-            <p className="hint">Select tabs and start analysis runs</p>
+            <p className="hint">Pick tabs, build a queue, and run sequentially</p>
           </div>
           <div className="actions-inline">
             <StatusPill status={backendStatus} onRetry={() => setBackendStatus("online")} />
@@ -598,123 +1143,285 @@ export default function StartRunPage() {
           </div>
         </div>
 
-        <div className="start-run-controls">
-          <div className="control-group">
-            <label htmlFor="jobSelect">Tabs (queue order)</label>
-            <div className="multi-select">
-              <button 
-                className="select" 
-                type="button" 
-                onClick={() => setDropdownOpen((o) => !o)}
-              >
-                {tabs.length === 0
-                  ? "No tabs found"
-                  : analyzing
-                    ? "Analyzing…"
-                    : `${queueSize} selected · ${tabs.length} available`}
-              </button>
-              {dropdownOpen && tabs.length > 0 ? (
-                <div className="multi-select-menu">
-                  <div className="multi-select-actions">
-                    <button className="ghost small" type="button" onClick={handleSelectAll}>
-                      Select all
-                    </button>
-                    <button className="ghost small" type="button" onClick={handleClearSelection}>
-                      Clear
-                    </button>
-                  </div>
-                  <div className="tab-table">
-                    <div className="tab-table-head">
-                      <span>Job</span>
-                      <span>Status</span>
-                      <span>Actions</span>
+        <div className="start-run-pick-queue">
+          <div className="start-run-pane">
+            <div className="pane-head">
+              <div>
+                <h4>Available tabs</h4>
+                <p className="hint">Search, filter, select → add to queue</p>
+              </div>
+              <div className="pane-actions">
+                <span className="badge subtle">{filteredTabs.length} shown</span>
+              </div>
+            </div>
+
+            <div className="pane-controls">
+              <input
+                className="search-input"
+                type="text"
+                placeholder="Search by role, company, or URL"
+                value={tabSearch}
+                onChange={(e) => setTabSearch(e.target.value)}
+              />
+              <div className="chip-row">
+                {(["all", "new", "analyzed", "queued"] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    className={`chip ${tabFilter === filter ? "active" : ""}`}
+                    type="button"
+                    onClick={() => setTabFilter(filter)}
+                  >
+                    {filter === "all"
+                      ? "All"
+                      : filter === "new"
+                        ? "New"
+                        : filter === "analyzed"
+                          ? "Analyzed"
+                          : "Queued"}
+                  </button>
+                ))}
+              </div>
+              <div className="pane-actions-inline">
+                <button
+                  className="primary small"
+                  type="button"
+                  onClick={handleAddToQueue}
+                  disabled={selectedCount === 0}
+                  title={
+                    selectedCount === 0
+                      ? "Select at least one tab."
+                      : "Add selected tabs to queue."
+                  }
+                >
+                  Add {selectedCount > 0 ? `(${selectedCount})` : ""} to queue
+                </button>
+                {syncingJobs ? <span className="hint">Syncing jobs…</span> : null}
+              </div>
+            </div>
+
+            <div className="tab-table">
+              <div className="tab-table-head">
+                <span>Job</span>
+                <span>Status</span>
+                <span>Actions</span>
+              </div>
+              {filteredTabs.length === 0 ? (
+                <div className="empty-state small">No tabs match this filter.</div>
+              ) : (
+                filteredTabs.map(({ tab, job, analyzedRun, inQueue }) => {
+                  // Get queue item state to check if job is done/running in queue
+                  const queueItem = job ? queueItemsByJobId.get(job._id.toString()) : null;
+                  const queueItemRun = queueItem?.run;
+                  const isQueueDone = queueItemRun?.status === "success";
+                  const isQueueFailed = queueItemRun?.status === "error";
+                  
+                  // Detect stale runs (running for > 10 minutes = likely failed)
+                  const STALE_RUN_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+                  const runStartedAt = queueItemRun?.startedAt || queueItemRun?.createdAt || 0;
+                  const runAgeMs = Date.now() - runStartedAt;
+                  const isStaleRun = queueItemRun?.status === "running" && runAgeMs > STALE_RUN_THRESHOLD_MS;
+                  const isQueueRunning = queueItemRun?.status === "running" && !isStaleRun;
+                  
+                  // Also check local completedJobRuns for real-time updates
+                  const localCompletion = job ? completedJobRuns.get(job._id.toString()) : null;
+                  const isLocalDone = localCompletion?.status === "success";
+                  const isLocalFailed = localCompletion?.status === "error";
+                  
+                  // Determine the effective status
+                  const isDone = isQueueDone || isLocalDone || analyzedRun;
+                  const isRunning = isQueueRunning || (inQueue && currentProcessingIndex !== null && queueItem);
+                  const isFailed = isQueueFailed || isLocalFailed || isStaleRun;
+                  
+                  // Get the run to link to (prefer queue run, then analyzedRun)
+                  const runToView = queueItemRun || analyzedRun;
+                  
+                  return (
+                  <div key={tab.id} className="tab-row structured">
+                    <label className="tab-cell">
+                      <input
+                        type="checkbox"
+                        checked={selectedTabIds.includes(tab.id.toString())}
+                        onChange={() => handleToggleTab(tab.id.toString())}
+                        disabled={inQueue}
+                      />
+                      <span className="tab-title">
+                        {tab.active ? "• " : ""}
+                        {tab.title || tab.url || "Untitled"}{" "}
+                        {safeHostname(tab.url) ? `(${safeHostname(tab.url)})` : ""}
+                      </span>
+                    </label>
+                    <div className="tab-cell status">
+                      {!job ? (
+                        <span className="badge warn">Not synced</span>
+                      ) : isDone ? (
+                        <span className="badge subtle">Analyzed</span>
+                      ) : isFailed ? (
+                        <span className="badge warn">Failed</span>
+                      ) : isRunning ? (
+                        <span className="badge subtle">Running</span>
+                      ) : inQueue ? (
+                        <span className="badge subtle">Queued</span>
+                      ) : (
+                        <span className="badge subtle">New</span>
+                      )}
                     </div>
-                    {tabs.map((tab: any) => {
-                      // Find if this tab has been analyzed (check runs by tab URL or ID)
-                      const analyzedRun = runs.find((r: any) => 
-                        r.jobId && jobs.find((j: any) => j._id === r.jobId && j.jobUrl === tab.url)
-                      );
-                      return (
-                        <div key={tab.id} className="tab-row structured">
-                          <label className="tab-cell">
-                            <input
-                              type="checkbox"
-                              checked={selectedJobIds.includes(tab.id.toString())}
-                              onChange={() => handleToggleJob(tab.id.toString())}
-                            />
-                            <span className="tab-title">
-                              {tab.active ? "• " : ""}
-                              {tab.title || tab.url || "Untitled"} ({tab.url ? new URL(tab.url).hostname : ""})
-                            </span>
-                          </label>
-                          <div className="tab-cell status">
-                            {analyzedRun ? (
-                              <span className="badge subtle">Analyzed</span>
-                            ) : (
-                              <span className="badge subtle">New</span>
-                            )}
-                          </div>
-                          <div className="tab-cell actions">
-                            {analyzedRun ? (
-                              <Link
-                                href={`/run/${analyzedRun.runId}`}
-                                className="link-button small"
-                              >
-                                View
-                              </Link>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <div className="tab-cell actions">
+                      {runToView ? (
+                        <Link
+                          href={`/run/${runToView.runId}`}
+                          className="link-button small"
+                        >
+                          View
+                        </Link>
+                      ) : null}
+                    </div>
                   </div>
+                );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="start-run-pane queue">
+            <div className="pane-head">
+              <div>
+                <h4>Queue</h4>
+                <p className="hint">Drag to reorder · sequential</p>
+              </div>
+              <div className="pane-actions">
+                <span className="badge subtle">{queueSize} items</span>
+              </div>
+            </div>
+
+            <div className="pane-controls">
+              <button
+                className="primary"
+                onClick={handleStartQueue}
+                disabled={
+                  isQueueProcessing ||
+                  backendStatus !== "online" ||
+                  !activeResume ||
+                  queueSize === 0
+                }
+              >
+                {isQueueProcessing ? "Running…" : `Analyze (${queueSize}) • sequential`}
+              </button>
+              <div className="pane-actions-inline">
+                <button
+                  className="ghost small"
+                  type="button"
+                  onClick={handleRetryFailed}
+                  disabled={isQueueProcessing || (!hasFailedItems && queueRun?.status !== "error")}
+                  title={
+                    isQueueProcessing
+                      ? "Queue is running."
+                      : hasFailedItems || queueRun?.status === "error"
+                        ? "Retry failed items."
+                        : "No failed items to retry."
+                  }
+                >
+                  Retry failed
+                </button>
+                <button
+                  className="ghost small"
+                  type="button"
+                  onClick={handleClearCompleted}
+                  disabled={isQueueProcessing || !orderedQueueItems.some((item: any) => {
+                    const state = getQueueItemState(item, orderedQueueItems.indexOf(item));
+                    return state === "done";
+                  })}
+                  title="Remove completed jobs from queue"
+                >
+                  Clear completed
+                </button>
+              </div>
+              {isQueueProcessing ? (
+                <div className="pane-actions-inline">
+                  <span className="hint warn">Processing job {(currentProcessingIndex ?? 0) + 1} of {queueSize}...</span>
+                  <button
+                    className="ghost small"
+                    type="button"
+                    onClick={() => {
+                      setCurrentProcessingIndex(null);
+                      setAnalyzing(false);
+                      setStatusText("Queue cancelled by user.");
+                    }}
+                  >
+                    Cancel
+                  </button>
                 </div>
               ) : null}
             </div>
-            {queueSize > 1 ? (
-              <p className="hint">Queue will run in job order.</p>
-            ) : null}
-            {runningSelectedCount > 0 ? (
-              <p className="hint warn">
-                {runningSelectedCount} selected job{runningSelectedCount > 1 ? "s" : ""} already running.
-              </p>
-            ) : null}
-            {analyzedSelectedCount > 0 ? (
-              <p className="hint">
-                {analyzedSelectedCount} selected job(s) have prior completed runs. Re-running will create a new run.
-              </p>
-            ) : null}
-            {analyzing ? <p className="hint">Analysis in progress…</p> : null}
-          </div>
 
-          <div className="control-group actions">
-            <button
-              className="primary"
-              onClick={handleAnalyze}
-              disabled={
-                analyzing ||
-                backendStatus !== "online" ||
-                tabs.length === 0 ||
-                runningSelectedCount > 0 ||
-                !activeResume ||
-                selectedJobIds.length === 0
-              }
-              title={
-                !activeResume
-                  ? "No active master resume. Create one in Settings."
-                  : backendStatus !== "online"
-                    ? "Backend required for analysis."
-                    : tabs.length === 0
-                      ? "No tabs found. Open some job posting tabs."
-                      : runningSelectedCount > 0
-                        ? "A run is already in progress for a selected tab."
-                        : selectedJobIds.length === 0
-                          ? "Select at least one tab."
-                          : "Start analysis for selected tabs."
-              }
-            >
-              {analyzing ? "Analyzing…" : "Analyze"}
-            </button>
+            <div className="queue-list">
+              {queueSize === 0 ? (
+                <div className="empty-state small">Add tabs to build your queue.</div>
+              ) : (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext items={queueOrder} strategy={verticalListSortingStrategy}>
+                    {orderedQueueItems.map((item: any, index: number) => {
+                      const jobId = item?.job?._id?.toString() || queueOrder[index];
+                      const state = getQueueItemState(item, index);
+                      const jobUrl = item?.job?.jobUrl;
+                      const tabTitle = jobUrl ? tabTitleByUrl.get(jobUrl) : "";
+                      const displayTitle = getSafeTitle(tabTitle, item?.job?.title, "Untitled role");
+                      // Only lock items that are currently running or already completed
+                      const isItemLocked = state === "running" || state === "done" || state === "failed";
+                      return (
+                        <SortableQueueItem key={jobId} id={jobId} disabled={isItemLocked}>
+                          <div className={`queue-item ${state}`}>
+                            <div className="queue-handle">⋮⋮</div>
+                            <div className="queue-main">
+                              <div className="queue-title">
+                                {index + 1}. {displayTitle}
+                              </div>
+                              <div className="hint">
+                                {item?.job?.company || "Unknown company"} ·{" "}
+                                {safeHostname(item?.job?.jobUrl) || "Unknown source"}
+                              </div>
+                            </div>
+                            <div className="queue-meta">
+                              <span className={`badge subtle state-${state}`}>
+                                {state === "queued"
+                                  ? "Queued"
+                                  : state === "running"
+                                    ? "Running"
+                                    : state === "done"
+                                      ? "Done"
+                                      : "Failed"}
+                              </span>
+                              {/* Show View link for completed runs - check both local tracking and server data */}
+                              {(completedJobRuns.get(jobId)?.runId || item?.run?.runId) ? (
+                                <Link
+                                  href={`/run/${completedJobRuns.get(jobId)?.runId || item.run.runId}`}
+                                  className="link-button small"
+                                >
+                                  View
+                                </Link>
+                              ) : null}
+                              {/* Only show Remove for queued items that haven't started */}
+                              {state === "queued" ? (
+                                <button
+                                  className="ghost small"
+                                  type="button"
+                                  onClick={() => handleRemoveFromQueue(jobId)}
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </SortableQueueItem>
+                      );
+                    })}
+                  </SortableContext>
+                </DndContext>
+              )}
+            </div>
           </div>
         </div>
 
@@ -724,63 +1431,86 @@ export default function StartRunPage() {
           </div>
         )}
 
-        {/* Active runs */}
-        {runs.some((r: any) => r.status === "running" || (r.stage && !["DONE", "ERROR"].includes(r.stage))) ? (
+        {/* Active runs - show ONLY runs from current queue that are actively running */}
+        {(() => {
+          // Get job IDs from current queue
+          const currentQueueJobIds = new Set(queueItems.map((item: any) => item?.job?._id?.toString()).filter(Boolean));
+          
+          // Only show runs that are part of the current queue AND are running
+          const activeRuns = runs.filter((r: any) => {
+            // Must be running status
+            if (r.status !== "running" || r.runType === "queue") return false;
+            // Must be part of the current queue
+            const runJobId = r.jobId?.toString();
+            return runJobId && currentQueueJobIds.has(runJobId);
+          });
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:activeRuns:filter',message:'Active runs filter result',data:{totalRuns:runs.length,activeRunsCount:activeRuns.length,currentQueueJobIds:Array.from(currentQueueJobIds),activeRunsDetails:activeRuns.map((r:any)=>({_id:r._id?.toString(),runId:r.runId,status:r.status,runType:r.runType,jobId:r.jobId?.toString(),startedAt:r.startedAt})),queueItemsCount:queueItems.length,jobsCount:jobs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'active-runs-debug',hypothesisId:'H2A,H2B'})}).catch(()=>{});
+          // #endregion
+          
+          // Enrich runs with job info from queue items AND tabs (for correct titles)
+          const enrichedRuns = activeRuns.map((run: any) => {
+            // Get job info from queue items (guaranteed to exist since we filtered by currentQueueJobIds)
+            const queueItem = queueItems.find((item: any) => 
+              item?.job?._id?.toString() === run.jobId?.toString()
+            );
+            
+            // Use tab title as primary source (more accurate than database)
+            const jobUrl = queueItem?.job?.jobUrl;
+            const tabTitle = jobUrl ? tabTitleByUrl.get(jobUrl) : "";
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:activeRuns:enrich',message:'Enriching run with job info',data:{runId:run.runId,runJobId:run.jobId?.toString(),foundQueueItem:!!queueItem,queueItemJobId:queueItem?.job?._id?.toString(),queueItemJobTitle:queueItem?.job?.title,tabTitle:tabTitle,queueItemJobCompany:queueItem?.job?.company},timestamp:Date.now(),sessionId:'debug-session',runId:'active-runs-debug',hypothesisId:'H1A,H1B,H1C'})}).catch(()=>{});
+            // #endregion
+            
+            if (queueItem?.job) {
+              return {
+                ...run,
+                // Use getSafeTitle to filter out corrupted titles like "0 notifications total"
+                title: getSafeTitle(tabTitle, queueItem.job.title, run.title),
+                company: queueItem.job.company || run.company,
+              };
+            }
+            return run;
+          });
+          
+          return enrichedRuns.length > 0 ? (
           <div className="active-runs">
             <h4>Active runs</h4>
-            {Object.values(
-              runs
-                .filter((r: any) => r.status === "running" || (r.stage && !["DONE", "ERROR"].includes(r.stage)))
-                .reduce<Record<string, any>>((acc, run: any) => {
-                  const key = run.runId;
-                  if (!acc[key]) acc[key] = { runId: key, runs: [] };
-                  acc[key].runs.push(run);
-                  return acc;
-                }, {})
-            )
-              .map((group: any) => {
-                const sorted = group.runs.slice().sort((a: any, b: any) => 
-                  (a.createdAt || 0) - (b.createdAt || 0)
-                );
-                return (
-                  <div key={group.runId} className="queue-card">
-                    <div className="queue-card-head">
-                      <div>
-                        <div className="queue-title">{group.runId}</div>
-                        <div className="hint">
-                          {sorted.length} item{sorted.length > 1 ? "s" : ""}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="queue-body">
-                      {sorted.map((run: any) => (
-                        <div key={run._id} className="tab-row structured">
-                          <div className="tab-cell">
-                            <span className="tab-title">
-                              {run.title || "Untitled"} ({run.company || "Unknown"})
-                            </span>
-                          </div>
-                          <div className="tab-cell status">
-                            <span className="status-pill tiny">
-                              {run.stage === "DONE" ? "DONE" : run.stage || "RUNNING"}
-                            </span>
-                          </div>
-                          <div className="tab-cell actions">
-                            <Link
-                              href={`/run/${run.runId}`}
-                              className="link-button small"
-                            >
-                              Open
-                            </Link>
-                          </div>
-                        </div>
-                      ))}
+            {enrichedRuns.map((run: any) => (
+              <div key={run._id} className="queue-card">
+                <div className="queue-card-head">
+                  <div>
+                    <div className="queue-title">{run.title || "Processing..."}</div>
+                    <div className="hint">
+                      {run.company || "Unknown company"} · {run.stage || "Running"}
                     </div>
                   </div>
-                );
-              })}
+                  <div className="pane-actions">
+                    <span className="status-pill tiny running">RUNNING</span>
+                  </div>
+                </div>
+                <div className="queue-body">
+                  <div className="tab-row structured">
+                    <div className="tab-cell">
+                      <span className="hint">Run ID: {run.runId}</span>
+                    </div>
+                    <div className="tab-cell actions">
+                      <Link
+                        href={`/run/${run.runId}`}
+                        className="link-button small"
+                      >
+                        Open
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        ) : null}
+        ) : null;
+        })()}
       </div>
     </div>
   );

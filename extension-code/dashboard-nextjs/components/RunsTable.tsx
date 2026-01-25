@@ -8,6 +8,36 @@ import { formatDateTime, formatDuration } from "@/utils/runFilters";
 // Application status type
 export type ApplicationStatus = "not_applied" | "applied" | "interviewing" | "rejected";
 
+// Utility to detect corrupted job titles (like LinkedIn notification badges)
+function isCorruptedTitle(title: string | undefined | null): boolean {
+  if (!title) return true;
+  const lower = title.toLowerCase().trim();
+  // Detect patterns like "0 notifications total", "1 notification total", etc.
+  if (/^\d+\s*notifications?\s*total$/i.test(lower)) return true;
+  // Detect very short titles that are just numbers
+  if (/^\d+$/.test(lower)) return true;
+  // Detect other LinkedIn UI text that might get captured
+  if (lower === "loading..." || lower === "linkedin" || lower.length < 3) return true;
+  return false;
+}
+
+// Get a display-safe title with company fallback
+function getSafeTitle(
+  title: string | undefined | null,
+  company?: string | null,
+  fallback: string = "Untitled role"
+): string {
+  // First, try the provided title if it's not corrupted
+  if (!isCorruptedTitle(title)) return title!;
+  
+  // If we have a company, create a generic title
+  if (company && company.toLowerCase() !== "unknown" && company.toLowerCase() !== "unknown company") {
+    return `Job at ${company}`;
+  }
+  
+  return fallback;
+}
+
 interface Props {
   runs: RunRecord[];
   onSelect: (runId: string) => void;
@@ -112,7 +142,7 @@ export default function RunsTable({ runs, onSelect, onDownload, backendOnline, s
             return (
               <tr key={run.runId} onClick={() => onSelect(run.runId)} className="clickable">
                 <td>
-                  <div className="cell-title">{run.title || "Untitled role"}</div>
+                  <div className="cell-title">{getSafeTitle(run.title, run.company)}</div>
                 </td>
                 <td>
                   <select
@@ -178,15 +208,17 @@ export default function RunsTable({ runs, onSelect, onDownload, backendOnline, s
                         Download
                       </button>
                     )}
-                    {onStop && run.result === "pending" ? (
+                    {onStop && (run.result === "pending" || run.status === "running" || run.status === "analyzing" || run.status === "RUNNING") ? (
                       <button
-                        className="ghost small"
+                        className="ghost small warn"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onStop(run);
+                          if (confirm("Are you sure you want to cancel this run?")) {
+                            onStop(run);
+                          }
                         }}
                       >
-                        Stop
+                        Cancel
                       </button>
                     ) : null}
                     <button className="ghost icon small" onClick={(e) => e.stopPropagation()} title="More actions coming soon">

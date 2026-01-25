@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import RunsTable, { ApplicationStatus } from "@/components/RunsTable";
@@ -36,6 +36,9 @@ export default function RunsPage() {
   // Mutation to update application status
   const upsertApplicationTracking = useMutation(api.applicationTracking.upsertApplicationTracking);
   
+  // Mutation to cancel/stop a run
+  const updateRunStatus = useMutation(api.runs.updateRunStatus);
+  
   // Map Convex data to RunRecord format with proper typing
   const runs: ExtendedRun[] = useMemo(() => {
     if (!runsData) return [];
@@ -68,6 +71,32 @@ export default function RunsPage() {
     // Use Next.js router for better navigation
     window.location.href = `/run/${runId}`;
   };
+
+  // Handle cancelling/stopping a run
+  const handleCancelRun = useCallback(async (run: RunRecord) => {
+    // Find the full run data to get the Convex _id
+    const fullRun = runs.find((r) => r.runId === run.runId);
+    if (!fullRun?._id) {
+      console.error("Run not found or missing _id:", run.runId);
+      alert("Could not find run to cancel. Please refresh and try again.");
+      return;
+    }
+
+    try {
+      // Update run status to error/cancelled in Convex database
+      await updateRunStatus({
+        runId: fullRun._id,
+        status: "error",
+        stage: "ERROR",
+        errorMessage: "Cancelled by user",
+        queueState: "failed", // Also mark queue state as failed
+      });
+      console.log("Run cancelled successfully in database:", run.runId, "Convex ID:", fullRun._id);
+    } catch (error) {
+      console.error("Failed to cancel run in database:", error);
+      alert("Failed to cancel run. Please try again.");
+    }
+  }, [runs, updateRunStatus]);
 
   // Handle application status change
   const handleApplicationStatusChange = async (runId: string, status: ApplicationStatus) => {
@@ -140,6 +169,7 @@ export default function RunsPage() {
         onSelect={handleSelect}
         backendOnline={true}
         onApplicationStatusChange={handleApplicationStatusChange}
+        onStop={handleCancelRun}
       />
     </div>
   );
