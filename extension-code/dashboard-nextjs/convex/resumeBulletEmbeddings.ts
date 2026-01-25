@@ -59,7 +59,7 @@ export const createResumeBulletEmbeddings = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const ids = [];
+    const ids: any[] = [];
     for (const emb of args.embeddings) {
       const embedKeyHash = generateEmbedKeyHash(
         emb.embeddingModel,

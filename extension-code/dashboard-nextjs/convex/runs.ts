@@ -292,7 +292,7 @@ export const getRunsWithJobDetails = query({
           .first();
 
         // Calculate coverage percentage
-        let coverage = null;
+        let coverage: number | null = null;
         if (selectionPlan?.coverage) {
           const { mustTotal, mustCovered, niceTotal, niceCovered } = selectionPlan.coverage;
           const totalReqs = mustTotal + niceTotal;
@@ -611,7 +611,7 @@ export const getActiveQueueRunWithItems = query({
       }
     }
 
-    const items = [];
+    const items: any[] = [];
     for (let i = 0; i < queueJobIds.length; i++) {
       const jobId = queueJobIds[i];
       const job = await ctx.db.get(jobId);

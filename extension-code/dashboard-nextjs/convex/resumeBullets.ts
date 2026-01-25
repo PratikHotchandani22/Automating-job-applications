@@ -67,7 +67,7 @@ export const createResumeBullets = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const ids = [];
+    const ids: any[] = [];
     for (const bullet of args.bullets) {
       const id = await ctx.db.insert("resumeBullets", {
         ...bullet,

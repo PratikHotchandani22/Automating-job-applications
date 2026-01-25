@@ -175,7 +175,7 @@ export default function StartRunPage() {
   const updateRunStatus = useMutation(api.runs.updateRunStatus);
 
   const queueRun = queueData?.queueRun || null;
-  const queueItems = queueData?.items || [];
+  const queueItems: any[] = queueData?.items || [];
   const queueJobIds = queueRun?.queueJobIds || [];
 
   const queueOrder = useMemo(

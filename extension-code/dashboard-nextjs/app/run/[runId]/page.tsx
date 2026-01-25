@@ -149,9 +149,9 @@ function parseJobDescriptionSections(description?: string) {
   const matches = JOB_SECTION_TITLES.map((title) => {
     const idx = lowerText.indexOf(title.toLowerCase());
     if (idx === -1) return null;
-    return { title, idx };
+    return { title: title as string, idx };
   })
-    .filter((match): match is { title: string; idx: number } => Boolean(match))
+    .filter((match): match is { title: string; idx: number } => match !== null)
     .sort((a, b) => a.idx - b.idx);
 
   const sections: { title: string; content: string }[] = [];

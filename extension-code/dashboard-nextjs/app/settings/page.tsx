@@ -88,7 +88,7 @@ export default function SettingsPage() {
         userId: user._id,
         name: resumeName,
         contentHash,
-        isActive: resumes && resumes.length === 0, // Make first resume active
+        isActive: Boolean(resumes && resumes.length === 0), // Make first resume active
         skills: {},
         education: [],
       });
@@ -207,12 +207,12 @@ export default function SettingsPage() {
 
       // Step 2: Extract structured data and save to database
       const resumeName = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-      const isActive = resumes && resumes.length === 0; // Make first resume active
+      const isActive = Boolean(resumes && resumes.length === 0); // Make first resume active
 
       const placeholderResumeId = await createProcessingResume({
         userId: user._id,
         name: resumeName,
-        isActive: isActive,
+        isActive,
       });
       setProcessingResumeId(placeholderResumeId);
       setUploadStage("extracting_structured_resume");

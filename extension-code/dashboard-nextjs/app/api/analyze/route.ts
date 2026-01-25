@@ -1212,7 +1212,7 @@ ${bullets}
     .join(" \\\\\n     ");
 
   const educationLatex = (masterResume.education || [])
-    .map((edu) => `\\resumeSubheading
+    .map((edu: any) => `\\resumeSubheading
     {${escapeLatex(edu.school || "")}}{${escapeLatex(edu.location || "")}}
     {${escapeLatex(edu.degree || "")}${edu.field ? ` in ${escapeLatex(edu.field)}` : ""}}{${escapeLatex(edu.dates || "")}}`)
     .join("\n\n");

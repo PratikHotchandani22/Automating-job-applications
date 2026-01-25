@@ -295,7 +295,7 @@ Return only valid JSON that strictly conforms to the schema above.`;
     }
 
     // Clean awards array: convert null values to undefined
-    let cleanedAwards = undefined;
+    let cleanedAwards: any[] | undefined = undefined;
     if (extractedContent.awards && Array.isArray(extractedContent.awards)) {
       cleanedAwards = extractedContent.awards.map((award: any) => {
         const cleaned: any = {
@@ -311,20 +311,20 @@ Return only valid JSON that strictly conforms to the schema above.`;
         return cleaned;
       });
       // Filter out invalid awards (must have at least name, issuer, or year)
-      cleanedAwards = cleanedAwards.filter((award: any) => award.name || award.issuer || award.year);
+      cleanedAwards = cleanedAwards?.filter((award: any) => award.name || award.issuer || award.year);
       // If cleaned awards array is empty, set to undefined
-      if (cleanedAwards.length === 0) {
+      if (!cleanedAwards || cleanedAwards.length === 0) {
         cleanedAwards = undefined;
       }
     }
 
     // Clean mentorship array: filter out null values
-    let cleanedMentorship = undefined;
+    let cleanedMentorship: string[] | undefined = undefined;
     if (extractedContent.mentorship && Array.isArray(extractedContent.mentorship)) {
       cleanedMentorship = extractedContent.mentorship.filter(
         (item: any) => item !== null && item !== undefined && typeof item === 'string' && item.trim() !== ''
       );
-      if (cleanedMentorship.length === 0) {
+      if (!cleanedMentorship || cleanedMentorship.length === 0) {
         cleanedMentorship = undefined;
       }
     }
