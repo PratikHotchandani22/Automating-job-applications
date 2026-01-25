@@ -5,8 +5,9 @@ import { v } from "convex/values";
 import { checkRunExists, filterNotDeleted } from "./helpers";
 import { api } from "./_generated/api";
 
-const filterNotDeletedNonQueue = (runs: any[]) =>
-  filterNotDeleted(runs).filter((run) => run.runType !== "queue");
+const filterNotDeletedNonQueue = <T extends { isDeleted?: boolean; runType?: string }>(
+  runs: T[]
+): T[] => filterNotDeleted(runs).filter((run) => run.runType !== "queue");
 
 /**
  * Create a new run

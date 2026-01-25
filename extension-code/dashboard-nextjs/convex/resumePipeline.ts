@@ -600,7 +600,10 @@ export const syncArtifactsFromBackend = action({
                     if (Array.isArray(project.links)) {
                       linkValues.push(...project.links);
                     } else if (typeof project.links === "object") {
-                      linkValues.push(...Object.values(project.links));
+                      const values = Object.values(project.links).filter(
+                        (value): value is string => typeof value === "string"
+                      );
+                      linkValues.push(...values);
                     }
                   }
                   const cleanedLinks = Array.from(
@@ -679,12 +682,18 @@ export const syncArtifactsFromBackend = action({
 /**
  * Download artifact from backend and store in Convex
  */
-export const downloadAndStoreArtifact = action({
+export const downloadAndStoreArtifact: ReturnType<typeof action> = action({
   args: {
     runId: v.id("runs"),
     artifactKey: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{
+    success: true;
+    artifactKey: string;
+    data: unknown;
+    contentType: string;
+    isText: boolean;
+  }> => {
     // Get run to get backend runId
     const run = await ctx.runQuery(api.runs.getRun, {
       runId: args.runId,
