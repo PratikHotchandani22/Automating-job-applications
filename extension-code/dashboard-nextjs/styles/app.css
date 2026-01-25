@@ -2561,3 +2561,545 @@ textarea:focus-visible {
   font-size: 14px;
   color: var(--muted);
 }
+
+/* ===========================================
+   INLINE EDITOR STYLES - Always-on editing
+   =========================================== */
+
+.inline-input,
+.inline-textarea {
+  width: 100%;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: inherit !important;
+  font-size: inherit;
+  font-family: inherit !important;
+  line-height: 1.5;
+  outline: none;
+  resize: none;
+  caret-color: var(--primary);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.inline-input::placeholder,
+.inline-textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.inline-input:hover,
+.inline-textarea:hover {
+  border-color: rgba(96, 165, 250, 0.2) !important;
+}
+
+.inline-input:focus,
+.inline-textarea:focus {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+  border-color: rgba(96, 165, 250, 0.35) !important;
+}
+
+.inline-input:disabled,
+.inline-textarea:disabled {
+  opacity: 1;
+  color: #e2e8f0 !important;
+  cursor: default;
+}
+
+.inline-textarea {
+  min-height: 24px;
+  overflow-y: hidden;
+  overflow-x: visible;
+}
+
+/* Summary textarea specific */
+.summary-textarea {
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 6px 4px;
+  min-height: 72px;
+}
+
+/* Bullet line input specific */
+.bullet-line-input {
+  min-height: 24px;
+  padding: 2px 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Skill text input */
+.skill-text {
+  font-size: 13px;
+}
+
+/* Skill category title */
+.skill-category-title {
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #e2e8f0 !important;
+}
+
+/* Experience/Education field widths */
+.exp-company,
+.proj-name,
+.edu-school {
+  font-weight: 600;
+  color: #e2e8f0 !important;
+  flex: 1;
+}
+
+.exp-title-text,
+.edu-degree-text {
+  font-weight: 500;
+  color: #e2e8f0 !important;
+  flex: 1;
+}
+
+.exp-dates,
+.proj-date,
+.edu-dates {
+  color: var(--muted) !important;
+  font-size: 13px;
+  text-align: right;
+  max-width: 160px;
+  flex: 0 0 160px;
+}
+
+.exp-location,
+.edu-gpa {
+  color: var(--muted) !important;
+  text-align: right;
+  max-width: 160px;
+  flex: 0 0 160px;
+}
+
+/* Bullet editor layout */
+.bullet-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.bullet-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem;
+  align-items: start;
+  position: relative;
+}
+
+.bullet-line-editor {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: start;
+  width: 100%;
+}
+
+.bullet-prefix {
+  color: var(--muted);
+  line-height: 1.7;
+  padding-top: 2px;
+}
+
+/* Skill item layout */
+.skill-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+/* Skill category layout */
+.skill-category {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem;
+  margin-bottom: 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.skill-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+/* Row actions visibility */
+.inline-row {
+  align-items: center;
+}
+
+.row-actions {
+  display: inline-flex;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.inline-row:hover .row-actions,
+.inline-row:focus-within .row-actions,
+.skill-category-header:hover .row-actions,
+.skill-category-header:focus-within .row-actions,
+.sortable-header:hover .row-actions,
+.sortable-header:focus-within .row-actions,
+.bullet-line-editor:hover .row-actions,
+.bullet-line-editor:focus-within .row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Icon button styles */
+.icon-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.icon-button:hover {
+  color: #e2e8f0;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.icon-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.35);
+}
+
+/* Collapse toggle */
+.collapse-toggle {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Drag handle styles */
+.drag-handle {
+  cursor: grab;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  font-size: 14px;
+  transition: background 0.2s ease, border 0.2s ease, transform 0.2s ease;
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.drag-handle.small {
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+}
+
+.inline-row:hover .drag-handle,
+.inline-row:focus-within .drag-handle,
+.sortable-header:hover .drag-handle,
+.sortable-header:focus-within .drag-handle {
+  opacity: 1;
+}
+
+.drag-handle:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.7);
+  outline-offset: 2px;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+  transform: scale(0.96);
+}
+
+/* Sortable header */
+.sortable-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Experience/Project cards */
+.trv-experience,
+.trv-project {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.trv-experience:last-child,
+.trv-project:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.exp-header,
+.proj-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+  gap: 1rem;
+}
+
+.exp-title,
+.proj-tech {
+  color: #e2e8f0;
+  font-size: 14px;
+  margin-bottom: 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Experience/Project actions row */
+.exp-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.25rem;
+}
+
+.row-actions.always-visible {
+  opacity: 0.4;
+  pointer-events: auto;
+  transition: opacity 0.2s ease;
+}
+
+.trv-experience:hover .row-actions.always-visible,
+.trv-project:hover .row-actions.always-visible {
+  opacity: 1;
+}
+
+/* Make draggable items show grab cursor */
+.trv-experience,
+.trv-project {
+  cursor: grab;
+}
+
+.trv-experience:active,
+.trv-project:active {
+  cursor: grabbing;
+}
+
+/* Skill items cursor */
+.skill-item {
+  cursor: grab;
+}
+
+.skill-item:active {
+  cursor: grabbing;
+}
+
+/* Update skill-item grid with drag zone */
+.skill-item {
+  grid-template-columns: auto 1fr auto;
+}
+
+/* Drag zone - subtle hover-only drag handle */
+.drag-zone {
+  width: 16px;
+  height: 16px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  background: transparent;
+  border-radius: 4px;
+  position: relative;
+}
+
+.drag-zone::before {
+  content: "⋮⋮";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: -2px;
+}
+
+.drag-zone:active {
+  cursor: grabbing;
+}
+
+/* Show drag zone on hover */
+.bullet-row:hover .drag-zone,
+.skill-item:hover .drag-zone,
+.skill-category:hover > .drag-zone {
+  opacity: 0.6;
+}
+
+.drag-zone:hover {
+  opacity: 1 !important;
+  background: rgba(96, 165, 250, 0.1);
+}
+
+/* Category drag zone */
+.drag-zone.category-drag {
+  width: 100%;
+  height: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.drag-zone.category-drag::before {
+  content: "⋯";
+  letter-spacing: 0;
+}
+
+/* Card drag zone for experience/project */
+.card-actions-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.drag-zone.card-drag {
+  width: 24px;
+  height: 24px;
+}
+
+.drag-zone.card-drag::before {
+  font-size: 12px;
+}
+
+.trv-experience:hover .drag-zone.card-drag,
+.trv-project:hover .drag-zone.card-drag,
+.trv-education:hover .drag-zone.card-drag {
+  opacity: 0.6;
+}
+
+/* Education card styling */
+.trv-education {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.trv-education:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.edu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+  gap: 1rem;
+}
+
+.edu-degree {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Independent scrolling for preview grid panes */
+.trv-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 1.5rem;
+  height: calc(100vh - 280px);
+  min-height: 500px;
+}
+
+.trv-scroll-pane {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+}
+
+.trv-scroll-pane::-webkit-scrollbar {
+  width: 6px;
+}
+
+.trv-scroll-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.trv-scroll-pane::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.trv-scroll-pane::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.trv-preview-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.trv-preview-pdf {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.trv-preview-pdf .panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.trv-preview-pdf .latex-preview {
+  flex: 1;
+  min-height: 0;
+}
+
+.trv-preview-pdf .latex-preview iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+@media (max-width: 1100px) {
+  .trv-preview-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  
+  .trv-scroll-pane {
+    max-height: none;
+    overflow: visible;
+  }
+  
+  .trv-preview-pdf {
+    min-height: 500px;
+  }
+}

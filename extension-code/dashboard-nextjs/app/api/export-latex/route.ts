@@ -52,7 +52,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
 
-    const tailoredResume = runDetails.tailoredResumes?.[0];
+    const tailoredResume = runDetails.tailoredResumes?.reduce((latest: any, current: any) => {
+      if (!latest) return current;
+      if ((current.source === "user_edit") && (latest.source !== "user_edit")) return current;
+      return current.createdAt > latest.createdAt ? current : latest;
+    }, null as any);
     if (!tailoredResume) {
       return NextResponse.json(
         { error: "Tailored resume not found" },

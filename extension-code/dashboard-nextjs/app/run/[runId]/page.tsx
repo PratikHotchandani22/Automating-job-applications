@@ -197,7 +197,11 @@ export default function RunResultsPage() {
   // Primary tailored resume (first one or by modelKey)
   const primaryTailoredResume = useMemo(() => {
     if (!runDetails?.tailoredResumes?.length) return null;
-    return runDetails.tailoredResumes[0];
+    return runDetails.tailoredResumes.reduce((latest: any, current: any) => {
+      if (!latest) return current;
+      if ((current.source === "user_edit") && (latest.source !== "user_edit")) return current;
+      return current.createdAt > latest.createdAt ? current : latest;
+    }, null as any);
   }, [runDetails?.tailoredResumes]);
 
   const handleCopyRunId = useCallback(() => {
@@ -513,6 +517,7 @@ export default function RunResultsPage() {
               masterResume={masterResume}
               job={job}
               runId={run._id}
+              runSlug={run.runId}
               artifacts={artifacts || []}
               onArtifactCreated={handleRefresh}
               registerGeneratePdf={registerGeneratePdf}

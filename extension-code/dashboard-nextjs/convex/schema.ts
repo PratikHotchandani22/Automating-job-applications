@@ -518,12 +518,15 @@ export default defineSchema({
       gpa: v.optional(v.string()),
     })),
     skills: v.record(v.string(), v.array(v.string())),
+    skills_highlighted: v.optional(v.array(v.string())),
     awards: v.optional(v.array(v.object({
       name: v.string(),
       issuer: v.string(),
       year: v.string(),
       details: v.optional(v.string()),
     }))),
+    source: v.optional(v.union(v.literal("llm"), v.literal("user_edit"))),
+    parentVersionId: v.optional(v.id("tailoredResumes")),
     selectionEnforcement: v.object({
       strippedUnselected: v.number(),
       truncatedBullets: v.number(),

@@ -4,67 +4,17 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { renderRichText } from "@/utils/renderRichText";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { generateResumeLatex } from "@/lib/latexGenerator";
 import type { Id } from "@/convex/_generated/dataModel";
+import SummaryEditor from "@/components/resume-editors/SummaryEditor";
+import SkillsEditor from "@/components/resume-editors/SkillsEditor";
+import ExperienceEditor from "@/components/resume-editors/ExperienceEditor";
+import ProjectsEditor from "@/components/resume-editors/ProjectsEditor";
+import EducationEditor from "@/components/resume-editors/EducationEditor";
+import InlineInput from "@/components/resume-editors/InlineInput";
+import type { TailoredResumeDraft } from "@/components/resume-editors/types";
+import { cloneResume, ensureBulletPeriod, estimateWordCount, normalizeDateRange } from "@/utils/resumeDraft";
 
-interface TailoredResume {
-  _id: Id<"tailoredResumes">;
-  runId: Id<"runs">;
-  modelKey: string;
-  modelName: string;
-  summary: string;
-  coverLetter?: string;
-  diagnostics?: string;
-  reasoningSummary?: string;
-  workExperience: Array<{
-    roleId: string;
-    company: string;
-    title: string;
-    dateRange: string;
-    location?: string;
-    bullets: Array<{
-      bulletId: string;
-      originalText: string;
-      tailoredText: string;
-      wasRewritten: boolean;
-    }>;
-  }>;
-  projects: Array<{
-    projectId: string;
-    name: string;
-    date?: string;
-    links?: string[];
-    bullets: Array<{
-      bulletId: string;
-      originalText: string;
-      tailoredText: string;
-      wasRewritten: boolean;
-    }>;
-  }>;
-  education: Array<{
-    institution: string;
-    degree: string;
-    dates: string;
-    location?: string;
-    gpa?: string;
-  }>;
-  skills: Record<string, string[]>;
-  awards?: Array<{
-    name: string;
-    issuer: string;
-    year: string;
-    details?: string;
-  }>;
-  wordCountEstimate: number;
-  selectionEnforcement: {
-    strippedUnselected: number;
-    truncatedBullets: number;
-    repairApplied: boolean;
-    compliant: boolean;
-    proxyWordCountExceeded: boolean;
-  };
-  createdAt: number;
-}
+type TailoredResume = TailoredResumeDraft;
 
 interface MasterResume {
   header?: {
@@ -77,6 +27,7 @@ interface MasterResume {
     portfolio?: string;
     website?: string;
   };
+  links?: any;
 }
 
 interface Job {
@@ -99,18 +50,10 @@ interface TailoredResumeViewProps {
   masterResume: MasterResume | null;
   job: Job | null;
   runId: Id<"runs">;
+  runSlug: string;
   artifacts: Artifact[];
   onArtifactCreated?: () => void;
   registerGeneratePdf?: (context: { trigger: () => Promise<void>; loading: boolean } | null) => void;
-}
-
-function formatSkillLabel(key: string): string {
-  if (key === "other_skills") return "Other Skills";
-  return key
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 export default function TailoredResumeView({
@@ -118,6 +61,7 @@ export default function TailoredResumeView({
   masterResume,
   job,
   runId,
+  runSlug,
   artifacts,
   onArtifactCreated,
   registerGeneratePdf,
@@ -129,12 +73,14 @@ export default function TailoredResumeView({
   const [latex, setLatex] = useState("");
   const [loadingLatex, setLoadingLatex] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [savingLatex, setSavingLatex] = useState(false);
-  const [saveOkAt, setSaveOkAt] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [compilingLatex, setCompilingLatex] = useState(false);
-  const [compileError, setCompileError] = useState<string | null>(null);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [latexGenerated, setLatexGenerated] = useState(false);
+  const [draftResume, setDraftResume] = useState<TailoredResume>(() => cloneResume(tailoredResume));
+  const [baselineResume, setBaselineResume] = useState<TailoredResume>(() => cloneResume(tailoredResume));
+  const [initialPdfLoading, setInitialPdfLoading] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const [savingResume, setSavingResume] = useState(false);
+  const [saveResumeOkAt, setSaveResumeOkAt] = useState<string | null>(null);
   const hasExtras =
     Boolean(tailoredResume.coverLetter?.trim()) ||
     Boolean(tailoredResume.diagnostics?.trim()) ||
@@ -142,52 +88,8 @@ export default function TailoredResumeView({
 
   const generateUploadUrl = useMutation(api.runDetails.generateUploadUrl);
   const storeArtifact = useMutation(api.runDetails.storeArtifact);
+  const saveTailoredResumeEdit = useMutation(api.tailoredResumes.createTailoredResumeEdit);
 
-  // Generate LaTeX from tailored resume
-  const latexContent = useMemo(() => {
-    const resumeLinks = Array.isArray(masterResume?.links)
-      ? { headerLinks: {}, projectLinks: [], allLinks: masterResume?.links }
-      : masterResume?.links;
-
-    const resume = {
-      header: masterResume?.header,
-      summary: tailoredResume.summary,
-      skills: tailoredResume.skills,
-      education: tailoredResume.education,
-      awards: tailoredResume.awards,
-      links: resumeLinks,
-    };
-
-    const projectLinks = new Map<string, string[]>();
-    (resumeLinks?.projectLinks || []).forEach((entry) => {
-      if (entry.projectName && entry.links.length > 0) {
-        projectLinks.set(entry.projectName.toLowerCase(), entry.links);
-      }
-    });
-
-    const workExperiences = tailoredResume.workExperience.map((exp) => ({
-      company: exp.company,
-      role: exp.title,
-      dates: exp.dateRange,
-      location: exp.location,
-      bullets: exp.bullets.map((b) => ({ text: b.tailoredText })),
-    }));
-
-    const projects = tailoredResume.projects.map((proj) => {
-      const normalizedProjectName = (proj.name || "").toLowerCase();
-      const fallbackLinks = projectLinks.get(normalizedProjectName);
-      const resolvedLinks =
-        Array.isArray(proj.links) && proj.links.length > 0 ? proj.links : fallbackLinks;
-      return {
-        name: proj.name,
-        dates: proj.date || proj.dates,
-        links: resolvedLinks,
-        bullets: proj.bullets.map((b) => ({ text: b.tailoredText })),
-      };
-    });
-
-    return generateResumeLatex(resume, workExperiences, projects);
-  }, [tailoredResume, masterResume]);
 
   // Count modifications
   const modificationStats = useMemo(() => {
@@ -211,8 +113,27 @@ export default function TailoredResumeView({
     return { totalBullets, rewrittenBullets };
   }, [tailoredResume]);
 
+  const isDraftDirty = useMemo(() => {
+    return JSON.stringify(draftResume) !== JSON.stringify(baselineResume);
+  }, [draftResume, baselineResume]);
+
+  useEffect(() => {
+    const next = cloneResume(tailoredResume);
+    setDraftResume(next);
+    setBaselineResume(next);
+    setResumeError(null);
+    setSaveResumeOkAt(null);
+  }, [tailoredResume]);
+
   // Check if artifacts already exist
   const existingPdf = artifacts.find((a) => a.artifactType === "pdf");
+  const latestPdf = useMemo(() => {
+    const pdfArtifacts = artifacts.filter((a) => a.artifactType === "pdf");
+    if (pdfArtifacts.length === 0) return null;
+    return pdfArtifacts.reduce((latest, current) =>
+      current.createdAt > latest.createdAt ? current : latest
+    );
+  }, [artifacts]);
   const latestTex = useMemo(() => {
     const texArtifacts = artifacts.filter((a) => a.artifactType === "tex");
     if (texArtifacts.length === 0) return null;
@@ -224,7 +145,13 @@ export default function TailoredResumeView({
     api.runDetails.getArtifactUrl,
     latestTex ? { storageId: latestTex.storageId } : "skip"
   );
+  const pdfUrl = useQuery(
+    api.runDetails.getArtifactUrl,
+    latestPdf ? { storageId: latestPdf.storageId } : "skip"
+  );
   const lastLoadedLatex = useRef<string>("");
+  const initialPdfRequested = useRef(false);
+  const hasLatexSource = latexGenerated || Boolean(latestTex);
 
   // Helper function to generate filename in format: fullname_jobtitle_companyname
   const generateFilename = useCallback(() => {
@@ -242,6 +169,56 @@ export default function TailoredResumeView({
     return filename.replace(/[^a-zA-Z0-9_-]/g, "_");
   }, [masterResume, job]);
 
+  const fetchLatexFromServer = useCallback(async () => {
+    const response = await fetch("/api/render-latex", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId: runSlug }),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.error || "Failed to generate LaTeX");
+    }
+    const data = await response.json();
+    if (!data?.latex) {
+      throw new Error("LaTeX output was empty");
+    }
+    setLatex(data.latex);
+    lastLoadedLatex.current = data.latex;
+    setLatexGenerated(true);
+    return data as { latex: string; filename?: string };
+  }, [runSlug]);
+
+  const fetchLatexForExport = useCallback(async () => {
+    const response = await fetch("/api/export-latex", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId: runSlug }),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.error || "Failed to export LaTeX");
+    }
+    const data = await response.json();
+    if (!data?.latex) {
+      throw new Error("LaTeX output was empty");
+    }
+    setLatex(data.latex);
+    lastLoadedLatex.current = data.latex;
+    setLatexGenerated(true);
+    return data as { latex: string; filename?: string };
+  }, [runSlug]);
+
+  const ensureLatexSource = useCallback(
+    async (force = false) => {
+      if (!force && latex?.trim()) {
+        return { latex, filename: generateFilename() };
+      }
+      return await fetchLatexFromServer();
+    },
+    [latex, fetchLatexFromServer, generateFilename]
+  );
+
   // Handle PDF generation and download
   const handleGeneratePdf = useCallback(async (download = true, store = true) => {
     setGeneratingPdf(true);
@@ -253,14 +230,17 @@ export default function TailoredResumeView({
     // #endregion
 
     try {
+      const latexResponse = await ensureLatexSource(true);
+      const latexSource = latexResponse.latex;
+      const filename = latexResponse.filename || generatedFilename;
 
       // Call our PDF generation API
       const response = await fetch("/api/generate-pdf", {
         method: download ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          latex,
-          filename: generatedFilename,
+          latex: latexSource,
+          filename,
         }),
       });
 
@@ -275,7 +255,7 @@ export default function TailoredResumeView({
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        const downloadFilename = `${generatedFilename}.pdf`;
+        const downloadFilename = `${filename}.pdf`;
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TailoredResumeView.tsx:226',message:'download filename with full name',data:{downloadFilename,fullName:masterResume?.header?.fullName,jobTitle:job?.title,jobCompany:job?.company},timestamp:Date.now(),sessionId:'debug-session',runId:'fullname-fix',hypothesisId:'B'})}).catch(()=>{});
         // #endregion
@@ -291,49 +271,52 @@ export default function TailoredResumeView({
         const storeResponse = await fetch("/api/generate-pdf", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            latex,
-            filename: generatedFilename,
-          }),
-        });
+        body: JSON.stringify({
+          latex: latexSource,
+          filename,
+        }),
+      });
 
-        if (storeResponse.ok) {
-          const storeData = await storeResponse.json();
-          if (storeData.success && storeData.pdf) {
-            // Get upload URL
-            const uploadUrl = await generateUploadUrl();
+      if (storeResponse.ok) {
+        const storeData = await storeResponse.json();
+        if (storeData.success && storeData.pdf) {
+          // Get upload URL
+          const uploadUrl = await generateUploadUrl();
 
-            // Convert base64 to blob
-            const pdfBlob = new Blob(
-              [Uint8Array.from(atob(storeData.pdf), (c) => c.charCodeAt(0))],
-              { type: "application/pdf" }
-            );
+          // Convert base64 to blob
+          const pdfBlob = new Blob(
+            [Uint8Array.from(atob(storeData.pdf), (c) => c.charCodeAt(0))],
+            { type: "application/pdf" }
+          );
 
-            // Upload to Convex storage
-            const uploadResponse = await fetch(uploadUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/pdf" },
-              body: pdfBlob,
+          if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+          setPdfPreviewUrl(URL.createObjectURL(pdfBlob));
+
+          // Upload to Convex storage
+          const uploadResponse = await fetch(uploadUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/pdf" },
+            body: pdfBlob,
+          });
+
+          if (uploadResponse.ok) {
+            const { storageId } = await uploadResponse.json();
+
+            // Store artifact reference
+            await storeArtifact({
+              runId,
+              modelKey: tailoredResume.modelKey,
+              artifactType: "pdf",
+              fileName: storeData.filename,
+              storageId,
+              mimeType: "application/pdf",
+              sizeBytes: storeData.size,
             });
 
-            if (uploadResponse.ok) {
-              const { storageId } = await uploadResponse.json();
-
-              // Store artifact reference
-              await storeArtifact({
-                runId,
-                modelKey: tailoredResume.modelKey,
-                artifactType: "pdf",
-                fileName: storeData.filename,
-                storageId,
-                mimeType: "application/pdf",
-                sizeBytes: storeData.size,
-              });
-
-              onArtifactCreated?.();
-            }
+            onArtifactCreated?.();
           }
         }
+      }
       }
     } catch (error: any) {
       console.error("PDF generation error:", error);
@@ -341,18 +324,27 @@ export default function TailoredResumeView({
     } finally {
       setGeneratingPdf(false);
     }
-  }, [latex, job, masterResume, runId, tailoredResume.modelKey, generateUploadUrl, storeArtifact, onArtifactCreated, generateFilename]);
+  }, [
+    ensureLatexSource,
+    job,
+    masterResume,
+    runId,
+    tailoredResume.modelKey,
+    generateUploadUrl,
+    storeArtifact,
+    onArtifactCreated,
+    generateFilename,
+    pdfPreviewUrl,
+  ]);
 
   // Handle LaTeX download
   const handleDownloadLatex = useCallback(async () => {
-    const blob = new Blob([latex], { type: "text/plain" });
+    const { latex: latexSource, filename } = await fetchLatexForExport();
+    const blob = new Blob([latexSource], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${job?.company || "company"}_${job?.title || "resume"}_tailored.tex`.replace(
-      /[^a-zA-Z0-9_.-]/g,
-      "_"
-    );
+    link.download = `${filename || generateFilename()}.tex`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -361,7 +353,7 @@ export default function TailoredResumeView({
     // Store to Convex
     try {
       const uploadUrl = await generateUploadUrl();
-      const texBlob = new Blob([latex], { type: "application/x-tex" });
+      const texBlob = new Blob([latexSource], { type: "application/x-tex" });
 
       const uploadResponse = await fetch(uploadUrl, {
         method: "POST",
@@ -375,7 +367,7 @@ export default function TailoredResumeView({
           runId,
           modelKey: tailoredResume.modelKey,
           artifactType: "tex",
-          fileName: `${job?.company || "company"}_${job?.title || "resume"}_tailored.tex`.replace(/[^a-zA-Z0-9_.-]/g, "_"),
+          fileName: `${filename || generateFilename()}.tex`,
           storageId,
           mimeType: "application/x-tex",
           sizeBytes: texBlob.size,
@@ -385,32 +377,262 @@ export default function TailoredResumeView({
     } catch (error) {
       console.error("Failed to store LaTeX:", error);
     }
-  }, [latex, job, runId, tailoredResume.modelKey, generateUploadUrl, storeArtifact, onArtifactCreated]);
+  }, [
+    fetchLatexForExport,
+    generateFilename,
+    runId,
+    tailoredResume.modelKey,
+    generateUploadUrl,
+    storeArtifact,
+    onArtifactCreated,
+  ]);
 
   // Copy LaTeX to clipboard
   const handleCopyLatex = useCallback(() => {
     navigator.clipboard.writeText(latex);
   }, [latex]);
 
-  const isLatexDirty = latex !== lastLoadedLatex.current;
+  const validateDraft = useCallback((draft: TailoredResume) => {
+    const errors: string[] = [];
+    if (!draft.summary?.trim()) {
+      errors.push("Summary is required.");
+    }
+
+    draft.workExperience.forEach((exp, idx) => {
+      if (!exp.company?.trim()) errors.push(`Experience ${idx + 1}: company is required.`);
+      if (!exp.title?.trim()) errors.push(`Experience ${idx + 1}: title is required.`);
+      if (!exp.dateRange?.trim()) errors.push(`Experience ${idx + 1}: date range is required.`);
+      if (!exp.bullets.length) errors.push(`Experience ${idx + 1}: at least one bullet is required.`);
+      exp.bullets.forEach((bullet, bIdx) => {
+        if (!bullet.tailoredText?.trim()) {
+          errors.push(`Experience ${idx + 1}: bullet ${bIdx + 1} cannot be empty.`);
+        }
+      });
+    });
+
+    draft.projects.forEach((proj, idx) => {
+      if (!proj.name?.trim()) errors.push(`Project ${idx + 1}: name is required.`);
+      if (!proj.bullets.length) errors.push(`Project ${idx + 1}: at least one bullet is required.`);
+      proj.bullets.forEach((bullet, bIdx) => {
+        if (!bullet.tailoredText?.trim()) {
+          errors.push(`Project ${idx + 1}: bullet ${bIdx + 1} cannot be empty.`);
+        }
+      });
+    });
+
+    draft.education.forEach((edu, idx) => {
+      if (!edu.institution?.trim()) errors.push(`Education ${idx + 1}: institution is required.`);
+      if (!edu.degree?.trim()) errors.push(`Education ${idx + 1}: degree is required.`);
+      if (!edu.dates?.trim()) errors.push(`Education ${idx + 1}: dates are required.`);
+    });
+
+    return errors;
+  }, []);
+
+  const normalizeDraft = useCallback((draft: TailoredResume) => {
+    const next = cloneResume(draft);
+    next.summary = next.summary?.trim() || "";
+    next.workExperience = next.workExperience.map((exp) => ({
+      ...exp,
+      company: exp.company?.trim() || "",
+      title: exp.title?.trim() || "",
+      dateRange: normalizeDateRange(exp.dateRange || ""),
+      location: exp.location?.trim() || "",
+      bullets: exp.bullets.map((bullet) => {
+        const normalizedText = ensureBulletPeriod(bullet.tailoredText || "");
+        return {
+          ...bullet,
+          tailoredText: normalizedText,
+          wasRewritten: bullet.originalText !== normalizedText,
+        };
+      }),
+    }));
+    next.projects = next.projects.map((proj) => ({
+      ...proj,
+      name: proj.name?.trim() || "",
+      date: proj.date ? normalizeDateRange(proj.date) : proj.date,
+      bullets: proj.bullets.map((bullet) => {
+        const normalizedText = ensureBulletPeriod(bullet.tailoredText || "");
+        return {
+          ...bullet,
+          tailoredText: normalizedText,
+          wasRewritten: bullet.originalText !== normalizedText,
+        };
+      }),
+    }));
+    next.education = next.education.map((edu) => ({
+      ...edu,
+      institution: edu.institution?.trim() || "",
+      degree: edu.degree?.trim() || "",
+      dates: normalizeDateRange(edu.dates || ""),
+      location: edu.location?.trim() || "",
+      gpa: edu.gpa?.trim() || edu.gpa,
+    }));
+    next.skills = Object.fromEntries(
+      Object.entries(next.skills || {}).map(([key, values]) => [
+        key,
+        (values || []).map((skill) => skill.trim()).filter(Boolean),
+      ])
+    );
+    if (next.awards) {
+      next.awards = next.awards.map((award) => ({
+        ...award,
+        name: award.name?.trim() || "",
+        issuer: award.issuer?.trim() || "",
+        year: award.year?.trim() || "",
+        details: award.details?.trim() || award.details,
+      }));
+    }
+    return next;
+  }, []);
+
+  const handleResetDraft = useCallback(() => {
+    setDraftResume(cloneResume(baselineResume));
+    setResumeError(null);
+    setSaveResumeOkAt(null);
+  }, [baselineResume]);
+
+  const handleSaveEdits = useCallback(async () => {
+    setResumeError(null);
+    setSaveResumeOkAt(null);
+    const errors = validateDraft(draftResume);
+    if (errors.length > 0) {
+      setResumeError(errors[0]);
+      return;
+    }
+
+    const normalized = normalizeDraft(draftResume);
+    setDraftResume(normalized);
+    setSavingResume(true);
+    try {
+      const saveResult = await saveTailoredResumeEdit({
+        runId,
+        modelName: tailoredResume.modelName,
+        tailoredHash: `user_edit_${Date.now()}`,
+        summary: normalized.summary,
+        coverLetter: normalized.coverLetter,
+        diagnostics: normalized.diagnostics,
+        reasoningSummary: normalized.reasoningSummary,
+        workExperience: normalized.workExperience,
+        projects: normalized.projects,
+        education: normalized.education,
+        skills: normalized.skills,
+        skills_highlighted: normalized.skills_highlighted,
+        awards: normalized.awards,
+        selectionEnforcement: normalized.selectionEnforcement,
+        wordCountEstimate: estimateWordCount(normalized as any),
+        parentVersionId: tailoredResume._id,
+      });
+      if (saveResult?.versionId) {
+        // Hook for future UI state updates if needed.
+      }
+
+      setBaselineResume(normalized);
+
+      const latexResponse = await fetchLatexFromServer();
+      const latexContentNext = latexResponse.latex;
+      const filename = latexResponse.filename || generateFilename();
+
+      const uploadUrl = await generateUploadUrl();
+      const texBlob = new Blob([latexContentNext], { type: "application/x-tex" });
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-tex" },
+        body: texBlob,
+      });
+      if (uploadResponse.ok) {
+        const { storageId } = await uploadResponse.json();
+        await storeArtifact({
+          runId,
+          modelKey: tailoredResume.modelKey,
+          artifactType: "tex",
+          fileName: `${filename}.tex`,
+          storageId,
+          mimeType: "application/x-tex",
+          sizeBytes: texBlob.size,
+        });
+      }
+
+      const pdfResponse = await fetch("/api/generate-pdf", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          latex: latexContentNext,
+          filename,
+        }),
+      });
+      if (!pdfResponse.ok) {
+        const errorData = await pdfResponse.json().catch(() => null);
+        throw new Error(errorData?.error || "Failed to compile PDF");
+      }
+      const pdfData = await pdfResponse.json();
+      if (pdfData.success && pdfData.pdf) {
+        const pdfBlob = new Blob(
+          [Uint8Array.from(atob(pdfData.pdf), (c) => c.charCodeAt(0))],
+          { type: "application/pdf" }
+        );
+        if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewUrl(URL.createObjectURL(pdfBlob));
+
+        const pdfUploadUrl = await generateUploadUrl();
+        const uploadPdfResponse = await fetch(pdfUploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/pdf" },
+          body: pdfBlob,
+        });
+        if (uploadPdfResponse.ok) {
+          const { storageId } = await uploadPdfResponse.json();
+          await storeArtifact({
+            runId,
+            modelKey: tailoredResume.modelKey,
+            artifactType: "pdf",
+            fileName: pdfData.filename || `${filename}.pdf`,
+            storageId,
+            mimeType: "application/pdf",
+            sizeBytes: pdfData.size,
+          });
+        }
+      }
+
+      onArtifactCreated?.();
+      setSaveResumeOkAt(new Date().toISOString());
+    } catch (error: any) {
+      setResumeError(error?.message || "Failed to save edits");
+    } finally {
+      setSavingResume(false);
+    }
+  }, [
+    draftResume,
+    validateDraft,
+    normalizeDraft,
+    saveTailoredResumeEdit,
+    runId,
+    tailoredResume.modelName,
+    tailoredResume._id,
+    tailoredResume.modelKey,
+    fetchLatexFromServer,
+    generateUploadUrl,
+    storeArtifact,
+    generateFilename,
+    pdfPreviewUrl,
+    onArtifactCreated,
+  ]);
 
   const loadLatexSource = useCallback(
     async ({ force = false }: { force?: boolean } = {}) => {
-      if (!force && isLatexDirty) return;
       if (latestTex && texUrl === undefined) return;
       setLoadError(null);
       if (force) {
-        setSaveError(null);
-        setSaveOkAt(null);
-        setCompileError(null);
         if (pdfPreviewUrl) {
           URL.revokeObjectURL(pdfPreviewUrl);
           setPdfPreviewUrl(null);
         }
       }
       if (!texUrl) {
-        setLatex(latexContent);
-        lastLoadedLatex.current = latexContent;
+        if (latexGenerated || latex?.trim()) return;
+        setLatex("");
+        lastLoadedLatex.current = "";
+        setLatexGenerated(false);
         return;
       }
       setLoadingLatex(true);
@@ -422,91 +644,18 @@ export default function TailoredResumeView({
         const text = await res.text();
         setLatex(text);
         lastLoadedLatex.current = text;
+        setLatexGenerated(true);
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : "Failed to load LaTeX");
-        setLatex(latexContent);
-        lastLoadedLatex.current = latexContent;
+        setLatex(latex || "");
+        lastLoadedLatex.current = latex || "";
+        setLatexGenerated(false);
       } finally {
         setLoadingLatex(false);
       }
     },
-    [isLatexDirty, latexContent, latestTex, pdfPreviewUrl, texUrl]
+    [latestTex, pdfPreviewUrl, texUrl, latexGenerated, latex]
   );
-
-  const handleSaveLatex = useCallback(async () => {
-    setSaveError(null);
-    setSaveOkAt(null);
-    setCompileError(null);
-    setSavingLatex(true);
-    try {
-      const uploadUrl = await generateUploadUrl();
-      const texBlob = new Blob([latex], { type: "application/x-tex" });
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-tex" },
-        body: texBlob,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error("Failed to upload LaTeX");
-      }
-
-      const { storageId } = await uploadResponse.json();
-      const fileName = `${generateFilename()}.tex`;
-      await storeArtifact({
-        runId,
-        modelKey: tailoredResume.modelKey,
-        artifactType: "tex",
-        fileName,
-        storageId,
-        mimeType: "application/x-tex",
-        sizeBytes: texBlob.size,
-      });
-      lastLoadedLatex.current = latex;
-      setSaveOkAt(new Date().toISOString());
-      onArtifactCreated?.();
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Failed to save LaTeX");
-    } finally {
-      setSavingLatex(false);
-    }
-  }, [generateUploadUrl, generateFilename, latex, onArtifactCreated, runId, storeArtifact, tailoredResume.modelKey]);
-
-  const handleCompilePreview = useCallback(async () => {
-    setCompileError(null);
-    setCompilingLatex(true);
-    try {
-      const response = await fetch("/api/generate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          latex,
-          filename: generateFilename(),
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || "Failed to compile PDF");
-      }
-
-      const blob = await response.blob();
-      if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
-      const nextUrl = URL.createObjectURL(blob);
-      setPdfPreviewUrl(nextUrl);
-    } catch (error) {
-      setCompileError(error instanceof Error ? error.message : "Failed to compile PDF");
-    } finally {
-      setCompilingLatex(false);
-    }
-  }, [generateFilename, latex, pdfPreviewUrl]);
-
-  const handleResetLatex = useCallback(() => {
-    setLatex(lastLoadedLatex.current);
-    setSaveError(null);
-    setSaveOkAt(null);
-    setCompileError(null);
-  }, []);
 
   const pdfContext = useMemo(() => {
     return {
@@ -526,6 +675,17 @@ export default function TailoredResumeView({
   }, [loadLatexSource]);
 
   useEffect(() => {
+    if (initialPdfRequested.current) return;
+    if (latestPdf || pdfPreviewUrl || generatingPdf) return;
+    if (pdfUrl === undefined) return;
+    initialPdfRequested.current = true;
+    setInitialPdfLoading(true);
+    handleGeneratePdf(false, true)
+      .catch(() => undefined)
+      .finally(() => setInitialPdfLoading(false));
+  }, [latestPdf, pdfPreviewUrl, generatingPdf, pdfUrl, handleGeneratePdf]);
+
+  useEffect(() => {
     return () => {
       if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
     };
@@ -533,13 +693,13 @@ export default function TailoredResumeView({
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isLatexDirty) return;
+      if (!isDraftDirty) return;
       event.preventDefault();
       event.returnValue = "You have unsaved changes. Are you sure you want to leave?";
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isLatexDirty]);
+  }, [isDraftDirty]);
 
   return (
     <div className="tailored-resume-view">
@@ -602,12 +762,6 @@ export default function TailoredResumeView({
         >
           Bullet Changes ({modificationStats.rewrittenBullets})
         </button>
-        <button
-          className={`trv-tab ${activeTab === "latex" ? "active" : ""}`}
-          onClick={() => setActiveTab("latex")}
-        >
-          LaTeX Source
-        </button>
         {hasExtras && (
           <button
             className={`trv-tab ${activeTab === "extras" ? "active" : ""}`}
@@ -621,108 +775,167 @@ export default function TailoredResumeView({
       {/* Tab Content */}
       <div className="trv-content">
         {activeTab === "preview" && (
-          <div className="trv-preview">
-            {/* Summary */}
-            <div className="trv-section">
-              <h4>Summary</h4>
-              <p className="trv-summary">{renderRichText(tailoredResume.summary)}</p>
-            </div>
-
-            {/* Skills */}
-            <div className="trv-section">
-              <h4>Skills</h4>
-              <div className="trv-skills">
-                {Object.entries(tailoredResume.skills || {}).map(([category, items]) => {
-                  if (!Array.isArray(items) || items.length === 0) return null;
-                  return (
-                    <div className="skill-row" key={category}>
-                      <span className="skill-label">{formatSkillLabel(category)}:</span>
-                      <span className="skill-list">{items.join(", ")}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Work Experience */}
-            <div className="trv-section">
-              <h4>Work Experience</h4>
-              {tailoredResume.workExperience.map((exp, idx) => (
-                <div key={exp.roleId || idx} className="trv-experience">
-                  <div className="exp-header">
-                    <strong>{exp.company}</strong>
-                    <span className="exp-dates">{exp.dateRange}</span>
-                  </div>
-                  <div className="exp-title">
-                    {exp.title}
-                    {exp.location && <span className="exp-location"> • {exp.location}</span>}
-                  </div>
-                      <ul className="exp-bullets">
-                        {exp.bullets.map((bullet, bIdx) => (
-                          <li key={bullet.bulletId || bIdx} className={bullet.wasRewritten ? "rewritten" : ""}>
-                            {renderRichText(bullet.tailoredText)}
-                            {bullet.wasRewritten && <span className="rewrite-badge">modified</span>}
-                          </li>
-                        ))}
-                      </ul>
+          <div className="trv-preview-grid">
+            <div className="trv-preview-editor trv-scroll-pane">
+              <div className="preview-header">
+                <div className="preview-actions">
+                  <button
+                    className="primary"
+                    onClick={handleSaveEdits}
+                    disabled={savingResume || !isDraftDirty}
+                  >
+                    {savingResume ? "Saving..." : "Save edits"}
+                  </button>
+                  <button className="ghost" onClick={handleResetDraft} disabled={!isDraftDirty}>
+                    Reset edits
+                  </button>
+                  {isDraftDirty && <span className="unsaved-indicator">Unsaved changes</span>}
                 </div>
-              ))}
+                {saveResumeOkAt && (
+                  <div className="meta">Saved at {new Date(saveResumeOkAt).toLocaleString()}</div>
+                )}
+              </div>
+
+              {resumeError && (
+                <div className="warning-box" style={{ marginBottom: "1rem" }}>
+                  <strong>Save Error:</strong> {resumeError}
+                </div>
+              )}
+
+              <SummaryEditor
+                summary={draftResume.summary}
+                onChange={(summary) => setDraftResume((prev) => ({ ...prev, summary }))}
+              />
+
+              <SkillsEditor
+                skills={draftResume.skills}
+                onChange={(skills) => setDraftResume((prev) => ({ ...prev, skills }))}
+                highlightedSkills={draftResume.skills_highlighted || []}
+                onHighlightedChange={(skills_highlighted) =>
+                  setDraftResume((prev) => ({ ...prev, skills_highlighted }))
+                }
+              />
+
+              <ExperienceEditor
+                experiences={draftResume.workExperience}
+                onChange={(workExperience) => setDraftResume((prev) => ({ ...prev, workExperience }))}
+              />
+
+              <ProjectsEditor
+                projects={draftResume.projects}
+                onChange={(projects) => setDraftResume((prev) => ({ ...prev, projects }))}
+              />
+
+              <EducationEditor
+                education={draftResume.education}
+                onChange={(education) => setDraftResume((prev) => ({ ...prev, education }))}
+              />
+
+              {draftResume.awards && draftResume.awards.length > 0 && (
+                <div className="trv-section">
+                  <h4>Awards & Achievements</h4>
+                  <ul className="trv-awards">
+                    {draftResume.awards.map((award, idx) => (
+                      <li key={idx}>
+                        <InlineInput
+                          value={award.name}
+                          onChange={(value) =>
+                            setDraftResume((prev) => ({
+                              ...prev,
+                              awards: prev.awards?.map((entry, aIdx) =>
+                                aIdx === idx ? { ...entry, name: value } : entry
+                              ),
+                            }))
+                          }
+                          placeholder="Award name"
+                          className="award-name"
+                        />
+                        {" - "}
+                        <InlineInput
+                          value={award.issuer}
+                          onChange={(value) =>
+                            setDraftResume((prev) => ({
+                              ...prev,
+                              awards: prev.awards?.map((entry, aIdx) =>
+                                aIdx === idx ? { ...entry, issuer: value } : entry
+                              ),
+                            }))
+                          }
+                          placeholder="Issuer"
+                          className="award-issuer"
+                        />
+                        {" ("}
+                        <InlineInput
+                          value={award.year}
+                          onChange={(value) =>
+                            setDraftResume((prev) => ({
+                              ...prev,
+                              awards: prev.awards?.map((entry, aIdx) =>
+                                aIdx === idx ? { ...entry, year: value } : entry
+                              ),
+                            }))
+                          }
+                          placeholder="Year"
+                          className="award-year"
+                        />
+                        {")"}
+                        <InlineInput
+                          value={award.details || ""}
+                          onChange={(value) =>
+                            setDraftResume((prev) => ({
+                              ...prev,
+                              awards: prev.awards?.map((entry, aIdx) =>
+                                aIdx === idx ? { ...entry, details: value } : entry
+                              ),
+                            }))
+                          }
+                          placeholder="Details"
+                          className="award-details"
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
-            {/* Projects */}
-            {tailoredResume.projects.length > 0 && (
-              <div className="trv-section">
-                <h4>Projects</h4>
-                {tailoredResume.projects.map((proj, idx) => (
-                  <div key={proj.projectId || idx} className="trv-project">
-                    <div className="proj-header">
-                      <strong>{proj.name}</strong>
-                      {proj.date && <span className="proj-date">{proj.date}</span>}
-                    </div>
-                    <ul className="proj-bullets">
-                      {proj.bullets.map((bullet, bIdx) => (
-                        <li key={bullet.bulletId || bIdx} className={bullet.wasRewritten ? "rewritten" : ""}>
-                          {renderRichText(bullet.tailoredText)}
-                          {bullet.wasRewritten && <span className="rewrite-badge">modified</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Education */}
-            <div className="trv-section">
-              <h4>Education</h4>
-              {tailoredResume.education.map((edu, idx) => (
-                <div key={idx} className="trv-education">
-                  <div className="edu-header">
-                    <strong>{edu.institution}</strong>
-                    <span className="edu-dates">{edu.dates}</span>
-                  </div>
-                  <div className="edu-degree">
-                    {edu.degree}
-                    {edu.gpa && <span className="edu-gpa"> • GPA: {edu.gpa}</span>}
+            <div className="trv-preview-pdf">
+              <div className="panel">
+                <div className="panel-head">
+                  <div>
+                    <h4>PDF Preview</h4>
+                    <p className="hint">Updates after you save edits.</p>
                   </div>
                 </div>
-              ))}
-            </div>
-
-            {/* Awards */}
-            {tailoredResume.awards && tailoredResume.awards.length > 0 && (
-              <div className="trv-section">
-                <h4>Awards & Achievements</h4>
-                <ul className="trv-awards">
-                  {tailoredResume.awards.map((award, idx) => (
-                    <li key={idx}>
-                      <strong>{award.name}</strong> - {award.issuer} ({award.year})
-                      {award.details && <span className="award-details"> - {award.details}</span>}
-                    </li>
-                  ))}
-                </ul>
+                <div className="latex-preview">
+                  {pdfPreviewUrl || pdfUrl ? (
+                    <iframe title="PDF preview" src={pdfPreviewUrl || pdfUrl || undefined} />
+                  ) : (
+                    <div className="pdf-empty-state">
+                      <div className="pdf-empty-icon">📄</div>
+                      <div className="pdf-empty-title">
+                        {generatingPdf || initialPdfLoading ? "Rendering preview..." : "No Preview Yet"}
+                      </div>
+                      <div className="pdf-empty-hint">
+                        {generatingPdf || initialPdfLoading
+                          ? "Hang tight while we compile your PDF."
+                          : "Generate a PDF to see it here."}
+                      </div>
+                      {!generatingPdf && !initialPdfLoading && (
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={() => handleGeneratePdf(false, true)}
+                          disabled={generatingPdf}
+                        >
+                          Generate PDF
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -816,118 +1029,6 @@ export default function TailoredResumeView({
                 <div className="empty-state-icon">📝</div>
                 <h3>No Modified Bullets</h3>
                 <p className="hint">No bullets were rewritten for this job. Uncheck "Show differences" to see all bullets.</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "latex" && (
-          <div className="trv-latex">
-            <div className="panel" style={{ marginBottom: "12px" }}>
-              <div className="panel-head" style={{ alignItems: "center" }}>
-                <div>
-                  <h4>LaTeX Editor</h4>
-                  <p className="hint">
-                    Edit the LaTeX source, save your changes, and compile to preview the PDF.
-                  </p>
-                </div>
-                <div className="latex-actions">
-                  <button className="ghost" onClick={() => loadLatexSource({ force: true })} disabled={loadingLatex}>
-                    Reload source
-                  </button>
-                  <button className="ghost" onClick={handleResetLatex} disabled={!isLatexDirty}>
-                    Reset edits
-                  </button>
-                  <button className="ghost" onClick={handleCopyLatex} disabled={!latex}>
-                    Copy
-                  </button>
-                  <button className="ghost" onClick={handleDownloadLatex} disabled={!latex}>
-                    Download .tex
-                  </button>
-                  <button className="ghost" onClick={handleSaveLatex} disabled={savingLatex || !isLatexDirty}>
-                    {savingLatex ? "Saving..." : "Save"}
-                  </button>
-                  <button
-                    className="primary"
-                    onClick={handleCompilePreview}
-                    disabled={compilingLatex || !latex}
-                  >
-                    {compilingLatex ? "Compiling..." : "Compile PDF"}
-                  </button>
-                </div>
-              </div>
-
-              {loadError && <div className="warning-box" style={{ marginTop: 10 }}>{loadError}</div>}
-              {saveError && <div className="warning-box" style={{ marginTop: 10 }}>{saveError}</div>}
-              {compileError && <div className="warning-box" style={{ marginTop: 10 }}>{compileError}</div>}
-              {saveOkAt ? (
-                <div className="meta" style={{ marginTop: 10 }}>
-                  Saved at {new Date(saveOkAt).toLocaleString()}
-                  {isLatexDirty ? " (unsaved edits present)" : ""}
-                </div>
-              ) : (
-                <div className="meta" style={{ marginTop: 10 }}>
-                  {isLatexDirty ? "Unsaved edits present" : latestTex ? "Loaded saved LaTeX" : "Using generated LaTeX"}
-                </div>
-              )}
-            </div>
-
-            <div className="latex-split">
-              <div className="latex-pane">
-                <div className="latex-pane-head">
-                  <strong>resume.tex</strong>
-                  <span className="hint">{loadingLatex ? "Loading..." : isLatexDirty ? "● Unsaved" : "Edit LaTeX"}</span>
-                </div>
-                <div className="latex-textarea-wrap">
-                  <textarea
-                    className="latex-textarea"
-                    value={latex}
-                    onChange={(e) => setLatex(e.target.value)}
-                    spellCheck={false}
-                    placeholder={loadingLatex ? "Loading LaTeX..." : "LaTeX source will appear here."}
-                    disabled={loadingLatex}
-                  />
-                </div>
-              </div>
-
-              <div className="latex-pane">
-                <div className="latex-pane-head">
-                  <strong>PDF Preview</strong>
-                  <span className="hint">
-                    {pdfPreviewUrl ? "✓ Compiled" : compilingLatex ? "Compiling..." : "Ready"}
-                  </span>
-                </div>
-                <div className="latex-preview">
-                  {pdfPreviewUrl ? (
-                    <iframe title="PDF preview" src={pdfPreviewUrl} />
-                  ) : (
-                    <div className="pdf-empty-state">
-                      <div className="pdf-empty-icon">
-                        {compilingLatex ? "⏳" : "📄"}
-                      </div>
-                      <div className="pdf-empty-title">
-                        {compilingLatex ? "Compiling PDF..." : "No Preview Yet"}
-                      </div>
-                      <div className="pdf-empty-hint">
-                        {compilingLatex ? "This may take a few seconds" : "Click 'Compile PDF' to generate preview"}
-                      </div>
-                      {!compilingLatex && latex && (
-                        <button className="primary" onClick={handleCompilePreview} style={{ marginTop: 16 }}>
-                          Compile PDF
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {isLatexDirty && (
-              <div className="unsaved-banner">
-                <span>⚠️ You have unsaved changes</span>
-                <button className="ghost small" onClick={handleSaveLatex} disabled={savingLatex}>
-                  {savingLatex ? "Saving..." : "Save Now"}
-                </button>
               </div>
             )}
           </div>
@@ -1051,10 +1152,284 @@ export default function TailoredResumeView({
           min-height: 400px;
         }
 
-        .trv-preview {
+        .trv-preview-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+          gap: 1.5rem;
+          align-items: stretch;
+          min-height: 70vh;
+        }
+
+        .trv-preview-editor {
           display: flex;
           flex-direction: column;
           gap: 1.5rem;
+        }
+
+        .trv-preview-pdf {
+          display: flex;
+          min-height: 70vh;
+        }
+
+        .trv-preview-pdf .panel {
+          height: 100%;
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          min-height: 70vh;
+        }
+
+        .trv-preview-pdf .latex-preview {
+          flex: 1;
+          min-height: 0;
+          border-radius: 10px;
+          overflow: hidden;
+        }
+
+        .trv-preview-pdf .latex-preview iframe {
+          width: 100%;
+          height: 100%;
+        }
+
+        .preview-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+        }
+
+        .preview-actions {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .unsaved-indicator {
+          font-size: 12px;
+          color: var(--primary);
+        }
+
+        .inline-input,
+        .inline-textarea {
+          width: 100%;
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: 6px;
+          padding: 4px 6px;
+          color: inherit;
+          font-size: 13px;
+          font-family: inherit;
+          line-height: 1.5;
+          outline: none;
+          resize: none;
+          caret-color: var(--primary);
+          transition: box-shadow 0.2s ease;
+        }
+
+        .inline-input::placeholder,
+        .inline-textarea::placeholder {
+          color: var(--muted);
+        }
+
+        .inline-input:focus,
+        .inline-textarea:focus {
+          box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+        }
+
+        .inline-input:disabled,
+        .inline-textarea:disabled {
+          opacity: 1;
+          color: #e2e8f0;
+        }
+
+        .inline-textarea {
+          min-height: 72px;
+        }
+
+        .summary-textarea {
+          font-size: 14px;
+          line-height: 1.6;
+          padding: 6px 4px;
+        }
+
+        .bullet-editor {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          margin-top: 0.5rem;
+        }
+
+        .bullet-row {
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 0.5rem;
+          align-items: start;
+        }
+
+        .bullet-line-editor {
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          gap: 0.5rem;
+          align-items: start;
+          width: 100%;
+        }
+
+        .bullet-prefix {
+          color: var(--muted);
+          line-height: 1.7;
+        }
+
+        .bullet-line-input {
+          min-height: 0;
+          padding: 2px 4px;
+        }
+
+        .inline-row {
+          align-items: center;
+        }
+
+        .row-actions {
+          display: inline-flex;
+          gap: 4px;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.2s ease;
+        }
+
+        .inline-row:hover .row-actions,
+        .inline-row:focus-within .row-actions,
+        .skill-category-header:hover .row-actions,
+        .skill-category-header:focus-within .row-actions,
+        .sortable-header:hover .row-actions,
+        .sortable-header:focus-within .row-actions {
+          opacity: 1;
+          pointer-events: auto;
+        }
+
+        .icon-button {
+          width: 24px;
+          height: 24px;
+          border-radius: 6px;
+          border: 1px solid transparent;
+          background: rgba(255, 255, 255, 0.04);
+          color: var(--muted);
+          cursor: pointer;
+          font-size: 12px;
+          transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .icon-button:hover {
+          color: #e2e8f0;
+          background: rgba(96, 165, 250, 0.12);
+        }
+
+        .icon-button:focus-visible {
+          outline: none;
+          box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.35);
+        }
+
+        .skill-category {
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 0.9rem;
+          margin-bottom: 0.75rem;
+          background: rgba(255, 255, 255, 0.02);
+        }
+
+        .skill-category-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.75rem;
+          margin-bottom: 0.65rem;
+        }
+
+        .collapse-toggle {
+          width: 24px;
+          height: 24px;
+          border-radius: 6px;
+          border: 1px solid var(--border);
+          background: rgba(255, 255, 255, 0.04);
+          color: #e2e8f0;
+          font-size: 12px;
+          cursor: pointer;
+        }
+
+        .skill-category-title {
+          font-weight: 600;
+          font-size: 13px;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #e2e8f0;
+          width: 100%;
+        }
+
+        .skill-item {
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          gap: 0.5rem;
+          align-items: center;
+          margin-bottom: 0.5rem;
+        }
+
+        .sortable-header {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-bottom: 0.5rem;
+          color: var(--muted);
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+
+        .sortable-label {
+          margin-top: 1px;
+        }
+
+        .drag-handle {
+          cursor: grab;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
+          border: 1px solid var(--border);
+          background: rgba(255, 255, 255, 0.04);
+          color: #e2e8f0;
+          font-size: 14px;
+          transition: background 0.2s ease, border 0.2s ease, transform 0.2s ease;
+          opacity: 0.4;
+        }
+
+        .drag-handle.small {
+          width: 22px;
+          height: 22px;
+          font-size: 12px;
+        }
+
+        .inline-row:hover .drag-handle,
+        .inline-row:focus-within .drag-handle,
+        .sortable-header:hover .drag-handle,
+        .sortable-header:focus-within .drag-handle {
+          opacity: 1;
+        }
+
+        .drag-handle:focus-visible {
+          outline: 2px solid rgba(96, 165, 250, 0.7);
+          outline-offset: 2px;
+        }
+
+        .drag-handle:active {
+          cursor: grabbing;
+          transform: scale(0.96);
+        }
+
+        @media (max-width: 1100px) {
+          .trv-preview-grid {
+            grid-template-columns: 1fr;
+          }
         }
 
         .trv-section {
@@ -1090,16 +1465,6 @@ export default function TailoredResumeView({
           font-size: 13px;
         }
 
-        .skill-label {
-          color: var(--muted);
-          min-width: 100px;
-          flex-shrink: 0;
-        }
-
-        .skill-list {
-          color: #e2e8f0;
-        }
-
         .trv-experience,
         .trv-project,
         .trv-education {
@@ -1123,6 +1488,22 @@ export default function TailoredResumeView({
           justify-content: space-between;
           align-items: center;
           margin-bottom: 0.25rem;
+          gap: 1rem;
+        }
+
+        .exp-company,
+        .proj-name,
+        .edu-school {
+          font-weight: 600;
+          color: #e2e8f0;
+          flex: 1;
+        }
+
+        .exp-title-text,
+        .edu-degree-text {
+          font-weight: 500;
+          color: #e2e8f0;
+          flex: 1;
         }
 
         .exp-dates,
@@ -1130,6 +1511,9 @@ export default function TailoredResumeView({
         .edu-dates {
           color: var(--muted);
           font-size: 13px;
+          text-align: right;
+          max-width: 160px;
+          flex: 0 0 160px;
         }
 
         .exp-title,
@@ -1137,11 +1521,22 @@ export default function TailoredResumeView({
           color: #e2e8f0;
           font-size: 14px;
           margin-bottom: 0.5rem;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 1rem;
         }
 
         .exp-location,
         .edu-gpa {
           color: var(--muted);
+          text-align: right;
+          max-width: 160px;
+          flex: 0 0 160px;
+        }
+
+        .skill-text {
+          font-size: 13px;
         }
 
         .exp-bullets,
