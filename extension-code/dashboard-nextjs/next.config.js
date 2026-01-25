@@ -2,6 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@clerk/nextjs', '@clerk/shared', '@clerk/backend'],
+  experimental: {
+    // Allow dynamic code evaluation for Clerk in Edge middleware
+    serverActions: {
+      allowedOrigins: ['*'],
+    },
+  },
   // If you need to proxy API requests or configure other settings
   async rewrites() {
     return [
