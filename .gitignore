@@ -15,6 +15,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!extension-code/dashboard-nextjs/lib/
 lib64/
 parts/
 sdist/
