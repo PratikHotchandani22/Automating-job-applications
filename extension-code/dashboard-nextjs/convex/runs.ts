@@ -250,6 +250,12 @@ export const getRunsWithJobDetails = query({
           .withIndex("by_run", (q) => q.eq("runId", run._id))
           .first();
 
+        // Get application tracking status
+        const applicationTracking = await ctx.db
+          .query("applicationTracking")
+          .withIndex("by_run", (q) => q.eq("runId", run._id))
+          .first();
+
         // Calculate coverage percentage
         let coverage = null;
         if (selectionPlan?.coverage) {
@@ -287,6 +293,10 @@ export const getRunsWithJobDetails = query({
           status: run.stage || "UNKNOWN",
           stage: run.stage,
           result,
+          
+          // Application tracking status
+          applicationStatus: applicationTracking?.applicationStatus || "not_applied",
+          applicationTrackingId: applicationTracking?._id || null,
           
           // Metrics
           coverage,

@@ -2309,6 +2309,106 @@ textarea:focus-visible {
 }
 
 /* ===========================================
+   APPLICATION STATUS TRACKER STYLES
+   =========================================== */
+
+.app-status-select {
+  padding: 6px 28px 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  appearance: none;
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%237a8ca6'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  min-width: 120px;
+}
+
+.app-status-select:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.app-status-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.4);
+}
+
+/* Not Applied - Neutral gray */
+.app-status-not-applied {
+  background: rgba(122, 140, 166, 0.15);
+  border-color: rgba(122, 140, 166, 0.3);
+  color: #9ca3af;
+}
+
+.app-status-not-applied:hover {
+  background: rgba(122, 140, 166, 0.25);
+  border-color: rgba(122, 140, 166, 0.5);
+}
+
+/* Applied - Blue/Primary */
+.app-status-applied {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.2), rgba(59, 130, 246, 0.15));
+  border-color: rgba(96, 165, 250, 0.4);
+  color: #93c5fd;
+}
+
+.app-status-applied:hover {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.3), rgba(59, 130, 246, 0.25));
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
+}
+
+/* Interviewing - Green/Success */
+.app-status-interviewing {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.2), rgba(16, 185, 129, 0.15));
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #6ee7b7;
+}
+
+.app-status-interviewing:hover {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.3), rgba(16, 185, 129, 0.25));
+  border-color: rgba(52, 211, 153, 0.6);
+  box-shadow: 0 4px 12px rgba(52, 211, 153, 0.2);
+}
+
+/* Rejected - Red/Danger */
+.app-status-rejected {
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.2), rgba(239, 68, 68, 0.15));
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+
+.app-status-rejected:hover {
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.3), rgba(239, 68, 68, 0.25));
+  border-color: rgba(248, 113, 113, 0.6);
+  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.2);
+}
+
+/* Dropdown option styling */
+.app-status-select option {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 8px;
+}
+
+/* Saving state */
+.app-status-select.saving {
+  opacity: 0.7;
+  cursor: wait;
+  animation: pulse-saving 1s ease-in-out infinite;
+}
+
+@keyframes pulse-saving {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.5; }
+}
+
+/* ===========================================
    TAILORED RESUME VIEW STYLES
    =========================================== */
 

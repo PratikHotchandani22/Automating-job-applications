@@ -28,6 +28,8 @@ export interface StageSnapshot {
   detail?: string;
 }
 
+export type ApplicationStatus = "not_applied" | "applied" | "interviewing" | "rejected";
+
 export interface RunRecord {
   runId: string;
   clientRunId?: string;
@@ -59,6 +61,7 @@ export interface RunRecord {
   uncovered?: string[];
   keywords?: string[];
   debugNotes?: string;
+  applicationStatus?: ApplicationStatus;
 }
 
 export type DateRangeFilter = "today" | "7d" | "30d" | "all";
