@@ -28,6 +28,8 @@ export type HeaderLinks = {
   other?: string[];
 };
 
+type HeaderLinkKey = Exclude<keyof HeaderLinks, "other">;
+
 export type ProjectLinkEntry = {
   projectName: string;
   links: string[];
@@ -215,7 +217,7 @@ export function buildHeaderLinks(
   const headerLinks: HeaderLinks = {};
   const other: string[] = [];
 
-  const setIfEmpty = (key: keyof HeaderLinks, value: string) => {
+  const setIfEmpty = (key: HeaderLinkKey, value: string) => {
     if (!headerLinks[key]) {
       headerLinks[key] = value;
     }

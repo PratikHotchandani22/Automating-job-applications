@@ -152,7 +152,7 @@ export const saveResumeJsonToBackend = action({
 /**
  * Start tailoring pipeline by calling backend /analyze endpoint
  */
-export const startTailoringPipeline = action({
+export const startTailoringPipeline: ReturnType<typeof action> = action({
   args: {
     userId: v.id("users"),
     masterResumeId: v.id("masterResumes"),
@@ -166,7 +166,13 @@ export const startTailoringPipeline = action({
       })
     ),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{
+    success: true;
+    runId: string;
+    backendRunId: string;
+    status: string;
+    stage: string;
+  }> => {
 
     // Get job data
     const job = await ctx.runQuery(api.jobs.getJob, {
@@ -269,11 +275,16 @@ export const startTailoringPipeline = action({
 /**
  * Poll backend for run status and update Convex
  */
-export const pollRunStatus = action({
+export const pollRunStatus: ReturnType<typeof action> = action({
   args: {
     runId: v.id("runs"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{
+    status: string;
+    stage: string;
+    message?: string;
+    files?: Record<string, unknown>;
+  }> => {
     // Get run to get backend runId
     const run = await ctx.runQuery(api.runs.getRun, {
       runId: args.runId,
