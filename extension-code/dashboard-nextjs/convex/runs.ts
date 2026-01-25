@@ -628,30 +628,18 @@ export const getActiveQueueRunWithItems = query({
 export const processQueueSequentially = action({
   args: { queueRunId: v.id("runs") },
   handler: async (ctx, args) => {
-    // #region agent log
-    console.log('[DEBUG:processQueueSequentially] Called with queueRunId:', args.queueRunId);
-    // #endregion
 
     const queueRun = await ctx.runQuery(api.runs.getRun, {
       runId: args.queueRunId,
     });
 
-    // #region agent log
-    console.log('[DEBUG:processQueueSequentially] queueRun query result:', { found: !!queueRun, isDeleted: queueRun?.isDeleted, runType: queueRun?.runType, status: queueRun?.status, queueJobIdsCount: queueRun?.queueJobIds?.length });
-    // #endregion
 
     if (!queueRun || queueRun.isDeleted || queueRun.runType !== "queue") {
-      // #region agent log
-      console.log('[DEBUG:processQueueSequentially] Queue run not found or invalid');
-      // #endregion
       throw new Error("Queue run not found.");
     }
 
     try {
       const queueJobIds = dedupeJobIds(queueRun.queueJobIds || []);
-      // #region agent log
-      console.log('[DEBUG:processQueueSequentially] Processing queue with', queueJobIds.length, 'jobs');
-      // #endregion
       if (queueJobIds.length === 0) {
         await ctx.runMutation(api.runs.updateRunStatus, {
           runId: queueRun._id,
@@ -691,14 +679,8 @@ export const processQueueSequentially = action({
         });
 
         const jobId = queueJobIds[i];
-        // #region agent log
-        console.log('[DEBUG:processQueueSequentially] Processing job', i + 1, 'of', queueJobIds.length, '- jobId:', jobId.toString());
-        // #endregion
         let runId: any = null;
         try {
-          // #region agent log
-          console.log('[DEBUG:processQueueSequentially] Calling startTailoringPipeline for job:', jobId.toString());
-          // #endregion
           const startResult = await ctx.runAction(
             api.resumePipeline.startTailoringPipeline,
             {
@@ -710,9 +692,6 @@ export const processQueueSequentially = action({
               queuePosition: i + 1,
             }
           );
-          // #region agent log
-          console.log('[DEBUG:processQueueSequentially] startTailoringPipeline returned:', { runId: startResult.runId, backendRunId: startResult.backendRunId, status: startResult.status });
-          // #endregion
           runId = startResult.runId;
           let status = startResult.status || "running";
           const startedAt = Date.now();
@@ -739,9 +718,6 @@ export const processQueueSequentially = action({
             }
           }
         } catch (error: any) {
-          // #region agent log
-          console.log('[DEBUG:processQueueSequentially] Error processing job:', { jobId: jobId.toString(), errorMessage: error?.message, hasRunId: !!runId });
-          // #endregion
           hadError = true;
           if (runId) {
             await ctx.runMutation(api.runs.updateRunStatus, {
@@ -791,14 +767,8 @@ export const processQueueSequentially = action({
         errorMessage: hadError ? "One or more items failed." : undefined,
       });
 
-      // #region agent log
-      console.log('[DEBUG:processQueueSequentially] Queue completed', { hadError, processed });
-      // #endregion
       return { ok: !hadError, processed };
     } catch (error: any) {
-      // #region agent log
-      console.log('[DEBUG:processQueueSequentially] Outer catch - queue failed unexpectedly:', error?.message);
-      // #endregion
       await ctx.runMutation(api.runs.updateRunStatus, {
         runId: queueRun._id,
         status: "error",

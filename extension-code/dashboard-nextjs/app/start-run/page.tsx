@@ -230,9 +230,6 @@ export default function StartRunPage() {
       isInIframe = true;
     }
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'requestTabs called',data:{hasWindow:typeof window!=='undefined',isInIframe,hasChromeRuntime,extensionId:extensionIdRef.current,windowLocation:typeof window!=='undefined'?window.location.href:'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     
     if (isInIframe && typeof window !== "undefined") {
       // We're in an iframe - request tabs from parent (extension sidepanel)
@@ -242,20 +239,11 @@ export default function StartRunPage() {
         if (window.top && window.top !== window) {
           window.top.postMessage(message, "*");
         }
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'postMessage sent to parent (iframe mode)',data:{messageType:message.type},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
       } catch (e) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'postMessage error',data:{error:String(e)},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
       }
     } else if (hasChromeRuntime && extensionIdRef.current) {
       // Not in iframe but extension is available - use direct messaging
       try {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'Using direct extension messaging',data:{extensionId:extensionIdRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         const response = await sendExtensionMessage({ action: "GET_TABS", scope: "currentWindow" });
         if (response?.ok && response?.tabs) {
           const filtered = response.tabs.filter((t: any) => 
@@ -264,31 +252,19 @@ export default function StartRunPage() {
           );
           setTabs(filtered);
           setStatusText(`Found ${filtered.length} tabs.`);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'Got tabs via direct messaging',data:{tabsCount:filtered.length},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
         }
       } catch (e) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'Direct extension message failed',data:{error:String(e)},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         setStatusText("Extension communication failed. Please check that the extension is installed.");
       }
     } else {
       // No extension available
       setStatusText("Extension not detected. Please install the ResumeGen Tracker extension and reload this page.");
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:requestTabs',message:'No extension available',data:{hasChromeRuntime,extensionId:extensionIdRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
     }
   }, [hasChromeRuntime, sendExtensionMessage]);
 
   // Detect extension on mount
   useEffect(() => {
     if (!hasChromeRuntime) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:detectExtension',message:'No chrome.runtime available',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'G'})}).catch(()=>{});
-      // #endregion
       return;
     }
 
@@ -299,9 +275,6 @@ export default function StartRunPage() {
       // Add your extension ID here when published
     ].filter(Boolean) as string[];
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:detectExtension',message:'Attempting extension detection',data:{tryExtensionIds},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'G'})}).catch(()=>{});
-    // #endregion
 
     const detectExtension = async () => {
       for (const extId of tryExtensionIds) {
@@ -312,9 +285,6 @@ export default function StartRunPage() {
                   extensionIdRef.current = response.extensionId;
                   setExtensionDetected(true);
                 setStatusText("Extension connected. Click 'Refresh tabs' to load tabs.");
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:detectExtension',message:'Extension detected',data:{extensionId:response.extensionId},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'G'})}).catch(()=>{});
-                // #endregion
                 resolve();
               } else {
                 reject(new Error("Invalid response"));
@@ -350,24 +320,15 @@ export default function StartRunPage() {
     }, 1000);
 
     const handleMessage = async (event: MessageEvent) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:68',message:'Message received',data:{origin:event.origin,type:event.data?.type,hasData:!!event.data,dataType:event.data?.type},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       
       // Accept messages from extension sidepanel (chrome-extension://) or same origin
       const isExtensionOrigin = event.origin.startsWith("chrome-extension://");
       const isSameOrigin = event.origin === window.location.origin;
       if (!isExtensionOrigin && !isSameOrigin) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:75',message:'Message rejected - wrong origin',data:{origin:event.origin,isExtension:isExtensionOrigin,isSame:isSameOrigin},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         return;
       }
 
       if (event.data && event.data.type === "TABS_DATA") {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:80',message:'Received tabs data from extension',data:{tabsCount:event.data.tabs?.length||0,jobsCount:event.data.jobs?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
 
         // Set tabs directly (like React dashboard did)
         if (event.data.tabs && Array.isArray(event.data.tabs)) {
@@ -376,9 +337,6 @@ export default function StartRunPage() {
             !(t.url || "").startsWith("chrome-extension://")
           );
           setTabs(filtered);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:88',message:'Tabs set',data:{filteredCount:filtered.length},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
-          // #endregion
         }
 
         // Optionally sync jobs to Convex in background (non-blocking)
@@ -391,14 +349,8 @@ export default function StartRunPage() {
           })
             .then((res) => res.json())
             .then((result) => {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:100',message:'Jobs synced to Convex',data:{created:result.created},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
-              // #endregion
             })
             .catch((err) => {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/start-run/page.tsx:105',message:'Job sync failed',data:{error:err.message},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-jobs',hypothesisId:'B'})}).catch(()=>{});
-              // #endregion
             })
             .finally(() => setSyncingJobs(false));
         }
@@ -623,9 +575,6 @@ export default function StartRunPage() {
   );
 
   const handleStartQueue = useCallback(async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:entry',message:'handleStartQueue called',data:{hasQueueRun:!!queueRun,queueRunId:queueRun?._id,queueRunStatus:queueRun?.status,queueJobIdsLength:queueJobIds.length,queueJobIds:queueJobIds.map((id:any)=>id.toString())},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'D,E'})}).catch(()=>{});
-    // #endregion
 
     if (!queueRun || queueJobIds.length === 0) {
       setStatusText("Add items to the queue before starting.");
@@ -652,9 +601,6 @@ export default function StartRunPage() {
     });
     
     if (activelyRunningJob) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:alreadyRunning',message:'Job already running - aborting start',data:{activelyRunningJobId:activelyRunningJob?.job?._id?.toString(),activelyRunningJobTitle:activelyRunningJob?.job?.title},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'H5'})}).catch(()=>{});
-      // #endregion
       setStatusText("A job is already running. Please wait for it to complete.");
       return;
     }
@@ -695,41 +641,26 @@ export default function StartRunPage() {
       const STALE_RUN_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
       const isStaleRun = runStatus === "running" && runAgeMs > STALE_RUN_THRESHOLD_MS;
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:checkSkip',message:'Checking if job should be skipped',data:{jobIndex:i,jobId:jobIdStr,runStatus,runId:queueItem?.run?.runId,runStartedAt,runAgeMs,isStaleRun,thresholdMs:STALE_RUN_THRESHOLD_MS},timestamp:Date.now(),sessionId:'debug-session',runId:'skip-check',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       
       // Skip jobs that are completed successfully
       if (runStatus === "success") {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:skippingJob',message:'Skipping job - already completed',data:{jobIndex:i,jobId:jobIdStr,runStatus},timestamp:Date.now(),sessionId:'debug-session',runId:'skip-check',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
         processed++;
         continue;
       }
       
       // Skip jobs that are currently running (but NOT stale runs)
       if (runStatus === "running" && !isStaleRun) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:skippingJob',message:'Skipping job - currently running (not stale)',data:{jobIndex:i,jobId:jobIdStr,runStatus,runAgeMs},timestamp:Date.now(),sessionId:'debug-session',runId:'skip-check',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
         processed++;
         continue;
       }
       
       // If run is stale (running for too long), log it and proceed to re-process
       if (isStaleRun) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:staleRun',message:'Detected stale run - will re-process',data:{jobIndex:i,jobId:jobIdStr,runStatus,runAgeMs,runAgeMinutes:Math.round(runAgeMs/60000)},timestamp:Date.now(),sessionId:'debug-session',runId:'skip-check',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
       }
       
       setCurrentProcessingIndex(i);
       setStatusText(`Processing job ${i + 1} of ${queueJobIds.length}...`);
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:processingJob',message:'Processing job',data:{jobIndex:i,jobId:jobIdStr,total:queueJobIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
 
       try {
         // Get job details
@@ -773,9 +704,6 @@ export default function StartRunPage() {
         const startData = await startResponse.json();
         const runId = startData.run_id;
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:startPhaseComplete',message:'Start phase complete',data:{runId,jobId:jobIdStr},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
 
         // Phase 2: Execute the pipeline
         setStatusText(`Analyzing job ${i + 1} of ${queueJobIds.length}...`);
@@ -797,17 +725,11 @@ export default function StartRunPage() {
         }
 
         const executeData = await executeResponse.json();
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:executeComplete',message:'Execute phase complete',data:{runId,status:executeData.status,stage:executeData.stage},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
 
         // Mark job as completed successfully
         setCompletedJobRuns(prev => new Map(prev).set(jobIdStr, { runId, status: "success" }));
         processed++;
       } catch (error: any) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleStartQueue:jobError',message:'Error processing job',data:{jobId:jobIdStr,error:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'analyze-debug',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         console.error("Error processing job:", error);
         setCompletedJobRuns(prev => new Map(prev).set(jobIdStr, { runId: "", status: "error" }));
         hadError = true;
@@ -839,9 +761,6 @@ export default function StartRunPage() {
 
   // Auto-resume queue processing after page refresh if queue was running
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:entry',message:'Auto-resume effect triggered',data:{hasAutoResumed:hasAutoResumedRef.current,queueRunExists:!!queueRun,queueRunStatus:queueRun?.status,queueRunId:queueRun?._id?.toString(),queueJobIdsLength:queueJobIds.length,queueItemsLength:queueItems.length,hasActiveResume:!!activeResume,hasConvexUser:!!convexUser,analyzing,currentProcessingIndex,queueItemsDetails:queueItems.map((item:any)=>({jobId:item?.job?._id?.toString(),jobTitle:item?.job?.title,runStatus:item?.run?.status}))},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H3A,H3B,H3C'})}).catch(()=>{});
-    // #endregion
     
     // Only auto-resume once per page load
     if (hasAutoResumedRef.current) return;
@@ -849,9 +768,6 @@ export default function StartRunPage() {
     // Don't auto-resume if queue data isn't fully loaded yet
     // (queueItems should have same number of items as queueJobIds)
     if (queueJobIds.length > 0 && queueItems.length !== queueJobIds.length) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:waitingForData',message:'Waiting for queue data to load',data:{queueJobIdsLength:queueJobIds.length,queueItemsLength:queueItems.length},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
       return;
     }
     
@@ -878,9 +794,6 @@ export default function StartRunPage() {
       });
       
       if (hasActivelyRunningJob) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:alreadyRunning',message:'Job already running - skipping auto-resume',data:{hasActivelyRunningJob:true},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H5'})}).catch(()=>{});
-        // #endregion
         hasAutoResumedRef.current = true; // Mark as resumed to prevent future triggers
         return;
       }
@@ -894,9 +807,6 @@ export default function StartRunPage() {
         const runAgeMs = Date.now() - runStartedAt;
         const isStaleRun = runStatus === "running" && runAgeMs > STALE_RUN_THRESHOLD_MS;
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:checkingJob',message:'Checking job for resume',data:{jobIdStr,runStatus,queueItemFound:!!queueItem,runAgeMs,isStaleRun},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
         
         // Job needs processing if: no run, or failed, or stale run
         // Job should be skipped if: success, or currently running (not stale)
@@ -905,9 +815,6 @@ export default function StartRunPage() {
         return true; // No run, or stale run - needs processing
       });
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:autoResume:willResume',message:'Auto-resume decision',data:{firstPendingIndex,queueRunStatus:queueRun.status,willResume:firstPendingIndex>=0},timestamp:Date.now(),sessionId:'debug-session',runId:'auto-resume-debug',hypothesisId:'H3A'})}).catch(()=>{});
-      // #endregion
 
       if (firstPendingIndex >= 0) {
         hasAutoResumedRef.current = true;
@@ -1445,9 +1352,6 @@ export default function StartRunPage() {
             return runJobId && currentQueueJobIds.has(runJobId);
           });
           
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:activeRuns:filter',message:'Active runs filter result',data:{totalRuns:runs.length,activeRunsCount:activeRuns.length,currentQueueJobIds:Array.from(currentQueueJobIds),activeRunsDetails:activeRuns.map((r:any)=>({_id:r._id?.toString(),runId:r.runId,status:r.status,runType:r.runType,jobId:r.jobId?.toString(),startedAt:r.startedAt})),queueItemsCount:queueItems.length,jobsCount:jobs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'active-runs-debug',hypothesisId:'H2A,H2B'})}).catch(()=>{});
-          // #endregion
           
           // Enrich runs with job info from queue items AND tabs (for correct titles)
           const enrichedRuns = activeRuns.map((run: any) => {
@@ -1460,9 +1364,6 @@ export default function StartRunPage() {
             const jobUrl = queueItem?.job?.jobUrl;
             const tabTitle = jobUrl ? tabTitleByUrl.get(jobUrl) : "";
             
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/1c636cf3-eea1-4dbe-92e0-605456223a98',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:activeRuns:enrich',message:'Enriching run with job info',data:{runId:run.runId,runJobId:run.jobId?.toString(),foundQueueItem:!!queueItem,queueItemJobId:queueItem?.job?._id?.toString(),queueItemJobTitle:queueItem?.job?.title,tabTitle:tabTitle,queueItemJobCompany:queueItem?.job?.company},timestamp:Date.now(),sessionId:'debug-session',runId:'active-runs-debug',hypothesisId:'H1A,H1B,H1C'})}).catch(()=>{});
-            // #endregion
             
             if (queueItem?.job) {
               return {
