@@ -170,6 +170,7 @@ export default function StartRunPage() {
   );
   const createQueueRun = useMutation(api.runs.createQueueRun);
   const updateQueueOrder = useMutation(api.runs.updateQueueOrder);
+  const updateQueueMasterResume = useMutation(api.runs.updateQueueMasterResume);
   const processQueueSequentially = useAction(api.runs.processQueueSequentially);
   const resetQueueRun = useMutation(api.runs.resetQueueRun);
   const updateRunStatus = useMutation(api.runs.updateRunStatus);
@@ -410,6 +411,25 @@ export default function StartRunPage() {
     });
   };
 
+  // Select all visible tabs that are not already in queue
+  const handleSelectAll = () => {
+    const selectableTabIds = filteredTabs
+      .filter(({ inQueue }) => !inQueue)
+      .map(({ tab }) => tab.id.toString());
+    setSelectedTabIds(selectableTabIds);
+  };
+
+  // Deselect all tabs
+  const handleDeselectAll = () => {
+    setSelectedTabIds([]);
+  };
+
+  // Check if all selectable tabs are selected
+  const selectableTabIds = filteredTabs
+    .filter(({ inQueue }) => !inQueue)
+    .map(({ tab }) => tab.id.toString());
+  const allSelected = selectableTabIds.length > 0 && selectableTabIds.every((id) => selectedTabIds.includes(id));
+
   const handleAddToQueue = useCallback(async () => {
     if (!activeResume || !convexUser) {
       setStatusText("No active master resume. Please create one in Settings.");
@@ -507,6 +527,12 @@ export default function StartRunPage() {
           queueRunId: queueRun._id,
           queueJobIds: nextQueue,
         });
+        // Also update the master resume to the current active resume
+        // This ensures we use the latest resume if the user changed it after queue creation
+        await updateQueueMasterResume({
+          queueRunId: queueRun._id,
+          masterResumeId: activeResume._id,
+        });
       }
       setSelectedTabIds([]);
       setStatusText(`Added ${jobIdsToAdd.length} item(s) to queue.`);
@@ -522,6 +548,7 @@ export default function StartRunPage() {
     queueRun,
     createQueueRun,
     updateQueueOrder,
+    updateQueueMasterResume,
     sendExtensionMessage,
     isInIframe,
   ]);
@@ -605,6 +632,18 @@ export default function StartRunPage() {
       return;
     }
 
+    // Update the queue's master resume to the current active resume
+    // This ensures we always use the latest resume even if it was changed after queue creation
+    try {
+      await updateQueueMasterResume({
+        queueRunId: queueRun._id,
+        masterResumeId: activeResume._id,
+      });
+    } catch (e) {
+      console.error("Failed to update queue master resume:", e);
+      // Continue anyway - we'll use activeResume._id directly in the API calls
+    }
+
     setAnalyzing(true);
     setStatusText(`Running ${queueJobIds.length} item(s) sequentially...`);
 
@@ -642,11 +681,8 @@ export default function StartRunPage() {
       const isStaleRun = runStatus === "running" && runAgeMs > STALE_RUN_THRESHOLD_MS;
       
       
-      // Skip jobs that are completed successfully
-      if (runStatus === "success") {
-        processed++;
-        continue;
-      }
+      // Allow re-running previously analyzed jobs - don't skip successful runs
+      // Users may want to re-analyze with updated resume or different settings
       
       // Skip jobs that are currently running (but NOT stale runs)
       if (runStatus === "running" && !isStaleRun) {
@@ -757,7 +793,7 @@ export default function StartRunPage() {
         : `Queue complete. ${processed} job(s) processed successfully.`
     );
     setAnalyzing(false);
-  }, [queueRun, queueJobIds, queueItems, activeResume, convexUser, updateRunStatus, completedJobRuns, currentProcessingIndex]);
+  }, [queueRun, queueJobIds, queueItems, activeResume, convexUser, updateRunStatus, updateQueueMasterResume, completedJobRuns, currentProcessingIndex]);
 
   // Auto-resume queue processing after page refresh if queue was running
   useEffect(() => {
@@ -1089,6 +1125,15 @@ export default function StartRunPage() {
                 ))}
               </div>
               <div className="pane-actions-inline">
+                <label className="select-all-label" style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={() => allSelected ? handleDeselectAll() : handleSelectAll()}
+                    disabled={selectableTabIds.length === 0}
+                  />
+                  <span className="hint">{allSelected ? "Deselect all" : "Select all"}</span>
+                </label>
                 <button
                   className="primary small"
                   type="button"

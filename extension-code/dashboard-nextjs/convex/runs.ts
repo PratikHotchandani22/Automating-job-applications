@@ -529,6 +529,25 @@ export const updateQueueCursor = mutation({
   },
 });
 
+export const updateQueueMasterResume = mutation({
+  args: {
+    queueRunId: v.id("runs"),
+    masterResumeId: v.id("masterResumes"),
+  },
+  handler: async (ctx, args) => {
+    const queueRun = await ctx.db.get(args.queueRunId);
+    if (!queueRun || queueRun.isDeleted || queueRun.runType !== "queue") {
+      throw new Error("Queue run not found.");
+    }
+    // Allow updating master resume only when queue is not actively running
+    // or update it regardless to ensure we use the latest resume
+    await ctx.db.patch(args.queueRunId, {
+      masterResumeId: args.masterResumeId,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const resetQueueRun = mutation({
   args: {
     queueRunId: v.id("runs"),

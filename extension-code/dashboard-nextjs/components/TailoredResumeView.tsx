@@ -1022,7 +1022,7 @@ export default function TailoredResumeView({
               <div className="empty-state-container">
                 <div className="empty-state-icon">📝</div>
                 <h3>No Modified Bullets</h3>
-                <p className="hint">No bullets were rewritten for this job. Uncheck "Show differences" to see all bullets.</p>
+                <p className="hint">No bullets were rewritten for this job. Uncheck &quot;Show differences&quot; to see all bullets.</p>
               </div>
             )}
           </div>

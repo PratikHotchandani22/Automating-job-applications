@@ -208,7 +208,7 @@ export default function RunsTable({ runs, onSelect, onDownload, backendOnline, s
                         Download
                       </button>
                     )}
-                    {onStop && (run.result === "pending" || run.status === "running" || run.status === "analyzing" || run.status === "RUNNING") ? (
+                    {onStop && (run.result === "pending" || run.status === "RUNNING" || run.status === "ANALYZING") ? (
                       <button
                         className="ghost small warn"
                         onClick={(e) => {

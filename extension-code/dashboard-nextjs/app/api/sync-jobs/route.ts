@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       created: createdJobs.length,
-      errors: errors.length,
+      errorCount: errors.length,
       jobs: createdJobs,
       errors: errors,
     });

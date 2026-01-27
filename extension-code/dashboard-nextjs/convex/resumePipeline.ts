@@ -382,7 +382,7 @@ export const syncArtifactsFromBackend = action({
     for (const key of keysToSync) {
       try {
         // Download artifact
-        const artifactResult = await downloadAndStoreArtifact(ctx, {
+        const artifactResult = await ctx.runAction(api.resumePipeline.downloadAndStoreArtifact, {
           runId: args.runId,
           artifactKey: key,
         });

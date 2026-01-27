@@ -65,7 +65,7 @@ export default function UserOnboarding() {
       <div className="empty-state-container">
         <div className="empty-state-icon">⚙️</div>
         <h3>Setting up your account...</h3>
-        <p className="hint">We're creating your profile. This will only take a moment.</p>
+        <p className="hint">We&apos;re creating your profile. This will only take a moment.</p>
         {creating && <div className="spinner" style={{ marginTop: "1rem" }} />}
       </div>
     );
@@ -76,7 +76,7 @@ export default function UserOnboarding() {
       <div className="empty-state-container">
         <div className="empty-state-icon">👋</div>
         <h3>Welcome!</h3>
-        <p className="hint">Let's set up your account to get started.</p>
+        <p className="hint">Let&apos;s set up your account to get started.</p>
         <button className="primary" onClick={handleCreateUser} disabled={creating} style={{ marginTop: "1rem" }}>
           {creating ? "Creating..." : "Create Account"}
         </button>

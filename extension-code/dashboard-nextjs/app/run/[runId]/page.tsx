@@ -149,7 +149,7 @@ function parseJobDescriptionSections(description?: string) {
   const matches = JOB_SECTION_TITLES.map((title) => {
     const idx = lowerText.indexOf(title.toLowerCase());
     if (idx === -1) return null;
-    return { title, idx };
+    return { title: title as string, idx };
   })
     .filter((match): match is { title: string; idx: number } => Boolean(match))
     .sort((a, b) => a.idx - b.idx);
@@ -303,7 +303,7 @@ export default function RunResultsPage() {
           <div className="empty-state-container">
             <div className="empty-state-icon">🔍</div>
             <h3>Run Not Found</h3>
-            <p className="hint">The run with ID "{runIdParam}" was not found or has been deleted.</p>
+            <p className="hint">The run with ID &quot;{runIdParam}&quot; was not found or has been deleted.</p>
             <Link href="/runs" className="primary" style={{ marginTop: "1rem" }}>
               Back to Runs
             </Link>
@@ -665,9 +665,7 @@ export default function RunResultsPage() {
                         <div className="evidence-chips">
                           {req.jdEvidence.map((ev: string, idx: number) => (
                             <span key={idx} className="evidence-chip">
-                              "
-                              {renderRichText(ev)}
-                              "
+                              &quot;{renderRichText(ev)}&quot;
                             </span>
                           ))}
                         </div>

@@ -1,11 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import BillingClient from "../BillingClient";
 
-export default function BillingPage() {
-  const { userId, redirectToSignIn } = auth();
+export default async function BillingPage() {
+  const { userId } = await auth();
 
   if (!userId) {
-    return redirectToSignIn();
+    redirect("/sign-in");
   }
 
   return <BillingClient />;

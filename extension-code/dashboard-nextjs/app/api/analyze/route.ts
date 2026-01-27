@@ -444,6 +444,7 @@ interface MasterResume {
     degree?: string;
     field?: string;
     dates?: string;
+    location?: string;
     gpa?: string;
   }>;
   certifications?: string[];

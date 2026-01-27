@@ -194,12 +194,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Don't render if resume is not loaded yet
-  if (!resume) {
-    return null;
-  }
-
-  // Local state for all resume sections
+  // Local state for all resume sections - must be before any early returns
   const [header, setHeader] = useState(resume?.header || {});
   const [summary, setSummary] = useState(resume?.summary || "");
   const [skills, setSkills] = useState(resume?.skills || {});
@@ -252,7 +247,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
       const trimmed = entry?.projectName?.trim();
       if (trimmed) projectNames.add(trimmed);
     });
-    Object.entries(projectGroups).forEach(([_, bullets], idx) => {
+    Object.entries(projectGroups).forEach(([, bullets], idx) => {
       const firstBullet = bullets[0];
       const projectName = (firstBullet?.projectName || `Project ${idx + 1}`).trim();
       if (projectName) {
@@ -322,6 +317,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
 
   // Track changes
   useEffect(() => {
+    if (!resume) return;
     const hasHeaderChanges = JSON.stringify(header) !== JSON.stringify(resume?.header || {});
     const hasSummaryChanges = summary !== (resume?.summary || "");
     const hasSkillsChanges = JSON.stringify(skills) !== JSON.stringify(resume?.skills || {});
@@ -368,6 +364,11 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
       setLastSaveWarnings([]);
     }
   }, [warnings, lastSaveWarnings.length]);
+
+  // Don't render if resume is not loaded yet - must be AFTER all hooks
+  if (!resume) {
+    return null;
+  }
 
   const handleSave = async () => {
     if (!resume || (!hasChanges && !workExpPendingChanges)) return;
@@ -994,7 +995,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
                       >
                         Responsibilities & Achievements
                       </label>
-                      {bullets.map((bullet, idx) => (
+                      {bullets.map((bullet) => (
                         <div
                           key={bullet._id}
                           style={{
@@ -1215,7 +1216,7 @@ export default function ResumeEditor({ resume, onClose, onSave }: ResumeEditorPr
                     >
                       Project Details
                     </label>
-                    {bullets.map((bullet, idx) => (
+                    {bullets.map((bullet) => (
                       <div
                         key={bullet._id}
                         style={{
@@ -1579,7 +1580,7 @@ function ArrayEditor({
       </button>
       {itemsArray.length === 0 && (
         <p className="hint" style={{ fontSize: "12px", marginTop: "0.5rem" }}>
-          No items yet. Click "Add Item" to add one.
+          No items yet. Click &quot;Add Item&quot; to add one.
         </p>
       )}
     </div>
